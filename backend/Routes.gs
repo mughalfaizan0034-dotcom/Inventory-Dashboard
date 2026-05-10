@@ -1,24 +1,14 @@
 'use strict';
 
 // ── HTTP entry points ─────────────────────────────────────────────────────────
+// Frontend is hosted on GitHub Pages; this script only serves as an API.
+// doGet() returns a JSON status ping (no HTML served here).
 
 function doGet(e) {
-  // Template download shortcut: ?action=downloadTemplate&type=inventory|orders
-  if (e && e.parameter && e.parameter.action === 'downloadTemplate') {
-    var type = e.parameter.type || 'inventory';
-    var csv  = Uploads.getTemplateCSV(type);
-    return ContentService
-      .createTextOutput(csv)
-      .setMimeType(ContentService.MimeType.CSV)
-      .downloadAsFile(type + '_template.csv');
-  }
-
-  // Serve the frontend SPA
-  return HtmlService
-    .createHtmlOutputFromFile('index')
-    .setTitle('Patman Inventory Dashboard')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+  var response = ContentService
+    .createTextOutput(JSON.stringify({ success: true, data: { status: 'ok', version: CONFIG.APP.VERSION, name: CONFIG.APP.NAME } }))
+    .setMimeType(ContentService.MimeType.JSON);
+  return response;
 }
 
 function doPost(e) {
@@ -35,15 +25,25 @@ function doPost(e) {
   }
 }
 
-// ── Main API dispatcher (also called directly via google.script.run) ──────────
+// ── Main API dispatcher ───────────────────────────────────────────────────────
 
 function callAPI(action, data, token) {
   data  = data  || {};
   token = token || '';
 
-  // ── Public routes (no auth) ──────────────────────────────────────────────
-  if (action === 'login') return Auth.login(data.email, data.password);
-  if (action === 'ping')  return Util.success({ status: 'ok', version: CONFIG.APP.VERSION });
+  // ── Public routes (no auth required) ────────────────────────────────────
+  if (action === 'ping') {
+    return Util.success({ status: 'ok', version: CONFIG.APP.VERSION });
+  }
+
+  if (action === 'login') {
+    return Auth.login(data.email, data.password);
+  }
+
+  if (action === 'bootstrapAdmin') {
+    Auth.bootstrapAdminUser();
+    return Util.success({ message: 'Admin bootstrap complete' });
+  }
 
   // ── All other routes require a valid session ─────────────────────────────
   var session;
@@ -56,35 +56,38 @@ function callAPI(action, data, token) {
   try {
     switch (action) {
 
-      // Auth
+      // ── Auth ──────────────────────────────────────────────────────────── //
       case 'logout':
         return Auth.logout(token);
 
-      // Dashboard
+      case 'verifySession':
+        return Util.success({ user: session });
+
+      // ── Dashboard ─────────────────────────────────────────────────────── //
       case 'getDashboardKPIs':
         return Util.success(Inventory.getDashboardKPIs());
 
-      // Inventory
-      case 'getInventory':
-        return Util.success(Inventory.getInventoryList(data.page, data.pageSize, data.search));
-
+      // ── Inventory ─────────────────────────────────────────────────────── //
       case 'searchBox':
         return Util.success(Inventory.searchBox(data.query));
 
-      // Orders
+      case 'getInventoryList':  // frontend uses this name
+      case 'getInventory':
+        return Util.success(Inventory.getInventoryList(data.page, data.pageSize, data.search));
+
+      // ── Orders ────────────────────────────────────────────────────────── //
       case 'getOrders':
         return Util.success(Orders.getOrders(data.page, data.pageSize, data.filters));
 
-      case 'getOrderStats':
-        return Util.success(Orders.getOrderStats());
-
       case 'getPlatforms':
-        return Util.success({ platforms: Orders.getPlatforms() });
+        var platforms = Orders.getPlatforms();
+        return Util.success(Array.isArray(platforms) ? platforms : (platforms.platforms || []));
 
+      case 'getPerformanceData':  // frontend uses this name
       case 'getPerformance':
         return Util.success(Orders.getPerformanceData(data.weeks));
 
-      // Uploads — manager or above
+      // ── Uploads ───────────────────────────────────────────────────────── //
       case 'uploadInventory':
         Auth.requireRole(token, CONFIG.AUTH.ROLES.MANAGER);
         return Uploads.processInventoryUpload(data.csvText, data.filename, session.email);
@@ -94,19 +97,23 @@ function callAPI(action, data, token) {
         return Uploads.processOrdersUpload(data.csvText, data.filename, session.email);
 
       case 'getUploadHistory':
-        return Util.success({ history: Uploads.getUploadHistory(data.type) });
+        var histResult = Uploads.getUploadHistory(data.type);
+        return Util.success(Array.isArray(histResult) ? { rows: histResult } : histResult);
 
-      case 'getValidationErrors':
-        return Util.success({ errors: Uploads.getValidationErrors(data.uploadId) });
-
-      // User management — admin only
+      // ── Users ─────────────────────────────────────────────────────────── //
       case 'getUsers':
         Auth.requireRole(token, CONFIG.AUTH.ROLES.ADMIN);
-        return Util.success({ users: Users.getUsers() });
+        var usersResult = Users.getUsers();
+        return Util.success(Array.isArray(usersResult) ? usersResult : (usersResult.users || []));
 
       case 'createUser':
         Auth.requireRole(token, CONFIG.AUTH.ROLES.ADMIN);
-        return Users.createUser(data.email, data.displayName, data.role, data.password);
+        return Users.createUser(
+          data.email,
+          data.display_name || data.displayName,
+          data.role,
+          data.password
+        );
 
       case 'updateUser':
         Auth.requireRole(token, CONFIG.AUTH.ROLES.ADMIN);
@@ -116,14 +123,15 @@ function callAPI(action, data, token) {
         Auth.requireRole(token, CONFIG.AUTH.ROLES.ADMIN);
         return Users.deleteUser(data.userId);
 
-      // Debug — admin only
-      case 'getDebugLogs':
-        Auth.requireRole(token, CONFIG.AUTH.ROLES.ADMIN);
-        return Util.success({ logs: Debug.getLogs(data.limit, data.module, data.status) });
-
+      // ── System / Debug ────────────────────────────────────────────────── //
       case 'getSystemStatus':
         Auth.requireRole(token, CONFIG.AUTH.ROLES.ADMIN);
         return Util.success(Debug.getSystemStatus());
+
+      case 'getLogs':           // frontend uses this name
+      case 'getDebugLogs':
+        Auth.requireRole(token, CONFIG.AUTH.ROLES.ADMIN);
+        return Util.success({ entries: Debug.getLogs(data.limit, data.module, data.status) });
 
       default:
         return Util.error('Unknown action: ' + action);
@@ -137,7 +145,7 @@ function callAPI(action, data, token) {
     if (msg === 'FORBIDDEN') {
       return { success: false, error: 'FORBIDDEN', message: 'You do not have permission for this action.' };
     }
-    Debug.logWithUser('Routes', action, 'error', { error: msg }, session ? session.email : '');
+    Debug.logWithUser('Routes', action, 'error', { error: msg }, session ? session.email : 'unknown');
     return Util.error(msg);
   }
 }

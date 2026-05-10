@@ -3,1441 +3,520 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="robots" content="noindex, nofollow">
-  <!-- Web App URL — read by uploads.js for template downloads -->
-  <meta id="meta-webapp-url" content="https://script.google.com/macros/s/AKfycbxxLfROgpoO-4JC_TZmEfJnD62NBqJGDlmbFgU_CKULeGv46k7K0oo4RocNWMUFTfdU/exec">
   <title>Patman Inventory Dashboard</title>
 
-  <!-- Google Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/tables.css">
+  <link rel="stylesheet" href="css/forms.css">
+  <link rel="stylesheet" href="css/animations.css">
 
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <!-- SheetJS for Excel parsing -->
-  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-
-<style>
-/* ═══════════════════════════════════════════════════════ DESIGN TOKENS */
-:root {
-  --bg:#f1f5f9; --surface:#fff; --surface-2:#f8fafc; --surface-3:#f1f5f9;
-  --border:#e2e8f0; --border-2:#cbd5e1;
-  --primary:#2563eb; --primary-50:#eff6ff; --primary-100:#dbeafe; --primary-hover:#1d4ed8; --primary-text:#1e40af;
-  --success:#16a34a; --success-bg:#f0fdf4; --success-bd:#bbf7d0;
-  --error:#dc2626;   --error-bg:#fef2f2;   --error-bd:#fecaca;
-  --warning:#d97706; --warning-bg:#fffbeb; --warning-bd:#fde68a;
-  --info:#0891b2;    --info-bg:#ecfeff;    --info-bd:#a5f3fc;
-  --txt-1:#0f172a; --txt-2:#334155; --txt-3:#64748b; --txt-4:#94a3b8;
-  --shadow-xs:0 1px 2px rgba(0,0,0,.04);
-  --shadow-sm:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);
-  --shadow:   0 2px 8px rgba(0,0,0,.08),0 1px 3px rgba(0,0,0,.04);
-  --shadow-md:0 4px 12px rgba(0,0,0,.10),0 2px 4px rgba(0,0,0,.04);
-  --shadow-lg:0 10px 24px rgba(0,0,0,.10),0 4px 8px rgba(0,0,0,.05);
-  --r-xs:4px; --r-sm:6px; --r:10px; --r-lg:14px; --r-xl:20px;
-  --sidebar-w:240px; --topbar-h:60px;
-  --font-title:'Quicksand',sans-serif; --font-body:'Inter',sans-serif;
-  --ease:cubic-bezier(.4,0,.2,1); --dur:160ms;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:14px;-webkit-font-smoothing:antialiased}
-body{font-family:var(--font-body);background:var(--bg);color:var(--txt-1);line-height:1.5;min-height:100vh}
-h1,h2,h3,h4,h5{font-family:var(--font-title);font-weight:700;line-height:1.3}
-a{color:var(--primary);text-decoration:none}
-button{font-family:var(--font-body);cursor:pointer;border:none;outline:none}
-button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
-input,select,textarea{font-family:var(--font-body);font-size:14px;outline:none}
-table{border-collapse:collapse;width:100%}
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:var(--surface-2)}
-::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:99px}
-
-/* ═══════════════════════════════════════════════════════ LOADING SCREEN */
-#loading-screen{position:fixed;inset:0;background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:16px}
-.load-logo{width:52px;height:52px;background:var(--primary);border-radius:var(--r-lg);display:flex;align-items:center;justify-content:center;font-family:var(--font-title);font-size:22px;font-weight:700;color:#fff}
-.load-text{font-family:var(--font-title);font-size:15px;font-weight:600;color:var(--txt-3)}
-.spin{width:22px;height:22px;border:2.5px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-/* ═══════════════════════════════════════════════════════ LOGIN */
-#login-screen{min-height:100vh;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px}
-.login-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);box-shadow:var(--shadow-lg);padding:40px 44px;width:100%;max-width:400px}
-.login-brand{display:flex;align-items:center;gap:12px;margin-bottom:28px}
-.login-logo{width:44px;height:44px;background:var(--primary);border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-family:var(--font-title);font-size:18px;font-weight:700;color:#fff}
-.login-brand-text{line-height:1.2}
-.login-brand-name{font-family:var(--font-title);font-size:17px;font-weight:700;color:var(--txt-1)}
-.login-brand-sub{font-size:11px;color:var(--txt-4)}
-.login-heading{font-family:var(--font-title);font-size:20px;font-weight:700;color:var(--txt-1);margin-bottom:6px}
-.login-sub{font-size:13px;color:var(--txt-3);margin-bottom:24px}
-.login-error{font-size:12px;color:var(--error);background:var(--error-bg);border:1px solid var(--error-bd);border-radius:var(--r-sm);padding:8px 12px;margin-bottom:14px;display:none}
-.login-error.visible{display:block}
-
-/* ═══════════════════════════════════════════════════════ APP SHELL */
-#app-shell{display:flex;min-height:100vh}
-
-/* SIDEBAR */
-.sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:100}
-.sidebar-header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);height:var(--topbar-h)}
-.sidebar-logo{width:34px;height:34px;background:var(--primary);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;font-family:var(--font-title);font-size:15px;font-weight:700;color:#fff;flex-shrink:0}
-.sidebar-brand-name{font-family:var(--font-title);font-size:13.5px;font-weight:700;color:var(--txt-1);line-height:1.2}
-.sidebar-brand-sub{font-size:10px;color:var(--txt-4);font-weight:400}
-.sidebar-nav{flex:1;overflow-y:auto;padding:10px 8px;display:flex;flex-direction:column;gap:2px}
-.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r-sm);font-size:13.5px;font-weight:500;color:var(--txt-3);cursor:pointer;transition:background var(--dur),color var(--dur);user-select:none}
-.nav-item:hover{background:var(--surface-3);color:var(--txt-1)}
-.nav-item.active{background:var(--primary-50);color:var(--primary-text);font-weight:600}
-.nav-icon{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;opacity:.7}
-.nav-item.active .nav-icon{opacity:1}
-.sidebar-footer{padding:12px 8px;border-top:1px solid var(--border)}
-.sidebar-user{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-sm);margin-bottom:4px}
-.sidebar-avatar{width:30px;height:30px;background:var(--primary-100);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--primary-text);flex-shrink:0}
-.sidebar-user-name{font-size:13px;font-weight:600;color:var(--txt-1);line-height:1.2}
-.sidebar-user-role{font-size:11px;color:var(--txt-4);text-transform:capitalize}
-
-/* MAIN WRAPPER */
-.main-wrapper{flex:1;margin-left:var(--sidebar-w);display:flex;flex-direction:column;min-height:100vh}
-.topbar{height:var(--topbar-h);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:50}
-.topbar-title{font-family:var(--font-title);font-size:18px;font-weight:700;color:var(--txt-1)}
-.topbar-actions{display:flex;align-items:center;gap:8px}
-.page-content{flex:1;padding:24px}
-.page{display:none}.page.active{display:block;animation:fadeIn .18s var(--ease)}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes slideUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
-@keyframes scaleIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
-@keyframes slideInRight{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
-@keyframes fadeOut{from{opacity:1}to{opacity:0;pointer-events:none}}
-@keyframes skel{0%{background-position:200% 0}100%{background-position:-200% 0}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
-
-/* ═══════════════════════════════════════════════════════ SHARED COMPONENTS */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm);padding:20px}
-.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.card-title{font-family:var(--font-title);font-size:15px;font-weight:700;color:var(--txt-1)}
-
-.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.section-title{font-family:var(--font-title);font-size:16px;font-weight:700;color:var(--txt-1)}
-.section-sub{font-size:12px;color:var(--txt-3);margin-top:2px}
-
-/* BUTTONS */
-.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--r-sm);font-size:13px;font-weight:500;transition:background var(--dur),box-shadow var(--dur),opacity var(--dur);white-space:nowrap;cursor:pointer}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.btn-primary{background:var(--primary);color:#fff;box-shadow:0 1px 3px rgba(37,99,235,.3)}
-.btn-primary:hover:not(:disabled){background:var(--primary-hover)}
-.btn-secondary{background:var(--surface);color:var(--txt-2);border:1px solid var(--border-2);box-shadow:var(--shadow-xs)}
-.btn-secondary:hover:not(:disabled){background:var(--surface-3)}
-.btn-ghost{background:transparent;color:var(--txt-3)}
-.btn-ghost:hover:not(:disabled){background:var(--surface-3);color:var(--txt-1)}
-.btn-danger{background:var(--error-bg);color:var(--error);border:1px solid var(--error-bd)}
-.btn-danger:hover:not(:disabled){background:#fee2e2}
-.btn-sm{padding:5px 11px;font-size:12px}.btn-lg{padding:11px 22px;font-size:14px}.btn-icon{padding:7px}
-.btn-loading{pointer-events:none}
-.btn-loading::after{content:'';display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .65s linear infinite;margin-left:6px}
-.btn-secondary.btn-loading::after{border-color:rgba(0,0,0,.15);border-top-color:var(--txt-2)}
-
-/* BADGES */
-.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;letter-spacing:.02em}
-.badge-success{background:var(--success-bg);color:var(--success);border:1px solid var(--success-bd)}
-.badge-error{background:var(--error-bg);color:var(--error);border:1px solid var(--error-bd)}
-.badge-warning{background:var(--warning-bg);color:var(--warning);border:1px solid var(--warning-bd)}
-.badge-info{background:var(--info-bg);color:var(--info);border:1px solid var(--info-bd)}
-.badge-gray{background:var(--surface-3);color:var(--txt-3);border:1px solid var(--border)}
-
-/* KPI GRID */
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
-@media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:600px){.kpi-grid{grid-template-columns:1fr}}
-.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm);padding:20px;display:flex;flex-direction:column;gap:8px;position:relative;overflow:hidden;transition:box-shadow var(--dur)}
-.kpi-card:hover{box-shadow:var(--shadow-md)}
-.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--kpi-accent,var(--primary));border-radius:var(--r-lg) var(--r-lg) 0 0}
-.kpi-card.accent-blue{--kpi-accent:#2563eb}.kpi-card.accent-purple{--kpi-accent:#7c3aed}
-.kpi-card.accent-orange{--kpi-accent:#d97706}.kpi-card.accent-red{--kpi-accent:#dc2626}
-.kpi-card.accent-green{--kpi-accent:#16a34a}.kpi-card.accent-cyan{--kpi-accent:#0891b2}
-.kpi-card.accent-gray{--kpi-accent:#64748b}.kpi-card.accent-pink{--kpi-accent:#db2777}
-.kpi-label{font-size:11.5px;font-weight:500;color:var(--txt-3);text-transform:uppercase;letter-spacing:.04em}
-.kpi-value{font-family:var(--font-title);font-size:28px;font-weight:700;color:var(--txt-1);line-height:1}
-.kpi-sub{font-size:11px;color:var(--txt-4)}
-
-/* SKELETON */
-.skel{background:linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%);background-size:200% 100%;animation:skel 1.4s ease infinite;border-radius:var(--r-xs)}
-.skel-line{height:14px;border-radius:4px}.skel-rect{border-radius:var(--r)}
-
-/* TABLES */
-.table-wrapper{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border)}
-.data-table{width:100%;border-collapse:collapse;font-size:13px}
-.data-table thead th{background:var(--surface-2);padding:10px 14px;text-align:left;font-size:11.5px;font-weight:600;color:var(--txt-3);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);white-space:nowrap}
-.data-table tbody tr{border-bottom:1px solid var(--border);transition:background var(--dur)}
-.data-table tbody tr:last-child{border-bottom:none}
-.data-table tbody tr:hover{background:var(--surface-2)}
-.data-table tbody td{padding:10px 14px;color:var(--txt-2);vertical-align:middle;white-space:nowrap}
-.data-table td.num,.data-table th.num{text-align:right}
-.stock-positive{color:var(--success);font-weight:600}.stock-zero{color:var(--error);font-weight:600}.stock-warn{color:var(--warning);font-weight:600}
-.row-undefined-sku td:first-child{border-left:3px solid var(--warning)}
-.row-oversold td:first-child{border-left:3px solid var(--error)}
-
-/* PAGINATION */
-.pagination{display:flex;align-items:center;gap:6px;padding:14px 16px;border-top:1px solid var(--border);justify-content:space-between;flex-wrap:wrap}
-.pagination-info{font-size:12px;color:var(--txt-3)}
-.pagination-controls{display:flex;gap:4px;align-items:center}
-.page-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-xs);font-size:12px;font-weight:500;color:var(--txt-3);background:var(--surface);border:1px solid var(--border);cursor:pointer;transition:background var(--dur),color var(--dur)}
-.page-btn:hover:not(:disabled){background:var(--surface-3);color:var(--txt-1)}
-.page-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
-.page-btn:disabled{opacity:.4;cursor:not-allowed}
-
-/* FILTER BAR */
-.filter-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface-2);border-radius:var(--r-lg) var(--r-lg) 0 0}
-
-/* FORMS */
-.form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:16px}
-.form-group:last-child{margin-bottom:0}
-.form-label{font-size:12.5px;font-weight:600;color:var(--txt-2)}
-.required{color:var(--error);margin-left:2px}
-.form-input,.form-select,.form-textarea{width:100%;padding:9px 12px;border:1px solid var(--border-2);border-radius:var(--r-sm);background:var(--surface);color:var(--txt-1);font-size:13.5px;transition:border-color var(--dur),box-shadow var(--dur)}
-.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.08)}
-.form-input::placeholder,.form-textarea::placeholder{color:var(--txt-4)}
-.form-hint{font-size:11.5px;color:var(--txt-3)}.form-error{font-size:11.5px;color:var(--error)}
-
-/* DROP ZONE */
-.drop-zone{border:2px dashed var(--border-2);border-radius:var(--r-lg);padding:36px 24px;text-align:center;cursor:pointer;transition:border-color var(--dur),background var(--dur);background:var(--surface-2)}
-.drop-zone:hover,.drop-zone.drag-over{border-color:var(--primary);background:var(--primary-50)}
-.drop-zone input[type="file"]{display:none}
-.drop-zone-icon{font-size:30px;opacity:.4;margin-bottom:10px}
-.drop-zone-text{font-size:14px;font-weight:600;color:var(--txt-2)}
-.drop-zone-sub{font-size:12px;color:var(--txt-4);margin-top:4px}
-.drop-zone.has-file{border-color:var(--success);background:var(--success-bg)}
-.drop-zone .file-name{font-size:13px;font-weight:600;color:var(--success);margin-top:8px}
-
-/* PROGRESS BAR */
-.progress-bar-wrap{background:var(--surface-3);border-radius:99px;height:6px;overflow:hidden;margin-top:8px}
-.progress-bar{height:100%;background:var(--primary);border-radius:99px;transition:width .4s ease}
-
-/* EMPTY STATE */
-.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 24px;gap:12px;color:var(--txt-4);text-align:center}
-.empty-state-icon{font-size:36px;opacity:.5}
-.empty-state-text{font-size:14px;color:var(--txt-3)}
-.empty-state-sub{font-size:12px;color:var(--txt-4)}
-
-/* TOAST */
-#toast-container{position:fixed;bottom:24px;right:24px;z-index:2000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
-.toast{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);padding:12px 16px;display:flex;align-items:flex-start;gap:10px;min-width:280px;max-width:380px;pointer-events:all;animation:slideInRight .2s var(--ease)}
-.toast-success{border-left:3px solid var(--success)}.toast-error{border-left:3px solid var(--error)}.toast-warning{border-left:3px solid var(--warning)}.toast-info{border-left:3px solid var(--primary)}
-.toast-icon{font-size:15px;flex-shrink:0;margin-top:1px}
-.toast-title{font-weight:600;font-size:13px;color:var(--txt-1)}.toast-msg{font-size:12px;color:var(--txt-3);margin-top:2px}
-
-/* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:24px;animation:fadeIn .15s var(--ease)}
-.modal{background:var(--surface);border-radius:var(--r-xl);box-shadow:var(--shadow-lg);width:100%;max-width:500px;max-height:90vh;overflow-y:auto;animation:scaleIn .18s var(--ease)}
-.modal-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px 0}
-.modal-title{font-family:var(--font-title);font-size:16px;font-weight:700}
-.modal-body{padding:16px 24px}
-.modal-footer{padding:0 24px 20px;display:flex;gap:8px;justify-content:flex-end}
-
-/* STATUS DOT */
-.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
-.status-dot.online{background:var(--success);animation:pulse 2s ease infinite}
-.status-dot.offline{background:var(--error)}.status-dot.unknown{background:var(--warning)}
-
-/* SETTINGS TABS */
-.settings-tabs{display:flex;gap:4px;padding:0 0 16px}
-.tab-btn{padding:7px 16px;border-radius:var(--r-sm);font-size:13px;font-weight:500;color:var(--txt-3);background:transparent;border:1px solid transparent;cursor:pointer;transition:background var(--dur),color var(--dur)}
-.tab-btn:hover{background:var(--surface-3);color:var(--txt-1)}
-.tab-btn.active{background:var(--primary-50);color:var(--primary-text);border-color:var(--primary-100);font-weight:600}
-.settings-panel{display:none}.settings-panel.active{display:block}
-
-/* CHART WRAPPER */
-.chart-wrapper{position:relative;height:260px}
-.chart-grid{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
-@media(max-width:900px){.chart-grid{grid-template-columns:1fr}}
-
-/* AREA SPINNER */
-.area-spinner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.7);border-radius:inherit;z-index:5}
-</style>
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════════ LOADING SCREEN -->
-<div id="loading-screen">
-  <div class="load-logo">P</div>
-  <div class="load-text">Patman Inventory</div>
-  <div class="spin"></div>
-</div>
-
-<!-- ═══════════════════════════════════════════════ LOGIN SCREEN -->
-<div id="login-screen" style="display:none">
-  <div class="login-card animate-slide-up" style="animation:slideUp .25s var(--ease)">
-    <div class="login-brand">
-      <div class="login-logo">P</div>
-      <div class="login-brand-text">
-        <div class="login-brand-name">Patman Inventory</div>
-        <div class="login-brand-sub">Operations Dashboard</div>
-      </div>
-    </div>
-    <h2 class="login-heading">Welcome back</h2>
-    <p class="login-sub">Sign in to your account to continue.</p>
-    <div id="login-error" class="login-error"></div>
-    <form id="login-form">
-      <div class="form-group">
-        <label class="form-label" for="login-email">Email address</label>
-        <input id="login-email" type="email" class="form-input" placeholder="you@company.com" required autocomplete="email">
-      </div>
-      <div class="form-group" style="margin-bottom:20px">
-        <label class="form-label" for="login-password">Password</label>
-        <input id="login-password" type="password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
-      </div>
-      <button id="btn-login" type="submit" class="btn btn-primary btn-lg" style="width:100%">Sign In</button>
-    </form>
+  <!-- ── Loading Screen ─────────────────────────────────────── -->
+  <div id="loading-screen">
+    <div class="load-logo">P</div>
+    <div class="load-text">Loading Patman Inventory…</div>
+    <div class="spin" style="margin-top:8px"></div>
   </div>
-</div>
 
-<!-- ═══════════════════════════════════════════════ APP SHELL -->
-<div id="app-shell" style="display:none">
-
-  <!-- SIDEBAR -->
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="sidebar-logo">P</div>
-      <div>
-        <div class="sidebar-brand-name">Patman</div>
-        <div class="sidebar-brand-sub">Inventory Dashboard</div>
-      </div>
-    </div>
-    <nav class="sidebar-nav">
-      <div class="nav-item active" data-page="home">
-        <span class="nav-icon">⊞</span>Dashboard
-      </div>
-      <div class="nav-item" data-page="box-lookup">
-        <span class="nav-icon">🔍</span>Box Lookup
-      </div>
-      <div class="nav-item" data-page="orders">
-        <span class="nav-icon">📋</span>Orders
-      </div>
-      <div class="nav-item" data-page="uploads" data-role="manager">
-        <span class="nav-icon">⬆</span>Uploads
-      </div>
-      <div class="nav-item" data-page="performance">
-        <span class="nav-icon">📈</span>Performance
-      </div>
-      <div class="nav-item" data-page="settings">
-        <span class="nav-icon">⚙</span>Settings
-      </div>
-    </nav>
-    <div class="sidebar-footer">
-      <div class="sidebar-user">
-        <div class="sidebar-avatar" id="sidebar-avatar">?</div>
+  <!-- ── Login Screen ───────────────────────────────────────── -->
+  <div id="login-screen" style="display:none">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="login-logo">P</div>
         <div>
-          <div class="sidebar-user-name" id="sidebar-user-name">Loading…</div>
-          <div class="sidebar-user-role" id="sidebar-user-role">—</div>
+          <div class="login-brand-name">Patman Inventory</div>
+          <div class="login-brand-sub">Inventory Management System</div>
         </div>
       </div>
-      <button id="btn-logout" class="btn btn-ghost" style="width:100%;justify-content:center;font-size:13px">
-        Sign Out
-      </button>
+
+      <h1 class="login-heading">Sign in</h1>
+      <p class="login-sub">Enter your credentials to access the dashboard</p>
+
+      <div id="login-error" class="login-error"></div>
+
+      <form id="login-form" autocomplete="on">
+        <div class="form-group">
+          <label class="form-label" for="login-email">Email</label>
+          <input class="form-input" id="login-email" type="email" placeholder="your@email.com" autocomplete="email" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="login-password">Password</label>
+          <input class="form-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn-primary btn-wide btn-lg" id="login-btn" type="submit">Sign in</button>
+      </form>
     </div>
-  </aside>
+  </div>
 
-  <!-- MAIN CONTENT -->
-  <div class="main-wrapper">
-    <header class="topbar">
-      <span class="topbar-title" id="topbar-title">Dashboard</span>
-      <div class="topbar-actions">
-        <button id="btn-refresh" class="btn btn-secondary btn-sm">↻ Refresh</button>
+  <!-- ── App Shell ──────────────────────────────────────────── -->
+  <div id="app-shell" style="display:none">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">P</div>
+        <div>
+          <div class="sidebar-brand-name">Patman</div>
+          <div class="sidebar-brand-sub">Inventory System</div>
+        </div>
       </div>
-    </header>
 
-    <main class="page-content">
+      <nav class="sidebar-nav">
+        <div class="nav-item active" data-page="dashboard">
+          <span class="nav-icon">📊</span>
+          <span>Dashboard</span>
+        </div>
+        <div class="nav-item" data-page="performance">
+          <span class="nav-icon">📈</span>
+          <span>Performance</span>
+        </div>
+        <div class="nav-item" data-page="lookup">
+          <span class="nav-icon">🔍</span>
+          <span>Box Lookup</span>
+        </div>
+        <div class="nav-item" data-page="inventory">
+          <span class="nav-icon">📦</span>
+          <span>Inventory List</span>
+        </div>
+        <div class="nav-item" data-page="orders">
+          <span class="nav-icon">🛒</span>
+          <span>Orders</span>
+        </div>
+        <div class="nav-item" data-page="uploads" data-min-role="manager">
+          <span class="nav-icon">📤</span>
+          <span>Uploads</span>
+        </div>
+        <div class="nav-item" data-page="settings" data-min-role="admin">
+          <span class="nav-icon">⚙️</span>
+          <span>Settings</span>
+        </div>
+      </nav>
 
-      <!-- ──────────────────────── HOME PAGE -->
-      <div class="page active" id="page-home">
-        <div style="margin-bottom:20px">
-          <h2 style="font-family:var(--font-title);font-size:20px;margin-bottom:4px">Inventory Overview</h2>
-          <p style="font-size:13px;color:var(--txt-3)">All metrics calculated live from BigQuery. Remaining = Initial − Sold + Phantom.</p>
-        </div>
-        <div class="kpi-grid">
-          <div class="kpi-card accent-blue" id="kpi-total-initial">
-            <div class="kpi-label">Total Initial Stock</div>
-            <div class="kpi-value"><div class="skel skel-line" style="width:80px;height:26px"></div></div>
-            <div class="kpi-sub"><div class="skel skel-line" style="width:120px;height:10px"></div></div>
-          </div>
-          <div class="kpi-card accent-purple" id="kpi-units-sold">
-            <div class="kpi-label">Units Sold</div>
-            <div class="kpi-value"><div class="skel skel-line" style="width:80px;height:26px"></div></div>
-            <div class="kpi-sub"><div class="skel skel-line" style="width:100px;height:10px"></div></div>
-          </div>
-          <div class="kpi-card accent-orange" id="kpi-phantom-units">
-            <div class="kpi-label">Phantom Units</div>
-            <div class="kpi-value"><div class="skel skel-line" style="width:60px;height:26px"></div></div>
-            <div class="kpi-sub"><div class="skel skel-line" style="width:110px;height:10px"></div></div>
-          </div>
-          <div class="kpi-card accent-gray" id="kpi-undefined-sku">
-            <div class="kpi-label">Undefined SKU Sales</div>
-            <div class="kpi-value"><div class="skel skel-line" style="width:60px;height:26px"></div></div>
-            <div class="kpi-sub"><div class="skel skel-line" style="width:120px;height:10px"></div></div>
-          </div>
-          <div class="kpi-card accent-green" id="kpi-remaining-stock">
-            <div class="kpi-label">Remaining Stock</div>
-            <div class="kpi-value"><div class="skel skel-line" style="width:80px;height:26px"></div></div>
-            <div class="kpi-sub"><div class="skel skel-line" style="width:110px;height:10px"></div></div>
-          </div>
-          <div class="kpi-card accent-cyan" id="kpi-total-upcs">
-            <div class="kpi-label">Total UPCs</div>
-            <div class="kpi-value"><div class="skel skel-line" style="width:70px;height:26px"></div></div>
-            <div class="kpi-sub"><div class="skel skel-line" style="width:90px;height:10px"></div></div>
-          </div>
-          <div class="kpi-card accent-green" id="kpi-in-stock">
-            <div class="kpi-label">In Stock (SKUs)</div>
-            <div class="kpi-value"><div class="skel skel-line" style="width:70px;height:26px"></div></div>
-            <div class="kpi-sub"><div class="skel skel-line" style="width:110px;height:10px"></div></div>
-          </div>
-          <div class="kpi-card accent-red" id="kpi-sold-out">
-            <div class="kpi-label">Sold Out (SKUs)</div>
-            <div class="kpi-value"><div class="skel skel-line" style="width:60px;height:26px"></div></div>
-            <div class="kpi-sub"><div class="skel skel-line" style="width:100px;height:10px"></div></div>
-          </div>
-        </div>
-        <!-- Info banner -->
-        <div style="background:var(--primary-50);border:1px solid var(--primary-100);border-radius:var(--r-lg);padding:14px 18px;font-size:13px;color:var(--primary-text);display:flex;gap:10px;align-items:flex-start">
-          <span style="font-size:16px">ℹ</span>
+      <div class="sidebar-footer">
+        <div class="sidebar-user">
+          <div class="sidebar-avatar">?</div>
           <div>
-            <strong>Inventory Math:</strong> Phantom Units = MAX(0, Sold − Initial) per SKU.
-            Remaining Stock = MAX(0, Initial − Sold) per SKU. Totals are sums across all SKUs.
-            Undefined SKU Sales = orders where the SKU doesn't exist in the inventory table.
+            <div class="sidebar-user-name">Loading…</div>
+            <div class="sidebar-user-role">—</div>
           </div>
         </div>
+        <button class="btn btn-ghost btn-wide btn-sm" id="logout-btn">Sign out</button>
       </div>
+    </aside>
 
-      <!-- ──────────────────────── BOX LOOKUP PAGE -->
-      <div class="page" id="page-box-lookup">
-        <div style="margin-bottom:20px">
-          <h2 style="font-family:var(--font-title);font-size:20px;margin-bottom:4px">Box Lookup</h2>
-          <p style="font-size:13px;color:var(--txt-3)">Search by SKU, UPC, or Part Number. Returns all linked records with live stock calculations.</p>
-        </div>
-        <div class="card" style="margin-bottom:16px">
-          <div style="display:flex;gap:10px;align-items:center">
-            <input id="box-search-input" class="form-input" style="max-width:420px"
-              placeholder="Enter SKU, UPC, or part number…" autocomplete="off">
-            <button id="box-search-btn" class="btn btn-primary">Search</button>
-            <button id="btn-clear-box-search" class="btn btn-ghost btn-sm" onclick="document.getElementById('box-search-input').value='';document.getElementById('box-results').innerHTML=''">Clear</button>
-          </div>
-          <p style="font-size:11.5px;color:var(--txt-4);margin-top:8px">
-            Examples: <code style="font-size:11px">ARA10-TUY-OIU-037256385148</code> · <code style="font-size:11px">037256385148</code> · <code style="font-size:11px">TUY-OIU</code>
-          </p>
-        </div>
-        <div id="box-results"></div>
-      </div>
+    <!-- Main wrapper -->
+    <div class="main-wrapper">
 
-      <!-- ──────────────────────── ORDERS PAGE -->
-      <div class="page" id="page-orders">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Orders</h2>
-            <div class="section-sub">All uploaded orders. Undefined SKU rows are highlighted.</div>
+      <!-- Topbar -->
+      <header class="topbar">
+        <div id="topbar-title" class="topbar-title">Dashboard</div>
+        <div class="topbar-actions">
+          <button class="btn btn-ghost btn-icon btn-sm" id="topbar-refresh-btn" title="Refresh">↻</button>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--txt-4)">
+            <span class="status-dot online"></span>
+            <span id="last-sync-time">Connected</span>
           </div>
         </div>
-        <div class="card" style="padding:0;overflow:hidden">
-          <div class="filter-bar">
-            <input id="filter-order-search" class="form-input" style="max-width:200px" placeholder="Search order ID or SKU…">
-            <select id="filter-platform" class="form-select" style="max-width:160px">
-              <option value="">All Platforms</option>
-            </select>
-            <input id="filter-date-from" type="date" class="form-input" style="max-width:150px" title="From date">
-            <input id="filter-date-to"   type="date" class="form-input" style="max-width:150px" title="To date">
-            <button id="btn-filter-orders" class="btn btn-primary btn-sm">Apply</button>
-            <button id="btn-clear-orders"  class="btn btn-secondary btn-sm">Clear</button>
-          </div>
-          <div class="table-wrapper" style="border:none;border-radius:0">
-            <table class="data-table">
-              <thead><tr>
-                <th>Order ID</th><th>Date</th><th>SKU</th><th>UPC</th>
-                <th class="num">Qty Sold</th><th>Platform</th><th>Box</th><th>Source File</th>
-              </tr></thead>
-              <tbody id="orders-tbody"><tr><td colspan="8">
-                <div class="empty-state"><div class="spin"></div></div>
-              </td></tr></tbody>
-            </table>
-          </div>
-          <div id="orders-pagination-wrap"></div>
-        </div>
-      </div>
+      </header>
 
-      <!-- ──────────────────────── UPLOADS PAGE -->
-      <div class="page" id="page-uploads">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Uploads</h2>
-            <div class="section-sub">Upload inventory and orders data using the provided templates.</div>
+      <!-- Page content -->
+      <main class="page-content">
+
+        <!-- ── Dashboard page ──────────────────────────────── -->
+        <div id="page-dashboard" class="page active">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Dashboard</div>
+              <div class="section-sub">Real-time inventory overview</div>
+            </div>
           </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
-          <!-- Inventory Upload Card -->
-          <div class="card">
+          <div id="kpi-grid" class="kpi-grid"></div>
+          <div class="card" style="margin-top:8px">
             <div class="card-header">
-              <div class="card-title">📦 Inventory Upload</div>
-              <button id="btn-dl-inv-template" class="btn btn-secondary btn-sm">⬇ Template</button>
+              <div class="card-title">Recent Activity</div>
             </div>
-            <p style="font-size:12px;color:var(--txt-3);margin-bottom:16px">
-              Required columns: <code style="font-size:11px">sku, box_number, part_number, upc, quantity, date_added</code>
-            </p>
-            <div id="inv-drop-zone" class="drop-zone">
-              <input type="file" id="inv-file-input" accept=".csv,.xlsx,.xls">
-              <div class="drop-zone-icon">📄</div>
-              <div class="drop-zone-text">Drop file here or click to browse</div>
-              <div class="drop-zone-sub">Accepts .csv and .xlsx files · Max 10,000 rows</div>
-              <div class="file-name"></div>
-            </div>
-            <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
-              <button id="btn-upload-inventory" class="btn btn-primary">Upload Inventory</button>
-            </div>
-          </div>
-
-          <!-- Orders Upload Card -->
-          <div class="card">
-            <div class="card-header">
-              <div class="card-title">🛒 Orders Upload</div>
-              <button id="btn-dl-ord-template" class="btn btn-secondary btn-sm">⬇ Template</button>
-            </div>
-            <p style="font-size:12px;color:var(--txt-3);margin-bottom:16px">
-              Required columns: <code style="font-size:11px">order_id, order_date, sku, upc, quantity_sold</code>.
-              Duplicate <code style="font-size:11px">order_id</code> values are automatically skipped.
-            </p>
-            <div id="ord-drop-zone" class="drop-zone">
-              <input type="file" id="ord-file-input" accept=".csv,.xlsx,.xls">
-              <div class="drop-zone-icon">📋</div>
-              <div class="drop-zone-text">Drop file here or click to browse</div>
-              <div class="drop-zone-sub">Accepts .csv and .xlsx files · Max 10,000 rows</div>
-              <div class="file-name"></div>
-            </div>
-            <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
-              <button id="btn-upload-orders" class="btn btn-primary">Upload Orders</button>
-            </div>
+            <div id="recent-activity-list"></div>
           </div>
         </div>
 
-        <!-- Upload History -->
-        <div class="card" style="padding:0;overflow:hidden">
-          <div class="card-header" style="padding:16px 20px;border-bottom:1px solid var(--border)">
-            <div class="card-title">Upload History</div>
-            <button class="btn btn-ghost btn-sm" onclick="Uploads.loadHistory()">↻ Refresh</button>
-          </div>
-          <div class="table-wrapper" style="border:none;border-radius:0">
-            <table class="data-table">
-              <thead><tr>
-                <th>Date</th><th>Type</th><th>Filename</th><th>Status</th>
-                <th class="num">Rows</th><th>Errors</th>
-              </tr></thead>
-              <tbody id="upload-history-tbody"><tr><td colspan="6">
-                <div class="empty-state"><div class="spin"></div></div>
-              </td></tr></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- ──────────────────────── PERFORMANCE PAGE -->
-      <div class="page" id="page-performance">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Performance Analytics</h2>
-            <div class="section-sub">Sales trends, platform breakdown, and top SKUs.</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <label style="font-size:13px;color:var(--txt-3)">Trailing weeks:</label>
-            <select id="perf-weeks-select" class="form-select" style="width:90px">
-              <option value="4">4 wks</option>
-              <option value="8">8 wks</option>
-              <option value="12" selected>12 wks</option>
-              <option value="26">26 wks</option>
-              <option value="52">52 wks</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Weekly chart -->
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-title" style="margin-bottom:16px">Weekly Sales Trend</div>
-          <div id="chart-weekly-wrap" class="chart-wrapper">
-            <canvas id="chart-weekly"></canvas>
-          </div>
-        </div>
-
-        <!-- Platform + Top SKUs -->
-        <div class="chart-grid">
-          <div class="card">
-            <div class="card-title" style="margin-bottom:16px">Platform Breakdown</div>
-            <div id="chart-platforms-wrap" class="chart-wrapper">
-              <canvas id="chart-platforms"></canvas>
+        <!-- ── Performance page ────────────────────────────── -->
+        <div id="page-performance" class="page">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Performance</div>
+              <div class="section-sub">Sales trends and platform breakdown</div>
+            </div>
+            <div class="section-actions">
+              <select class="form-select" id="perf-weeks-select" style="width:auto">
+                <option value="4">Last 4 weeks</option>
+                <option value="8">Last 8 weeks</option>
+                <option value="12" selected>Last 12 weeks</option>
+                <option value="24">Last 24 weeks</option>
+                <option value="52">Last 52 weeks</option>
+              </select>
             </div>
           </div>
-          <div class="card">
-            <div class="card-header">
-              <div class="card-title">Top 20 SKUs</div>
-            </div>
-            <div class="table-wrapper">
-              <table class="data-table">
-                <thead><tr><th>SKU</th><th class="num">Units Sold</th><th>Share</th></tr></thead>
-                <tbody id="top-skus-tbody">
-                  <tr><td colspan="3"><div class="empty-state"><div class="spin"></div></div></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <!-- ──────────────────────── SETTINGS PAGE -->
-      <div class="page" id="page-settings">
-        <div class="section-header">
-          <h2 class="section-title">Settings</h2>
-        </div>
-        <div class="settings-tabs">
-          <button class="tab-btn active" data-settings-tab="users">User Management</button>
-          <button class="tab-btn" data-settings-tab="logs">Debug Logs</button>
-          <button class="tab-btn" data-settings-tab="status">System Status</button>
-        </div>
-
-        <!-- Users panel -->
-        <div id="settings-users" class="settings-panel active">
-          <div class="card" style="padding:0;overflow:hidden">
-            <div class="card-header" style="padding:16px 20px;border-bottom:1px solid var(--border)">
-              <div class="card-title">Users</div>
-              <button id="btn-add-user" class="btn btn-primary btn-sm" data-role="admin">+ Add User</button>
+          <div id="perf-container" style="position:relative">
+            <div class="card" style="margin-bottom:16px">
+              <div class="card-header"><div class="card-title">Weekly Sales</div></div>
+              <div class="chart-wrap"><canvas id="chart-weekly"></canvas></div>
             </div>
-            <div class="table-wrapper" style="border:none;border-radius:0">
-              <table class="data-table">
-                <thead><tr>
-                  <th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th>
-                </tr></thead>
-                <tbody id="users-tbody">
-                  <tr><td colspan="5">
-                    <div class="empty-state"><div class="spin"></div></div>
-                  </td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
 
-        <!-- Debug logs panel -->
-        <div id="settings-logs" class="settings-panel">
-          <div class="card" style="padding:0;overflow:hidden">
-            <div class="card-header" style="padding:16px 20px;border-bottom:1px solid var(--border)">
-              <div class="card-title">Debug Logs</div>
-              <div style="display:flex;gap:8px;align-items:center">
-                <select id="log-filter-module" class="form-select" style="width:130px">
-                  <option value="">All Modules</option>
-                  <option>Auth</option><option>BigQuery</option><option>Inventory</option>
-                  <option>Orders</option><option>Uploads</option><option>Routes</option><option>Users</option>
-                </select>
-                <select id="log-filter-status" class="form-select" style="width:110px">
-                  <option value="">All Status</option>
-                  <option>success</option><option>error</option><option>warning</option><option>info</option>
-                </select>
-                <button id="btn-refresh-logs" class="btn btn-secondary btn-sm">↻ Refresh</button>
+            <div class="chart-grid" style="margin-bottom:16px">
+              <div class="card">
+                <div class="card-header"><div class="card-title">Sales by Platform</div></div>
+                <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+                  <div style="flex:1;min-width:180px;height:220px"><canvas id="chart-platform"></canvas></div>
+                  <div id="platform-legend" style="flex:1;min-width:140px"></div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header"><div class="card-title">Top SKUs</div></div>
+                <div id="top-skus-list"></div>
               </div>
             </div>
-            <div class="table-wrapper" style="border:none;border-radius:0">
+
+            <div class="card card-table">
+              <div class="card-header" style="padding:16px 20px 0">
+                <div class="card-title">Monthly Summary</div>
+              </div>
+              <div class="table-wrap" style="border:none;margin-top:12px">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th class="num">Orders</th>
+                      <th class="num">Units Sold</th>
+                      <th>Top Platform</th>
+                    </tr>
+                  </thead>
+                  <tbody id="monthly-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Box Lookup page ─────────────────────────────── -->
+        <div id="page-lookup" class="page">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Box Lookup</div>
+              <div class="section-sub">Search by SKU, UPC, or box number</div>
+            </div>
+          </div>
+          <div class="card" style="margin-bottom:16px">
+            <div style="display:flex;gap:8px">
+              <div style="position:relative;flex:1">
+                <span class="search-icon" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt-4)">🔍</span>
+                <input class="form-input search-input" id="box-search-input"
+                  placeholder="Enter SKU, UPC, box number, or part number…" autocomplete="off">
+              </div>
+              <button class="btn btn-primary" id="box-search-btn">Search</button>
+            </div>
+            <div class="form-hint" style="margin-top:8px">Format: ARA{box}-{part}-{upc} · e.g. ARA001-123-012345678901</div>
+          </div>
+          <div id="box-result"></div>
+        </div>
+
+        <!-- ── Inventory List page ─────────────────────────── -->
+        <div id="page-inventory" class="page">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Inventory List</div>
+              <div class="section-sub">All inventory records with live stock calculations</div>
+            </div>
+          </div>
+          <div class="card card-table" style="padding:0">
+            <div class="filter-bar">
+              <div style="position:relative;flex:1;min-width:200px">
+                <span class="search-icon" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt-4)">🔍</span>
+                <input class="form-input search-input" id="inventory-search" placeholder="Search SKU, UPC, box number…">
+              </div>
+              <button class="btn btn-primary btn-sm" id="inventory-search-btn">Search</button>
+            </div>
+            <div class="table-wrap" style="border:none;border-radius:0">
               <table class="data-table">
-                <thead><tr>
-                  <th>Timestamp</th><th>Module</th><th>Action</th><th>Status</th><th>Details</th>
-                </tr></thead>
-                <tbody id="logs-tbody">
-                  <tr><td colspan="5">
-                    <div class="empty-state"><div class="spin"></div></div>
-                  </td></tr>
-                </tbody>
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Box #</th>
+                    <th>Part #</th>
+                    <th>UPC</th>
+                    <th class="num">Initial Stock</th>
+                    <th class="num">Units Sold</th>
+                    <th class="num">Remaining</th>
+                    <th>Date Added</th>
+                  </tr>
+                </thead>
+                <tbody id="inventory-tbody"></tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <span class="pagination-info" id="inventory-info"></span>
+              <div id="inventory-pagination"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Orders page ─────────────────────────────────── -->
+        <div id="page-orders" class="page">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Orders</div>
+              <div class="section-sub">Sales order records</div>
+            </div>
+            <div class="section-actions">
+              <button class="btn btn-secondary btn-sm" id="orders-export">Export CSV</button>
+            </div>
+          </div>
+          <div class="card card-table" style="padding:0">
+            <div class="filter-bar" style="flex-wrap:wrap">
+              <div style="position:relative;flex:1;min-width:180px">
+                <span class="search-icon" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt-4)">🔍</span>
+                <input class="form-input search-input" id="orders-search" placeholder="Order ID or SKU…">
+              </div>
+              <select class="form-select" id="filter-platform" style="width:160px">
+                <option value="">All Platforms</option>
+              </select>
+              <select class="form-select" id="filter-status" style="width:140px">
+                <option value="">All Status</option>
+                <option value="matched">Matched</option>
+                <option value="undefined">Undefined SKU</option>
+              </select>
+              <input class="form-input" id="filter-date-from" type="date" style="width:145px" title="From date">
+              <input class="form-input" id="filter-date-to"   type="date" style="width:145px" title="To date">
+              <button class="btn btn-primary btn-sm" id="orders-apply-filters">Apply</button>
+              <button class="btn btn-ghost btn-sm" id="orders-reset-filters">Reset</button>
+            </div>
+            <div class="table-wrap" style="border:none;border-radius:0">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Order ID</th>
+                    <th>Date</th>
+                    <th>SKU</th>
+                    <th>UPC</th>
+                    <th>Platform</th>
+                    <th class="num">Qty Sold</th>
+                    <th>Shipped From</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="orders-tbody"></tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <span class="pagination-info" id="orders-info"></span>
+              <div id="orders-pagination"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Uploads page ────────────────────────────────── -->
+        <div id="page-uploads" class="page" data-min-role="manager">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Upload Data</div>
+              <div class="section-sub">Import inventory and order CSV / Excel files</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;margin-bottom:24px">
+
+            <!-- Inventory upload -->
+            <div class="upload-card">
+              <div class="upload-card-header">
+                <div class="upload-card-title">📦 Inventory Data</div>
+                <a href="#" class="btn btn-ghost btn-sm" data-download-template="inventory">Download template</a>
+              </div>
+              <div class="upload-card-desc">
+                Columns: sku, box_number, part_number, upc, quantity, date_added, notes
+              </div>
+              <div class="drop-zone" id="drop-zone-inventory">
+                <input type="file" id="file-input-inventory" accept=".csv,.xlsx,.xls">
+                <div class="drop-icon">📦</div>
+                <div class="drop-text">Drop file here or click to browse</div>
+                <div class="drop-sub">CSV, XLSX, XLS · Max 10 MB</div>
+                <div class="drop-file" style="display:none"></div>
+              </div>
+              <div class="progress-wrap" id="progress-inventory" style="display:none">
+                <div class="progress-bar"></div>
+              </div>
+              <div id="upload-status-inventory"></div>
+              <div class="upload-actions">
+                <button class="btn btn-secondary btn-sm" id="clear-btn-inventory">Clear</button>
+                <button class="btn btn-primary btn-sm" id="upload-btn-inventory" disabled>Upload</button>
+              </div>
+            </div>
+
+            <!-- Orders upload -->
+            <div class="upload-card">
+              <div class="upload-card-header">
+                <div class="upload-card-title">🛒 Order Data</div>
+                <a href="#" class="btn btn-ghost btn-sm" data-download-template="orders">Download template</a>
+              </div>
+              <div class="upload-card-desc">
+                Columns: order_id, order_date, sku, upc, quantity_sold, platform, source_file, shipped_from_box
+              </div>
+              <div class="drop-zone" id="drop-zone-orders">
+                <input type="file" id="file-input-orders" accept=".csv,.xlsx,.xls">
+                <div class="drop-icon">📋</div>
+                <div class="drop-text">Drop file here or click to browse</div>
+                <div class="drop-sub">CSV, XLSX, XLS · Max 10 MB</div>
+                <div class="drop-file" style="display:none"></div>
+              </div>
+              <div class="progress-wrap" id="progress-orders" style="display:none">
+                <div class="progress-bar"></div>
+              </div>
+              <div id="upload-status-orders"></div>
+              <div class="upload-actions">
+                <button class="btn btn-secondary btn-sm" id="clear-btn-orders">Clear</button>
+                <button class="btn btn-primary btn-sm" id="upload-btn-orders" disabled>Upload</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Upload history -->
+          <div class="card card-table" style="padding:0">
+            <div class="filter-bar">
+              <div class="card-title" style="flex:1">Upload History</div>
+              <select class="form-select" id="history-type-filter" style="width:160px">
+                <option value="">All Types</option>
+                <option value="inventory">Inventory</option>
+                <option value="orders">Orders</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" id="history-refresh-btn">↻ Refresh</button>
+            </div>
+            <div class="table-wrap" style="border:none;border-radius:0">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>File</th>
+                    <th class="num">Imported</th>
+                    <th class="num">Skipped</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="upload-history-tbody"></tbody>
               </table>
             </div>
           </div>
         </div>
 
-        <!-- System status panel -->
-        <div id="settings-status" class="settings-panel">
-          <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
-            <button id="btn-system-check" class="btn btn-secondary">↻ Run Status Check</button>
+        <!-- ── Settings page ───────────────────────────────── -->
+        <div id="page-settings" class="page" data-min-role="admin">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Settings</div>
+              <div class="section-sub">Users, system status, and account</div>
+            </div>
           </div>
-          <div id="system-status-content">
-            <div class="empty-state">
-              <div class="empty-state-icon">📡</div>
-              <div class="empty-state-text">Click "Run Status Check" to test connectivity</div>
+
+          <div id="settings-tab-list" class="tab-list">
+            <button class="tab-btn active" data-tab="users">Users</button>
+            <button class="tab-btn" data-tab="profile">My Profile</button>
+            <button class="tab-btn" data-tab="system">System Status</button>
+            <button class="tab-btn" data-tab="logs">Logs</button>
+          </div>
+
+          <!-- Users tab -->
+          <div id="tab-users" class="tab-panel active">
+            <div class="card card-table" style="padding:0">
+              <div class="filter-bar">
+                <div class="card-title" style="flex:1">User Management</div>
+                <button class="btn btn-primary btn-sm" id="add-user-btn">+ Add User</button>
+              </div>
+              <div class="table-wrap" style="border:none;border-radius:0">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="users-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Profile tab -->
+          <div id="tab-profile" class="tab-panel">
+            <div class="card" style="max-width:440px">
+              <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+                <div id="profile-avatar" style="width:56px;height:56px;border-radius:50%;background:var(--primary-100);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:var(--primary-text)">?</div>
+                <div>
+                  <div id="profile-name"  style="font-size:17px;font-weight:700;color:var(--txt-1)">—</div>
+                  <div id="profile-email" style="font-size:13px;color:var(--txt-3)">—</div>
+                  <div id="profile-role"  style="font-size:12px;color:var(--txt-4);margin-top:2px">—</div>
+                </div>
+              </div>
+              <div class="info-banner">
+                <span class="info-banner-icon">ℹ</span>
+                <span>To change your password or email, contact an administrator.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- System Status tab -->
+          <div id="tab-system" class="tab-panel">
+            <div class="card" style="max-width:560px">
+              <div class="card-header">
+                <div class="card-title">System Status</div>
+              </div>
+              <div id="system-status-content">
+                <div style="display:flex;justify-content:center;padding:24px"><div class="spin"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Logs tab -->
+          <div id="tab-logs" class="tab-panel">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Application Logs</div></div>
+              <div id="logs-content">
+                <div style="display:flex;justify-content:center;padding:24px"><div class="spin"></div></div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-    </main><!-- /page-content -->
-  </div><!-- /main-wrapper -->
-</div><!-- /app-shell -->
+      </main>
+    </div>
+  </div>
 
-<!-- Toast container -->
-<div id="toast-container"></div>
+  <!-- Toast container -->
+  <div id="toast-container"></div>
 
-<!-- Modal container (dynamically populated) -->
-<div id="modal-overlay" style="display:none"></div>
+  <!-- External libraries (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- ═══════════════════════════════════════════════ JAVASCRIPT -->
-<script>
-'use strict';
-// ──────────────────────────────────────── UTILITIES
-const Utils = {
-  fmt: {
-    number(n)  { return Number(n||0).toLocaleString(); },
-    date(str)  {
-      if(!str) return '—';
-      const d=new Date(str); return isNaN(d)?str:d.toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'});
-    },
-    datetime(str) {
-      if(!str) return '—';
-      const d=new Date(str); return isNaN(d)?str:d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-    },
-    fileSize(b){ return b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB'; }
-  },
-  el(id){ return document.getElementById(id); },
-  show(el){ if(typeof el==='string')el=Utils.el(el); if(el)el.style.display=''; },
-  hide(el){ if(typeof el==='string')el=Utils.el(el); if(el)el.style.display='none'; },
-  setText(id,t){ const e=Utils.el(id); if(e)e.textContent=t; },
-  escapeHtml(s){
-    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  },
-  async fileToCSV(file){
-    const ext=file.name.split('.').pop().toLowerCase();
-    if(ext==='csv'){
-      return new Promise((res,rej)=>{
-        const r=new FileReader();
-        r.onload=e=>res(e.target.result);
-        r.onerror=()=>rej(new Error('Failed to read file'));
-        r.readAsText(file);
-      });
-    }
-    if(ext==='xlsx'||ext==='xls'){
-      if(typeof XLSX==='undefined') throw new Error('Excel parser not loaded. Try a .csv file.');
-      return new Promise((res,rej)=>{
-        const r=new FileReader();
-        r.onload=e=>{
-          try{
-            const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
-            const ws=wb.Sheets[wb.SheetNames[0]];
-            res(XLSX.utils.sheet_to_csv(ws));
-          }catch(err){rej(new Error('Excel parse error: '+err.message));}
-        };
-        r.onerror=()=>rej(new Error('Failed to read file'));
-        r.readAsArrayBuffer(file);
-      });
-    }
-    throw new Error('Unsupported file format. Use .csv or .xlsx');
-  }
-};
+  <!-- App modules — order matters: utilities first, then API/auth, then features, app last -->
+  <script src="js/utilities.js"></script>
+  <script src="js/notifications.js"></script>
+  <script src="js/loading.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/inventory.js"></script>
+  <script src="js/orders.js"></script>
+  <script src="js/uploads.js"></script>
+  <script src="js/app.js"></script>
 
-// ──────────────────────────────────────── NOTIFICATIONS
-const Notify = {
-  _get(){ return Utils.el('toast-container'); },
-  _show(type,title,message,dur=4000){
-    const icons={success:'✓',error:'✕',warning:'⚠',info:'ℹ'};
-    const t=document.createElement('div');
-    t.className='toast toast-'+type;
-    t.innerHTML=`<span class="toast-icon">${icons[type]||'ℹ'}</span>
-      <div>
-        <div class="toast-title">${Utils.escapeHtml(title)}</div>
-        ${message?'<div class="toast-msg">'+Utils.escapeHtml(message)+'</div>':''}
-      </div>`;
-    t.onclick=()=>t.remove();
-    this._get()?.appendChild(t);
-    setTimeout(()=>{t.style.animation='fadeOut .3s forwards';setTimeout(()=>t.remove(),350);},dur);
-  },
-  success(t,m){this._show('success',t,m);},
-  error(t,m)  {this._show('error',t,m,6000);},
-  warning(t,m){this._show('warning',t,m,5000);},
-  info(t,m)   {this._show('info',t,m);},
-};
-
-// ──────────────────────────────────────── LOADING
-const Loading = {
-  populateKPI(id,value,sub){
-    const card=Utils.el(id); if(!card) return;
-    const vEl=card.querySelector('.kpi-value');
-    const sEl=card.querySelector('.kpi-sub');
-    if(vEl) vEl.textContent=value;
-    if(sEl&&sub!==undefined) sEl.textContent=sub;
-  },
-  tableSkeletons(tbodyId,cols=5,rows=8){
-    const tb=Utils.el(tbodyId); if(!tb) return;
-    const cells=Array.from({length:cols},()=>
-      `<td><div class="skel skel-line" style="width:${60+Math.random()*60|0}%"></div></td>`).join('');
-    tb.innerHTML=Array.from({length:rows},()=>`<tr>${cells}</tr>`).join('');
-  },
-  btnLoading(btn,loading){
-    if(!btn) return;
-    if(loading){ btn.dataset.orig=btn.innerHTML; btn.classList.add('btn-loading'); btn.disabled=true; }
-    else{ btn.classList.remove('btn-loading'); btn.disabled=false; if(btn.dataset.orig){btn.innerHTML=btn.dataset.orig;delete btn.dataset.orig;} }
-  }
-};
-
-// ──────────────────────────────────────── MODAL
-const Modal = {
-  show(title,bodyHtml,buttons=[]){
-    let overlay=Utils.el('modal-overlay');
-    const btnHtml=buttons.map(b=>`<button class="btn ${b.cls}" data-action="${b.action}">${Utils.escapeHtml(b.label)}</button>`).join('');
-    overlay.style.display='flex';
-    overlay.innerHTML=`<div class="modal" style="animation:scaleIn .18s var(--ease)">
-      <div class="modal-header">
-        <div class="modal-title">${Utils.escapeHtml(title)}</div>
-        <button class="btn btn-ghost btn-icon" onclick="Modal.close()" style="font-size:18px">×</button>
-      </div>
-      <div class="modal-body">${bodyHtml}</div>
-      <div class="modal-footer">${btnHtml}</div>
-    </div>`;
-    buttons.forEach(b=>{
-      if(b.action==='cancel') overlay.querySelector(`[data-action="cancel"]`)?.addEventListener('click',Modal.close);
-      else if(b.onClick)      overlay.querySelector(`[data-action="${b.action}"]`)?.addEventListener('click',b.onClick);
-    });
-    overlay.addEventListener('click',e=>{if(e.target===overlay)Modal.close();},{once:true});
-  },
-  close(){ const o=Utils.el('modal-overlay'); if(o) o.style.display='none'; }
-};
-
-// ──────────────────────────────────────── AUTH
-const Auth = {
-  _token:null, _user:null,
-  getToken(){ return this._token||sessionStorage.getItem('pm_token')||''; },
-  getUser(){ return this._user||JSON.parse(sessionStorage.getItem('pm_user')||'null'); },
-  isLoggedIn(){ return !!this.getToken(); },
-  async init(){
-    const token=this.getToken(), user=this.getUser();
-    if(token&&user){ this._token=token; this._user=user; return true; }
-    return false;
-  },
-  async login(email,password){
-    const result=await new Promise((res,rej)=>{
-      google.script.run
-        .withSuccessHandler(res)
-        .withFailureHandler(rej)
-        .callAPI('login',{email,password},'');
-    });
-    if(!result.success) throw new Error(result.error||'Login failed');
-    this._token=result.data.token; this._user=result.data.user;
-    sessionStorage.setItem('pm_token',this._token);
-    sessionStorage.setItem('pm_user',JSON.stringify(this._user));
-    return result.data.user;
-  },
-  async logout(){
-    try{ await API.logout(); }catch(_){}
-    this._token=null; this._user=null;
-    sessionStorage.removeItem('pm_token'); sessionStorage.removeItem('pm_user');
-    App.showLogin();
-  },
-  handleSessionExpired(){
-    this._token=null; this._user=null;
-    sessionStorage.removeItem('pm_token'); sessionStorage.removeItem('pm_user');
-    Notify.warning('Session Expired','Please sign in again.');
-    App.showLogin();
-  },
-  hasRole(minRole){ const h={admin:3,manager:2,viewer:1},u=this.getUser(); return u?(h[u.role]||0)>=(h[minRole]||0):false; },
-  isAdmin()  { return this.hasRole('admin');   },
-  isManager(){ return this.hasRole('manager'); },
-};
-
-// ──────────────────────────────────────── API
-const API = {
-  call(action,data={}){
-    return new Promise((res,rej)=>{
-      google.script.run
-        .withSuccessHandler(r=>{
-          if(!r) return rej(new Error('Empty response'));
-          if(r.error==='UNAUTHORIZED'){ Auth.handleSessionExpired(); return rej(new Error('UNAUTHORIZED')); }
-          if(r.error==='FORBIDDEN'){ Notify.error('Access Denied',r.message||'Insufficient permissions'); return rej(new Error('FORBIDDEN')); }
-          if(r.success===false) return rej(new Error(r.error||'Server error'));
-          res(r.data!==undefined?r.data:r);
-        })
-        .withFailureHandler(e=>rej(new Error(e?e.message||String(e):'Server error')))
-        .callAPI(action,data,Auth.getToken());
-    });
-  },
-  getDashboardKPIs:    ()           => API.call('getDashboardKPIs'),
-  getInventory:        (p,ps,s)     => API.call('getInventory',{page:p,pageSize:ps,search:s}),
-  searchBox:           (q)          => API.call('searchBox',{query:q}),
-  getOrders:           (p,ps,f)     => API.call('getOrders',{page:p,pageSize:ps,filters:f}),
-  getOrderStats:       ()           => API.call('getOrderStats'),
-  getPlatforms:        ()           => API.call('getPlatforms'),
-  getPerformance:      (w)          => API.call('getPerformance',{weeks:w}),
-  uploadInventory:     (csv,name)   => API.call('uploadInventory',{csvText:csv,filename:name}),
-  uploadOrders:        (csv,name)   => API.call('uploadOrders',{csvText:csv,filename:name}),
-  getUploadHistory:    ()           => API.call('getUploadHistory',{}),
-  getValidationErrors: (id)         => API.call('getValidationErrors',{uploadId:id}),
-  getUsers:            ()           => API.call('getUsers'),
-  createUser:          (d)          => API.call('createUser',d),
-  updateUser:          (id,u)       => API.call('updateUser',{userId:id,updates:u}),
-  deleteUser:          (id)         => API.call('deleteUser',{userId:id}),
-  getDebugLogs:        (l,m,s)      => API.call('getDebugLogs',{limit:l,module:m,status:s}),
-  getSystemStatus:     ()           => API.call('getSystemStatus'),
-  logout:              ()           => API.call('logout'),
-};
-
-// ──────────────────────────────────────── DASHBOARD (HOME)
-const Dashboard = {
-  async load(){
-    // Reset to skeleton state before loading
-    document.querySelectorAll('.kpi-card .kpi-value').forEach(el=>{
-      el.innerHTML='<div class="skel skel-line" style="width:80px;height:26px"></div>';
-    });
-    try{
-      const kpis=await API.getDashboardKPIs();
-      Dashboard.render(kpis);
-    }catch(e){
-      Notify.error('Dashboard Error',e.message);
-      document.querySelectorAll('.kpi-card .kpi-value').forEach(el=>el.textContent='—');
-    }
-  },
-  render(k){
-    const f=Utils.fmt.number;
-    Loading.populateKPI('kpi-total-initial', f(k.totalInitialStock), 'units across all SKUs');
-    Loading.populateKPI('kpi-units-sold',    f(k.unitsSold),         'fulfilled orders');
-    Loading.populateKPI('kpi-phantom-units', f(k.phantomUnits),      'oversold units');
-    Loading.populateKPI('kpi-undefined-sku', f(k.undefinedSkuSales), 'unmapped SKU units');
-    Loading.populateKPI('kpi-remaining-stock',f(k.remainingStock),   'units available');
-    Loading.populateKPI('kpi-total-upcs',    f(k.totalUpcs),         'unique UPCs');
-    Loading.populateKPI('kpi-in-stock',      f(k.inStockCount),      'SKUs with stock > 0');
-    Loading.populateKPI('kpi-sold-out',      f(k.soldOutCount),      'SKUs fully depleted');
-    // Dynamic accent for warning cards
-    if(k.phantomUnits>0)     Utils.el('kpi-phantom-units')?.classList.replace('accent-orange','accent-red');
-    if(k.undefinedSkuSales>0)Utils.el('kpi-undefined-sku')?.classList.replace('accent-gray','accent-orange');
-  }
-};
-
-// ──────────────────────────────────────── BOX LOOKUP
-const BoxLookup = {
-  _q:'',
-  init(){
-    const inp=Utils.el('box-search-input'), btn=Utils.el('box-search-btn');
-    if(!inp||btn._bound) return;
-    btn._bound=true;
-    btn.addEventListener('click',()=>BoxLookup.search());
-    inp.addEventListener('keydown',e=>{if(e.key==='Enter')BoxLookup.search();});
-  },
-  async search(){
-    const inp=Utils.el('box-search-input'), q=inp?.value.trim();
-    if(!q){Notify.warning('Search Required','Enter a SKU, UPC, or part number.');return;}
-    this._q=q;
-    const res=Utils.el('box-results');
-    if(res) res.innerHTML='<div class="empty-state"><div class="spin"></div><div class="empty-state-text">Searching…</div></div>';
-    try{
-      const data=await API.searchBox(q);
-      BoxLookup.render(data.items||[]);
-    }catch(e){
-      Notify.error('Search Failed',e.message);
-      if(res) res.innerHTML=`<div class="empty-state"><div class="empty-state-icon">⚠</div><div class="empty-state-text">${Utils.escapeHtml(e.message)}</div></div>`;
-    }
-  },
-  render(items){
-    const el=Utils.el('box-results'); if(!el) return;
-    if(!items.length){
-      el.innerHTML='<div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">No results found</div><div class="empty-state-sub">Try a different SKU, UPC, or part number</div></div>';
-      return;
-    }
-    const rows=items.map(r=>{
-      const rem=Number(r.remaining_stock), ph=Number(r.phantom_units);
-      const remCls=rem>0?'stock-positive':'stock-zero';
-      return `<tr>
-        <td><code style="font-size:11.5px">${Utils.escapeHtml(r.sku)}</code></td>
-        <td style="font-weight:600">${Utils.escapeHtml(r.box_number)}</td>
-        <td>${Utils.escapeHtml(r.part_number)}</td>
-        <td><code style="font-size:11.5px">${Utils.escapeHtml(r.upc)}</code></td>
-        <td class="num">${Utils.fmt.number(r.initial_stock)}</td>
-        <td class="num">${Utils.fmt.number(r.units_sold)}</td>
-        <td class="num"><span class="${remCls}">${Utils.fmt.number(r.remaining_stock)}</span></td>
-        <td class="num">${ph>0?`<span class="stock-zero">${Utils.fmt.number(ph)}</span>`:'—'}</td>
-      </tr>`;
-    }).join('');
-    el.innerHTML=`
-      <div class="table-wrapper">
-        <table class="data-table">
-          <thead><tr>
-            <th>SKU</th><th>Box</th><th>Part Number</th><th>UPC</th>
-            <th class="num">Initial Stock</th><th class="num">Sold</th>
-            <th class="num">Remaining</th><th class="num">Phantom</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-      <div style="padding:10px 16px;font-size:12px;color:var(--txt-3)">
-        ${items.length} result${items.length!==1?'s':''} for "<strong>${Utils.escapeHtml(this._q)}</strong>"
-      </div>`;
-  }
-};
-
-// ──────────────────────────────────────── ORDERS
-const Orders = {
-  _page:1, _size:50, _filters:{}, _initDone:false,
-  async init(){
-    if(!Orders._initDone){ await Orders._loadPlatforms(); Orders._bindFilters(); Orders._initDone=true; }
-    Orders.load();
-  },
-  async _loadPlatforms(){
-    try{
-      const d=await API.getPlatforms();
-      const sel=Utils.el('filter-platform');
-      if(sel&&d.platforms) d.platforms.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;sel.appendChild(o);});
-    }catch(_){}
-  },
-  _bindFilters(){
-    Utils.el('btn-filter-orders')?.addEventListener('click',()=>{
-      Orders._filters={
-        search:  Utils.el('filter-order-search')?.value.trim()||'',
-        platform:Utils.el('filter-platform')?.value||'',
-        dateFrom:Utils.el('filter-date-from')?.value||'',
-        dateTo:  Utils.el('filter-date-to')?.value||'',
-      };
-      Orders._page=1; Orders.load();
-    });
-    Utils.el('btn-clear-orders')?.addEventListener('click',()=>{
-      ['filter-order-search','filter-platform','filter-date-from','filter-date-to']
-        .forEach(id=>{const e=Utils.el(id);if(e)e.value='';});
-      Orders._filters={}; Orders._page=1; Orders.load();
-    });
-  },
-  async load(){
-    Loading.tableSkeletons('orders-tbody',8,10);
-    try{
-      const d=await API.getOrders(Orders._page,Orders._size,Orders._filters);
-      Orders.render(d.items||[],d.pagination||{});
-    }catch(e){
-      Notify.error('Orders Error',e.message);
-    }
-  },
-  render(items,p){
-    const tb=Utils.el('orders-tbody'); if(!tb) return;
-    if(!items.length){
-      tb.innerHTML='<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-text">No orders found</div><div class="empty-state-sub">Adjust filters or upload orders</div></div></td></tr>';
-    }else{
-      tb.innerHTML=items.map(r=>{
-        const isU=r.is_undefined_sku===true||r.is_undefined_sku==='true';
-        const flag=isU?'<span class="badge badge-warning" style="margin-left:4px;font-size:10px">Undefined SKU</span>':'';
-        return `<tr ${isU?'class="row-undefined-sku"':''}>
-          <td style="font-size:12px">${Utils.escapeHtml(r.order_id)}</td>
-          <td>${Utils.fmt.date(r.order_date)}</td>
-          <td><code style="font-size:11px">${Utils.escapeHtml(r.sku)}</code>${flag}</td>
-          <td><code style="font-size:11px">${Utils.escapeHtml(r.upc)}</code></td>
-          <td class="num">${Utils.fmt.number(r.quantity_sold)}</td>
-          <td>${r.platform?`<span class="badge badge-info">${Utils.escapeHtml(r.platform)}</span>`:'—'}</td>
-          <td>${Utils.escapeHtml(r.shipped_from_box)||'—'}</td>
-          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${Utils.escapeHtml(r.source_file)||'—'}</td>
-        </tr>`;
-      }).join('');
-    }
-    Orders._renderPagination(p);
-  },
-  _renderPagination(p){
-    const el=Utils.el('orders-pagination-wrap'); if(!el) return;
-    if(!p||!p.total){el.innerHTML='';return;}
-    const s=((p.page-1)*p.pageSize)+1, e2=Math.min(p.page*p.pageSize,p.total);
-    el.innerHTML=`<div class="pagination">
-      <span class="pagination-info">${Utils.fmt.number(s)}–${Utils.fmt.number(e2)} of ${Utils.fmt.number(p.total)}</span>
-      <div class="pagination-controls">
-        <button class="page-btn" onclick="Orders._go(${p.page-1})" ${p.page<=1?'disabled':''}>‹</button>
-        <button class="page-btn active">${p.page}</button>
-        ${p.page<p.totalPages?`<button class="page-btn" onclick="Orders._go(${p.page+1})">${p.page+1}</button>`:''}
-        ${p.totalPages>p.page+1?`<button class="page-btn" onclick="Orders._go(${p.totalPages})">${p.totalPages}</button>`:''}
-        <button class="page-btn" onclick="Orders._go(${p.page+1})" ${p.page>=p.totalPages?'disabled':''}>›</button>
-      </div>
-    </div>`;
-  },
-  _go(page){ Orders._page=Math.max(1,page); Orders.load(); }
-};
-
-// ──────────────────────────────────────── UPLOADS
-const Uploads = {
-  _invFile:null, _ordFile:null,
-  init(){
-    if(Utils.el('inv-drop-zone')?._bound) return;
-    Uploads._setupZone('inv-drop-zone','inv-file-input',f=>{Uploads._invFile=f;});
-    Uploads._setupZone('ord-drop-zone','ord-file-input',f=>{Uploads._ordFile=f;});
-    if(Utils.el('inv-drop-zone')) Utils.el('inv-drop-zone')._bound=true;
-    Utils.el('btn-upload-inventory')?.addEventListener('click',Uploads.uploadInventory);
-    Utils.el('btn-upload-orders')?.addEventListener('click',Uploads.uploadOrders);
-    Utils.el('btn-dl-inv-template')?.addEventListener('click',()=>Uploads._dlTemplate('inventory'));
-    Utils.el('btn-dl-ord-template')?.addEventListener('click',()=>Uploads._dlTemplate('orders'));
-    Uploads.loadHistory();
-  },
-  _setupZone(zId,iId,cb){
-    const zone=Utils.el(zId), input=Utils.el(iId); if(!zone||!input) return;
-    zone.addEventListener('click',()=>input.click());
-    input.addEventListener('change',e=>{if(e.target.files[0])Uploads._setFile(zone,e.target.files[0],cb);});
-    zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag-over');});
-    zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
-    zone.addEventListener('drop',e=>{
-      e.preventDefault();zone.classList.remove('drag-over');
-      if(e.dataTransfer.files[0])Uploads._setFile(zone,e.dataTransfer.files[0],cb);
-    });
-  },
-  _setFile(zone,file,cb){
-    const ext='.'+file.name.split('.').pop().toLowerCase();
-    if(!['.csv','.xlsx','.xls'].includes(ext)){Notify.error('Invalid Format','Use .csv or .xlsx files only.');return;}
-    cb(file);
-    zone.classList.add('has-file');
-    const n=zone.querySelector('.file-name'); if(n)n.textContent=file.name+' ('+Utils.fmt.fileSize(file.size)+')';
-    const s=zone.querySelector('.drop-zone-sub'); if(s)s.style.display='none';
-  },
-  uploadInventory: async function(){
-    if(!Uploads._invFile){Notify.warning('No File','Select an inventory file first.');return;}
-    const btn=Utils.el('btn-upload-inventory');
-    Loading.btnLoading(btn,true);
-    try{
-      const csv=await Utils.fileToCSV(Uploads._invFile);
-      const r=await API.uploadInventory(csv,Uploads._invFile.name);
-      Notify.success('Upload Complete',r.message||r.rowsInserted+' records imported');
-      Uploads._resetZone('inv-drop-zone','inv-file-input'); Uploads._invFile=null;
-      Uploads.loadHistory(); Dashboard.load();
-    }catch(e){Notify.error('Upload Failed',e.message);}
-    finally{Loading.btnLoading(btn,false);}
-  },
-  uploadOrders: async function(){
-    if(!Uploads._ordFile){Notify.warning('No File','Select an orders file first.');return;}
-    const btn=Utils.el('btn-upload-orders');
-    Loading.btnLoading(btn,true);
-    try{
-      const csv=await Utils.fileToCSV(Uploads._ordFile);
-      const r=await API.uploadOrders(csv,Uploads._ordFile.name);
-      let msg=r.message||r.rowsInserted+' orders imported';
-      if(r.rowsSkipped>0) msg+=` (${r.rowsSkipped} duplicates skipped)`;
-      Notify.success('Upload Complete',msg);
-      Uploads._resetZone('ord-drop-zone','ord-file-input'); Uploads._ordFile=null;
-      Uploads.loadHistory(); Dashboard.load();
-    }catch(e){Notify.error('Upload Failed',e.message);}
-    finally{Loading.btnLoading(btn,false);}
-  },
-  _resetZone(zId,iId){
-    const z=Utils.el(zId),i=Utils.el(iId);
-    if(z){z.classList.remove('has-file','drag-over');const n=z.querySelector('.file-name');if(n)n.textContent='';const s=z.querySelector('.drop-zone-sub');if(s)s.style.display='';}
-    if(i)i.value='';
-  },
-  _dlTemplate(type){
-    const url=Utils.el('meta-webapp-url')?.content;
-    if(!url){Notify.warning('Config Error','Web App URL not set.');return;}
-    window.open(url+'?action=downloadTemplate&type='+type,'_blank');
-  },
-  async loadHistory(){
-    Loading.tableSkeletons('upload-history-tbody',6,5);
-    try{
-      const d=await API.getUploadHistory();
-      const items=d.history||[];
-      const tb=Utils.el('upload-history-tbody'); if(!tb) return;
-      if(!items.length){tb.innerHTML='<tr><td colspan="6"><div class="empty-state"><div class="empty-state-text">No uploads yet</div></div></td></tr>';return;}
-      const statusBadge={success:'<span class="badge badge-success">Success</span>',failed:'<span class="badge badge-error">Failed</span>',error:'<span class="badge badge-error">Error</span>',processing:'<span class="badge badge-warning">Processing</span>'};
-      tb.innerHTML=items.map(r=>`<tr>
-        <td style="font-size:12px">${Utils.fmt.datetime(r.uploaded_at)}</td>
-        <td><span class="badge badge-info">${Utils.escapeHtml(r.type)}</span></td>
-        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${Utils.escapeHtml(r.filename)}</td>
-        <td>${statusBadge[r.status]||`<span class="badge badge-gray">${Utils.escapeHtml(r.status)}</span>`}</td>
-        <td class="num">${Utils.fmt.number(r.row_count)}</td>
-        <td>${r.error_count>0?`<button class="btn btn-sm btn-danger" onclick="Uploads.showErrors('${r.upload_id}')">${r.error_count} errors</button>`:'—'}</td>
-      </tr>`).join('');
-    }catch(e){Notify.error('History Error',e.message);}
-  },
-  async showErrors(uploadId){
-    try{
-      const d=await API.getValidationErrors(uploadId);
-      const errs=d.errors||[];
-      Modal.show('Validation Errors',`
-        <div style="max-height:400px;overflow-y:auto">
-          <div class="table-wrapper"><table class="data-table">
-            <thead><tr><th>Row</th><th>Column</th><th>Issue</th></tr></thead>
-            <tbody>${errs.map(e=>`<tr><td>${e.row_number}</td><td><code>${Utils.escapeHtml(e.column_name)}</code></td><td>${Utils.escapeHtml(e.issue)}</td></tr>`).join('')}</tbody>
-          </table></div>
-        </div>`,[{label:'Close',action:'cancel',cls:'btn-secondary'}]);
-    }catch(e){Notify.error('Error',e.message);}
-  }
-};
-
-// ──────────────────────────────────────── PERFORMANCE
-const Perf = {
-  _charts:{}, _weeks:12, _loaded:false,
-  async load(){
-    const sel=Utils.el('perf-weeks-select');
-    if(sel&&!sel._bound){sel._bound=true;sel.addEventListener('change',()=>{Perf._weeks=parseInt(sel.value)||12;Perf._loaded=false;Perf.load();});}
-    if(Perf._loaded) return;
-    // Show skeleton
-    ['chart-weekly-wrap','chart-platforms-wrap'].forEach(id=>{
-      const e=Utils.el(id);if(e)e.innerHTML='<div class="skel skel-rect" style="height:100%;min-height:260px"></div>';
-    });
-    try{
-      const d=await API.getPerformance(Perf._weeks);
-      Perf._render(d);
-      Perf._loaded=true;
-    }catch(e){Notify.error('Performance Error',e.message);}
-  },
-  _render(d){
-    Perf._destroyAll();
-    Perf._weekly(d.weekly||[]);
-    Perf._platform(d.platforms||[]);
-    Perf._topSkus(d.topSkus||[]);
-  },
-  _weekly(data){
-    const wrap=Utils.el('chart-weekly-wrap'); if(!wrap) return;
-    wrap.innerHTML='<canvas id="chart-weekly"></canvas>';
-    const ctx=Utils.el('chart-weekly'); if(!ctx||!data.length) return;
-    Perf._charts.weekly=new Chart(ctx,{type:'line',data:{
-      labels:data.map(r=>r.week_label||r.week_start),
-      datasets:[
-        {label:'Units Sold',data:data.map(r=>Number(r.units_sold)),borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.08)',borderWidth:2,pointRadius:3,tension:.35,fill:true},
-        {label:'Orders',data:data.map(r=>Number(r.order_count)),borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,.06)',borderWidth:2,pointRadius:3,tension:.35,fill:true,yAxisID:'y2'}
-      ]
-    },options:{
-      responsive:true,maintainAspectRatio:false,
-      interaction:{mode:'index',intersect:false},
-      scales:{
-        x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{font:{family:'Inter',size:11},color:'#94a3b8'}},
-        y:{beginAtZero:true,grid:{color:'rgba(0,0,0,.04)'},ticks:{font:{family:'Inter',size:11},color:'#94a3b8',callback:v=>Utils.fmt.number(v)}},
-        y2:{position:'right',beginAtZero:true,grid:{display:false},ticks:{font:{family:'Inter',size:11},color:'#94a3b8'}}
-      },
-      plugins:{
-        legend:{labels:{font:{family:'Inter',size:12},padding:16}},
-        tooltip:{backgroundColor:'#fff',borderColor:'#e2e8f0',borderWidth:1,titleColor:'#0f172a',bodyColor:'#64748b',
-          callbacks:{label:c=>c.dataset.label+': '+Utils.fmt.number(c.raw)}}
-      }
-    }});
-  },
-  _platform(data){
-    const wrap=Utils.el('chart-platforms-wrap'); if(!wrap) return;
-    wrap.innerHTML='<canvas id="chart-platforms"></canvas>';
-    const ctx=Utils.el('chart-platforms'); if(!ctx||!data.length) return;
-    const pal=['#2563eb','#7c3aed','#16a34a','#d97706','#0891b2','#db2777','#64748b','#dc2626','#059669','#9333ea'];
-    Perf._charts.platform=new Chart(ctx,{type:'doughnut',data:{
-      labels:data.map(r=>r.platform||'Unknown'),
-      datasets:[{data:data.map(r=>Number(r.units_sold)),backgroundColor:pal.slice(0,data.length),borderWidth:2,borderColor:'#fff'}]
-    },options:{
-      responsive:true,maintainAspectRatio:false,cutout:'62%',
-      plugins:{
-        legend:{position:'bottom',labels:{padding:14,font:{family:'Inter',size:12}}},
-        tooltip:{callbacks:{label:c=>c.label+': '+Utils.fmt.number(c.raw)+' units'}}
-      }
-    }});
-  },
-  _topSkus(skus){
-    const tb=Utils.el('top-skus-tbody'); if(!tb) return;
-    if(!skus.length){tb.innerHTML='<tr><td colspan="3"><div class="empty-state"><div class="empty-state-text">No data</div></div></td></tr>';return;}
-    const max=Math.max(...skus.map(s=>Number(s.units_sold)));
-    tb.innerHTML=skus.map((s,i)=>{
-      const pct=max>0?((Number(s.units_sold)/max)*100).toFixed(0):0;
-      const isU=s.is_undefined===true||s.is_undefined==='true';
-      return `<tr>
-        <td><span style="color:var(--txt-4);margin-right:6px;font-size:11px">${i+1}</span>
-            <code style="font-size:11px">${Utils.escapeHtml(s.sku)}</code>
-            ${isU?'<span class="badge badge-warning" style="margin-left:4px;font-size:10px">Undefined</span>':''}</td>
-        <td class="num" style="font-weight:600">${Utils.fmt.number(s.units_sold)}</td>
-        <td style="width:90px"><div class="progress-bar-wrap"><div class="progress-bar" style="width:${pct}%;background:${isU?'var(--warning)':'var(--primary)'}"></div></div></td>
-      </tr>`;
-    }).join('');
-  },
-  _destroyAll(){ Object.values(Perf._charts).forEach(c=>{try{c.destroy();}catch(_){}}); Perf._charts={}; }
-};
-
-// ──────────────────────────────────────── SETTINGS
-const Settings = {
-  _tab:'users', _initDone:false,
-  async init(){
-    if(!Settings._initDone){ Settings._bindTabs(); Settings._initDone=true; }
-    Settings._loadTab(Settings._tab);
-  },
-  _bindTabs(){
-    document.querySelectorAll('[data-settings-tab]').forEach(btn=>{
-      btn.addEventListener('click',()=>{
-        Settings._tab=btn.dataset.settingsTab;
-        document.querySelectorAll('[data-settings-tab]').forEach(b=>b.classList.toggle('active',b===btn));
-        document.querySelectorAll('.settings-panel').forEach(p=>p.classList.toggle('active',p.id==='settings-'+Settings._tab));
-        Settings._loadTab(Settings._tab);
-      });
-    });
-    Utils.el('btn-add-user')?.addEventListener('click',Settings._showAddUser);
-    Utils.el('btn-refresh-logs')?.addEventListener('click',Settings._loadLogs);
-    Utils.el('btn-system-check')?.addEventListener('click',Settings._loadStatus);
-  },
-  _loadTab(tab){
-    if(tab==='users'&&Auth.isAdmin())   Settings._loadUsers();
-    if(tab==='logs'&&Auth.isAdmin())    Settings._loadLogs();
-    if(tab==='status')                  Settings._loadStatus();
-  },
-  async _loadUsers(){
-    Loading.tableSkeletons('users-tbody',5,5);
-    try{
-      const d=await API.getUsers(); const users=d.users||[];
-      const tb=Utils.el('users-tbody'); if(!tb) return;
-      if(!users.length){tb.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="empty-state-text">No users</div></div></td></tr>';return;}
-      const roleBadge={admin:'<span class="badge badge-error">Admin</span>',manager:'<span class="badge badge-info">Manager</span>',viewer:'<span class="badge badge-gray">Viewer</span>'};
-      tb.innerHTML=users.map(u=>{
-        const isActive=u.is_active===true||u.is_active==='true';
-        return `<tr>
-          <td>${Utils.escapeHtml(u.display_name)}</td>
-          <td>${Utils.escapeHtml(u.email)}</td>
-          <td>${roleBadge[u.role]||`<span class="badge badge-gray">${Utils.escapeHtml(u.role)}</span>`}</td>
-          <td>${isActive?'<span class="badge badge-success">Active</span>':'<span class="badge badge-gray">Inactive</span>'}</td>
-          <td><div style="display:flex;gap:6px">
-            <button class="btn btn-sm btn-secondary" onclick="Settings._editUser('${u.user_id}','${Utils.escapeHtml(u.display_name).replace(/'/g,"\\'")}','${u.role}')">Edit</button>
-            <button class="btn btn-sm btn-danger" onclick="Settings._deleteUser('${u.user_id}','${Utils.escapeHtml(u.display_name).replace(/'/g,"\\'")}')">Delete</button>
-          </div></td>
-        </tr>`;
-      }).join('');
-    }catch(e){Notify.error('Users Error',e.message);}
-  },
-  _showAddUser(){
-    Modal.show('Add New User',`
-      <div class="form-group"><label class="form-label">Display Name <span class="required">*</span></label>
-        <input id="nu-name" class="form-input" placeholder="Full name"></div>
-      <div class="form-group"><label class="form-label">Email <span class="required">*</span></label>
-        <input id="nu-email" type="email" class="form-input" placeholder="email@company.com"></div>
-      <div class="form-group"><label class="form-label">Role <span class="required">*</span></label>
-        <select id="nu-role" class="form-select"><option value="viewer">Viewer</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div>
-      <div class="form-group"><label class="form-label">Password <span class="required">*</span></label>
-        <input id="nu-pass" type="password" class="form-input" placeholder="Min 8 characters"></div>`,
-    [{label:'Cancel',action:'cancel',cls:'btn-secondary'},{label:'Create User',action:'submit',cls:'btn-primary',onClick:async()=>{
-      const n=Utils.el('nu-name')?.value.trim(),e=Utils.el('nu-email')?.value.trim(),r=Utils.el('nu-role')?.value,p=Utils.el('nu-pass')?.value;
-      if(!n||!e||!r||!p){Notify.warning('Required','All fields are required.');return;}
-      if(p.length<8){Notify.warning('Weak Password','Password must be at least 8 characters.');return;}
-      try{await API.createUser({email:e,displayName:n,role:r,password:p});Modal.close();Notify.success('User Created',e+' added as '+r);Settings._loadUsers();}
-      catch(err){Notify.error('Failed',err.message);}
-    }}]);
-  },
-  _editUser(userId,name,role){
-    Modal.show('Edit User',`
-      <div class="form-group"><label class="form-label">Display Name</label>
-        <input id="eu-name" class="form-input" value="${Utils.escapeHtml(name)}"></div>
-      <div class="form-group"><label class="form-label">Role</label>
-        <select id="eu-role" class="form-select">
-          <option value="viewer" ${role==='viewer'?'selected':''}>Viewer</option>
-          <option value="manager" ${role==='manager'?'selected':''}>Manager</option>
-          <option value="admin" ${role==='admin'?'selected':''}>Admin</option>
-        </select></div>
-      <div class="form-group"><label class="form-label">New Password <span style="color:var(--txt-4);font-weight:400">(optional)</span></label>
-        <input id="eu-pass" type="password" class="form-input" placeholder="Leave blank to keep current"></div>`,
-    [{label:'Cancel',action:'cancel',cls:'btn-secondary'},{label:'Save',action:'submit',cls:'btn-primary',onClick:async()=>{
-      const u={displayName:Utils.el('eu-name')?.value.trim(),role:Utils.el('eu-role')?.value};
-      const p=Utils.el('eu-pass')?.value; if(p) u.password=p;
-      try{await API.updateUser(userId,u);Modal.close();Notify.success('Updated','User updated.');Settings._loadUsers();}
-      catch(err){Notify.error('Failed',err.message);}
-    }}]);
-  },
-  _deleteUser(userId,name){
-    Modal.show('Delete User',`<p style="color:var(--txt-2)">Delete <strong>${Utils.escapeHtml(name)}</strong>? This cannot be undone.</p>`,
-    [{label:'Cancel',action:'cancel',cls:'btn-secondary'},{label:'Delete',action:'submit',cls:'btn-danger',onClick:async()=>{
-      try{await API.deleteUser(userId);Modal.close();Notify.success('Deleted',name+' removed.');Settings._loadUsers();}
-      catch(err){Notify.error('Failed',err.message);}
-    }}]);
-  },
-  async _loadLogs(){
-    Loading.tableSkeletons('logs-tbody',5,10);
-    try{
-      const mod=Utils.el('log-filter-module')?.value||'', sts=Utils.el('log-filter-status')?.value||'';
-      const d=await API.getDebugLogs(100,mod,sts); const logs=d.logs||[];
-      const tb=Utils.el('logs-tbody'); if(!tb) return;
-      if(!logs.length){tb.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="empty-state-text">No logs</div></div></td></tr>';return;}
-      const sBadge={success:'<span class="badge badge-success">success</span>',error:'<span class="badge badge-error">error</span>',warning:'<span class="badge badge-warning">warning</span>',info:'<span class="badge badge-info">info</span>'};
-      tb.innerHTML=logs.map(l=>`<tr>
-        <td style="white-space:nowrap;font-size:11px;color:var(--txt-3)">${Utils.fmt.datetime(l.timestamp)}</td>
-        <td><code style="font-size:11px">${Utils.escapeHtml(l.module)}</code></td>
-        <td style="font-size:12px">${Utils.escapeHtml(l.action)}</td>
-        <td>${sBadge[l.status]||`<span class="badge badge-gray">${Utils.escapeHtml(l.status)}</span>`}</td>
-        <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--txt-3)" title="${Utils.escapeHtml(l.details)}">${Utils.escapeHtml((l.details||'').substring(0,120))}</td>
-      </tr>`).join('');
-    }catch(e){Notify.error('Logs Error',e.message);}
-  },
-  async _loadStatus(){
-    const el=Utils.el('system-status-content'); if(!el) return;
-    el.innerHTML='<div class="empty-state"><div class="spin"></div><div class="empty-state-text">Checking…</div></div>';
-    try{
-      const s=await API.getSystemStatus();
-      const dot=s.bigquery?'online':'offline', bqText=s.bigquery?'Connected':'Disconnected';
-      const tRows=Object.entries(s.tables||{}).map(([t,i])=>`<tr>
-        <td><code style="font-size:11px">${Utils.escapeHtml(t)}</code></td>
-        <td>${i.accessible?'<span class="badge badge-success">OK</span>':'<span class="badge badge-error">Error</span>'}</td>
-        <td class="num">${i.rowCount!==undefined?Utils.fmt.number(i.rowCount):'—'}</td>
-        <td style="font-size:11px;color:var(--txt-3)">${i.error?Utils.escapeHtml(i.error):''}</td>
-      </tr>`).join('');
-      el.innerHTML=`<div style="display:grid;gap:16px">
-        <div class="card" style="padding:16px">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-            <span class="status-dot ${dot}"></span>
-            <strong>BigQuery: ${bqText}</strong>
-            <span style="margin-left:auto;font-size:11px;color:var(--txt-3)">v${Utils.escapeHtml(s.version||'—')}</span>
-          </div>
-          <div style="font-size:11px;color:var(--txt-3)">Checked: ${Utils.fmt.datetime(s.timestamp)}</div>
-        </div>
-        <div class="card" style="padding:0;overflow:hidden">
-          <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-family:var(--font-title);font-size:13px;font-weight:700">Table Status</div>
-          <div class="table-wrapper" style="border:none">
-            <table class="data-table">
-              <thead><tr><th>Table</th><th>Status</th><th class="num">Rows</th><th>Error</th></tr></thead>
-              <tbody>${tRows}</tbody>
-            </table>
-          </div>
-        </div>
-      </div>`;
-    }catch(e){el.innerHTML=`<div class="empty-state"><div class="empty-state-icon">⚠</div><div class="empty-state-text">${Utils.escapeHtml(e.message)}</div></div>`;}
-  }
-};
-
-// ──────────────────────────────────────── APP ROUTER
-const App = {
-  _page:null,
-  async init(){
-    const ok=await Auth.init();
-    if(ok){ App.showApp(); App.navigateTo('home'); }
-    else   { App.showLogin(); }
-    App._bindEvents();
-  },
-  showApp(){
-    Utils.hide('loading-screen'); Utils.hide('login-screen'); Utils.show('app-shell');
-    App._renderUserInfo();
-  },
-  showLogin(){
-    Utils.hide('loading-screen'); Utils.hide('app-shell'); Utils.show('login-screen');
-    const pw=Utils.el('login-password'); if(pw) pw.value='';
-    const err=Utils.el('login-error'); if(err){err.textContent='';err.classList.remove('visible');}
-  },
-  _renderUserInfo(){
-    const u=Auth.getUser(); if(!u) return;
-    Utils.setText('sidebar-user-name',u.displayName||u.email);
-    Utils.setText('sidebar-user-role',u.role);
-    const av=Utils.el('sidebar-avatar'); if(av) av.textContent=(u.displayName||u.email||'?')[0].toUpperCase();
-    if(!Auth.isAdmin())   document.querySelectorAll('[data-role="admin"]').forEach(e=>e.style.display='none');
-    if(!Auth.isManager()) document.querySelectorAll('[data-role="manager"]').forEach(e=>e.style.display='none');
-  },
-  navigateTo(page){
-    if(App._page===page) return;
-    App._page=page;
-    document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
-    document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id==='page-'+page));
-    const titles={home:'Dashboard','box-lookup':'Box Lookup',orders:'Orders',uploads:'Uploads',performance:'Performance',settings:'Settings'};
-    Utils.setText('topbar-title',titles[page]||'Dashboard');
-    switch(page){
-      case 'home':        Dashboard.load();   break;
-      case 'box-lookup':  BoxLookup.init();   break;
-      case 'orders':      Orders.init();      break;
-      case 'uploads':     Uploads.init();     break;
-      case 'performance': Perf.load();        break;
-      case 'settings':    Settings.init();    break;
-    }
-  },
-  _bindEvents(){
-    document.querySelectorAll('.nav-item').forEach(el=>
-      el.addEventListener('click',()=>App.navigateTo(el.dataset.page)));
-    Utils.el('btn-logout')?.addEventListener('click',()=>Auth.logout());
-    Utils.el('btn-refresh')?.addEventListener('click',()=>{
-      Perf._loaded=false; Orders._initDone&&Orders.load();
-      const p=App._page; App._page=null; App.navigateTo(p);
-    });
-    Utils.el('login-form')?.addEventListener('submit',async e=>{
-      e.preventDefault();
-      const email=Utils.el('login-email')?.value.trim();
-      const pass =Utils.el('login-password')?.value;
-      const btn  =Utils.el('btn-login');
-      const errEl=Utils.el('login-error');
-      if(errEl){errEl.textContent='';errEl.classList.remove('visible');}
-      Loading.btnLoading(btn,true);
-      try{
-        await Auth.login(email,pass);
-        App.showApp(); App.navigateTo('home');
-      }catch(err){
-        if(errEl){errEl.textContent=err.message||'Login failed';errEl.classList.add('visible');}
-      }finally{Loading.btnLoading(btn,false);}
-    });
-  }
-};
-
-window.addEventListener('load',()=>App.init());
-</script>
 </body>
 </html>

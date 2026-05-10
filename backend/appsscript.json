@@ -1,11 +1,16 @@
 {
-  "timeZone": "America/New_York",
+  "timeZone": "Asia/Karachi",
   "dependencies": {
     "enabledAdvancedServices": [
       {
         "userSymbol": "BigQuery",
-        "version": "v2",
-        "serviceId": "bigquery"
+        "serviceId": "bigquery",
+        "version": "v2"
+      },
+      {
+        "userSymbol": "Drive",
+        "serviceId": "drive",
+        "version": "v3"
       }
     ]
   },
