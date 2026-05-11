@@ -587,19 +587,23 @@ const Orders = (() => {
 
   /* ── Init ────────────────────────────────────────────────── */
   function init() {
-    const applyBtn     = document.getElementById('orders-apply-filters');
     const resetBtn     = document.getElementById('orders-reset-filters');
     const exportBtn    = document.getElementById('orders-export');
     const searchEl     = document.getElementById('orders-search');
     const selectAll    = document.getElementById('orders-select-all');
     const deleteSelBtn = document.getElementById('orders-delete-selected');
     const phantomCb    = document.getElementById('filter-phantom');
+    const platSel      = document.getElementById('filter-platform');
+    const dateFrom     = document.getElementById('filter-date-from');
+    const dateTo       = document.getElementById('filter-date-to');
 
-    if (applyBtn)     applyBtn.addEventListener('click',     () => { _collectFilters(); _page = 1; load(); });
     if (resetBtn)     resetBtn.addEventListener('click',     _resetFilters);
     if (exportBtn)    exportBtn.addEventListener('click',    _openExportModal);
     if (deleteSelBtn) deleteSelBtn.addEventListener('click', _deleteSelected);
     if (phantomCb)    phantomCb.addEventListener('change',   () => { _collectFilters(); _page = 1; load(); });
+    if (platSel)      platSel.addEventListener('change',     () => { _collectFilters(); _page = 1; load(); });
+    if (dateFrom)     dateFrom.addEventListener('change',    () => { _collectFilters(); _page = 1; load(); });
+    if (dateTo)       dateTo.addEventListener('change',      () => { _collectFilters(); _page = 1; load(); });
 
     if (selectAll) {
       selectAll.addEventListener('change', () => {
@@ -613,8 +617,13 @@ const Orders = (() => {
     }
 
     if (searchEl) {
+      let _debounce;
+      searchEl.addEventListener('input', () => {
+        clearTimeout(_debounce);
+        _debounce = setTimeout(() => { _collectFilters(); _page = 1; load(); }, 300);
+      });
       searchEl.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { _collectFilters(); _page = 1; load(); }
+        if (e.key === 'Enter') { e.preventDefault(); clearTimeout(_debounce); _collectFilters(); _page = 1; load(); }
       });
     }
 

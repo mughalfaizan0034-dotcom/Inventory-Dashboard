@@ -144,15 +144,18 @@ const BoxLookup = (() => {
 
   function init() {
     const input    = document.getElementById('box-search-input');
-    const btn      = document.getElementById('box-search-btn');
     const clearBtn = document.getElementById('box-clear-btn');
     const tabsEl   = document.getElementById('lookup-tabs');
     if (!input) return;
 
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); search(input.value); }
+    let _debounce;
+    input.addEventListener('input', () => {
+      clearTimeout(_debounce);
+      _debounce = setTimeout(() => search(input.value), 300);
     });
-    if (btn)      btn.addEventListener('click',   () => search(input.value));
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(_debounce); search(input.value); }
+    });
     if (clearBtn) clearBtn.addEventListener('click', () => {
       input.value = '';
       clearBtn.style.display = 'none';
@@ -511,30 +514,24 @@ const InventoryList = (() => {
 
   function init() {
     const searchInput  = document.getElementById('inventory-search');
-    const searchBtn    = document.getElementById('inventory-search-btn');
     const statusSel    = document.getElementById('filter-inventory-status');
     const selectAll    = document.getElementById('inv-select-all');
     const deleteSelBtn = document.getElementById('inv-delete-selected');
     const exportBtn    = document.getElementById('inventory-export-btn');
 
     if (searchInput) {
-      searchInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { _search = e.target.value.trim(); _page = 1; load(); }
+      let _debounce;
+      searchInput.addEventListener('input', () => {
+        clearTimeout(_debounce);
+        _debounce = setTimeout(() => { _search = searchInput.value.trim(); _page = 1; load(); }, 300);
       });
-    }
-    if (searchBtn) {
-      searchBtn.addEventListener('click', () => {
-        _search = searchInput?.value.trim() || '';
-        _page = 1;
-        load();
+      searchInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); clearTimeout(_debounce); _search = searchInput.value.trim(); _page = 1; load(); }
       });
     }
 
     if (statusSel) {
-      statusSel.addEventListener('change', () => {
-        _statusFilter = statusSel.value;
-        _page = 1;
-      });
+      statusSel.addEventListener('change', () => { _statusFilter = statusSel.value; _page = 1; load(); });
     }
 
     if (selectAll) {
