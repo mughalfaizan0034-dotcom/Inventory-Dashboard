@@ -327,9 +327,25 @@ const Auth = (() => {
       }
     }
 
-    const user = getUser();
-    const org  = getOrganization();
-    console.log('[AUTH] memberships restored:', getMemberships().length, 'entries');
+    const user        = getUser();
+    const memberships = getMemberships();
+    let   org         = getOrganization();
+    console.log('[AUTH] memberships restored:', memberships.length, 'entries');
+
+    if (!org && memberships.length > 0) {
+      // org missing from sessionStorage (old session, partial clear, or key mismatch).
+      // Memberships are the source of truth — reconstruct active org from them.
+      const p       = _decodeJwt(getToken());
+      const matched = p?.organization_id
+        ? memberships.find(m => m.organization_id === p.organization_id)
+        : null;
+      org = matched || (memberships.length === 1 ? memberships[0] : null);
+      if (org) {
+        sessionStorage.setItem(CONFIG.ORG_KEY, JSON.stringify(org));
+        console.log('[AUTH] org auto-restored from membership:', org.organization_id);
+      }
+    }
+
     console.log('[AUTH] active org restored:', org?.organization_id, org?.role);
     console.log('[AUTH] user restored:', user?.user_id, user?.username);
 
