@@ -17,8 +17,8 @@ export function createDashboardService({ dashboardRepo }) {
     return dashboardRepo.getKPIs(organizationId);
   }
 
-  async function getPerformance(organizationId, weeks) {
-    const { weekly, platforms, topSkus, monthly } = await dashboardRepo.getPerformance(organizationId, weeks);
+  async function getPerformance(organizationId, weeks, platform = null) {
+    const { weekly, platforms, topSkus, monthly } = await dashboardRepo.getPerformance(organizationId, weeks, platform);
 
     return {
       weekly: weekly.map(r => ({

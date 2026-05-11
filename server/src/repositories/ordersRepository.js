@@ -1,41 +1,60 @@
 import { TABLES } from '../config/tables.js';
 
 export function createOrdersRepository({ bq, projectId }) {
-  const table = `\`${projectId}.${TABLES.ORDERS}\``;
+  const table    = `\`${projectId}.${TABLES.ORDERS}\``;
+  const invTable = `\`${projectId}.${TABLES.INVENTORY}\``;
 
-  async function findAll({ organizationId, page, pageSize, platform, startDate, endDate, search }) {
+  async function findAll({ organizationId, page, pageSize, platform, startDate, endDate, search, sortBy, sortDir, phantomOnly }) {
     const offset = (page - 1) * pageSize;
 
-    const conditions = ['organization_id = @organizationId'];
+    const conditions = ['o.organization_id = @organizationId'];
     const params     = { organizationId };
 
     if (platform) {
-      conditions.push('platform = @platform');
+      conditions.push('o.platform = @platform');
       params.platform = platform;
     }
     if (startDate) {
-      conditions.push('order_date >= @startDate');
+      conditions.push('o.order_date >= @startDate');
       params.startDate = startDate;
     }
     if (endDate) {
-      conditions.push('order_date <= @endDate');
+      conditions.push('o.order_date <= @endDate');
       params.endDate = endDate;
     }
     if (search) {
-      conditions.push('LOWER(sku) LIKE @search');
+      conditions.push('LOWER(o.sku) LIKE @search');
       params.search = `%${search.toLowerCase()}%`;
+    }
+    if (phantomOnly) {
+      conditions.push(`o.sku IN (
+        SELECT i.sku
+        FROM ${invTable} i
+        LEFT JOIN (
+          SELECT sku, SUM(quantity_sold) AS total_sold
+          FROM ${table}
+          WHERE organization_id = @organizationId
+          GROUP BY sku
+        ) agg ON i.sku = agg.sku
+        WHERE i.organization_id = @organizationId
+          AND (i.quantity - COALESCE(agg.total_sold, 0)) < 0
+      )`);
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
 
+    const ALLOWED_SORT = ['order_date', 'sku', 'quantity_sold', 'platform', 'shipped_from_box'];
+    const col = ALLOWED_SORT.includes(sortBy) ? `o.${sortBy}` : 'o.order_date';
+    const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
+
     const dataQuery = `
-      SELECT order_row_id, order_date, sku, quantity_sold, shipped_from_box, platform, created_at
-      FROM ${table}
+      SELECT o.order_row_id, o.order_date, o.sku, o.quantity_sold, o.shipped_from_box, o.platform, o.created_at
+      FROM ${table} o
       ${where}
-      ORDER BY order_date DESC, created_at DESC
+      ORDER BY ${col} ${dir}, o.created_at DESC
       LIMIT ${pageSize} OFFSET ${offset}
     `;
-    const countQuery = `SELECT COUNT(*) AS total FROM ${table} ${where}`;
+    const countQuery = `SELECT COUNT(*) AS total FROM ${table} o ${where}`;
 
     const [rows, countRows] = await Promise.all([
       bq.query({ query: dataQuery, params }),

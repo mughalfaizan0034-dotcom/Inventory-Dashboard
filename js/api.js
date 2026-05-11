@@ -246,12 +246,15 @@ const API = (() => {
     },
 
     /* Dashboard */
-    async getDashboardKPIs()           { return _crGet('/dashboard/kpis'); },
-    async getPerformanceData(weeks=12) { return _crGet('/dashboard/performance', { weeks }); },
+    async getDashboardKPIs()                        { return _crGet('/dashboard/kpis'); },
+    async getPerformanceData(weeks=12, platform='') { return _crGet('/dashboard/performance', { weeks, ...(platform ? { platform } : {}) }); },
+
+    /* Lookup */
+    async lookup(query) { return _crGet('/lookup', { query }); },
 
     /* Inventory */
     async searchBox(query)                                    { return _crGet('/inventory', { search: query, pageSize: 10, page: 1 }); },
-    async getInventoryList(page=1, pageSize=CONFIG.PAGE_SIZE, search='') { return _crGet('/inventory', { page, pageSize, search }); },
+    async getInventoryList(page=1, pageSize=CONFIG.PAGE_SIZE, search='', options={}) { return _crGet('/inventory', { page, pageSize, search, ...options }); },
 
     /* Orders */
     async getOrders(page=1, pageSize=CONFIG.PAGE_SIZE, filters={}) { return _crGet('/orders', { page, pageSize, ...filters }); },

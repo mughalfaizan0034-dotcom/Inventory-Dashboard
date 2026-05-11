@@ -46,57 +46,63 @@ export function createDashboardRepository({ bq, projectId }) {
       FROM remaining
     `;
 
-    const uplQuery = `
-      SELECT MAX(ts) AS last_upload FROM (
-        SELECT created_at AS ts FROM ${invUplTable} WHERE organization_id = @organizationId
-        UNION ALL
-        SELECT created_at AS ts FROM ${ordUplTable} WHERE organization_id = @organizationId
-      )
+    const undefinedSkusQuery = `
+      SELECT COUNT(*) AS undefined_skus
+      FROM ${invTable}
+      WHERE organization_id = @organizationId
+        AND (
+          UPPER(TRIM(COALESCE(sku, '')))         IN ('NA','N/A','')
+          OR UPPER(TRIM(COALESCE(upc, '')))      IN ('NA','N/A','')
+          OR UPPER(TRIM(COALESCE(part_number,''))) IN ('NA','N/A','')
+        )
     `;
 
     try {
-      const [invR, ordR, metR, uplR] = await Promise.all([
-        bq.query({ query: invQuery, params: { organizationId } }).then(r => r[0][0] ?? {}),
-        bq.query({ query: ordQuery, params: { organizationId } }).then(r => r[0][0] ?? {}),
-        bq.query({ query: metricsQuery, params: { organizationId } }).then(r => r[0][0] ?? {}),
-        bq.query({ query: uplQuery, params: { organizationId } }).then(r => r[0][0] ?? {}),
+      const [invR, ordR, metR, undR] = await Promise.all([
+        bq.query({ query: invQuery,            params: { organizationId } }).then(r => r[0][0] ?? {}),
+        bq.query({ query: ordQuery,            params: { organizationId } }).then(r => r[0][0] ?? {}),
+        bq.query({ query: metricsQuery,        params: { organizationId } }).then(r => r[0][0] ?? {}),
+        bq.query({ query: undefinedSkusQuery,  params: { organizationId } }).then(r => r[0][0] ?? {}),
       ]);
 
       const totalUnits = Number(invR.total_units ?? 0);
       const unitsSold  = Number(ordR.units_sold  ?? 0);
 
       return {
-        totalSkus:          Number(invR.total_skus          ?? 0),
+        totalSkus:          Number(invR.total_skus           ?? 0),
         totalUnits,
         unitsSold,
-        totalOrders:        Number(ordR.total_orders        ?? 0),
+        totalOrders:        Number(ordR.total_orders         ?? 0),
         remainingStock:     totalUnits - unitsSold,
-        phantomUnits:       Number(metR.phantom_units       ?? 0),
+        phantomUnits:       Number(metR.phantom_units        ?? 0),
         undefinedSkuOrders: Number(metR.undefined_sku_orders ?? 0),
-        activePlatforms:    Number(ordR.active_platforms    ?? 0),
-        lastUploadDate:     uplR.last_upload?.value ?? uplR.last_upload ?? null,
+        activePlatforms:    Number(ordR.active_platforms     ?? 0),
+        undefinedSkus:      Number(undR.undefined_skus       ?? 0),
       };
     } catch {
       return {
         totalSkus: 0, totalUnits: 0, unitsSold: 0, totalOrders: 0,
         remainingStock: 0, phantomUnits: 0, undefinedSkuOrders: 0,
-        activePlatforms: 0, lastUploadDate: null,
+        activePlatforms: 0, undefinedSkus: 0,
       };
     }
   }
 
-  async function getPerformance(organizationId, weeks = 12) {
+  async function getPerformance(organizationId, weeks = 12, platform = null) {
     const safeWeeks = Math.min(Math.max(parseInt(weeks, 10) || 12, 1), 52);
-    const p = { organizationId };
+    const p = { organizationId, platform: platform ?? null };
+    const pTypes = { platform: 'STRING' };
+    const platCond = `AND (@platform IS NULL OR platform = @platform)`;
 
     const weeklyQuery = `
       SELECT
-        DATE_TRUNC(PARSE_DATE('%Y-%m-%d', order_date), WEEK) AS week_start,
+        DATE_TRUNC(SAFE.PARSE_DATE('%Y-%m-%d', order_date), WEEK) AS week_start,
         SUM(quantity_sold) AS units_sold,
         COUNT(*)           AS orders
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        AND SAFE.PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        ${platCond}
       GROUP BY week_start
       ORDER BY week_start ASC
     `;
@@ -105,8 +111,9 @@ export function createDashboardRepository({ bq, projectId }) {
       SELECT platform, SUM(quantity_sold) AS units_sold, COUNT(*) AS order_count
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        AND SAFE.PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
         AND platform IS NOT NULL
+        ${platCond}
       GROUP BY platform
       ORDER BY units_sold DESC
     `;
@@ -115,32 +122,39 @@ export function createDashboardRepository({ bq, projectId }) {
       SELECT sku, SUM(quantity_sold) AS units_sold
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        AND SAFE.PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        ${platCond}
       GROUP BY sku
       ORDER BY units_sold DESC
       LIMIT 10
     `;
 
     const monthlyQuery = `
-      WITH totals AS (
-        SELECT
-          FORMAT_DATE('%Y-%m', PARSE_DATE('%Y-%m-%d', order_date)) AS month,
-          COUNT(*) AS order_count,
-          SUM(quantity_sold) AS units_sold
+      WITH base AS (
+        SELECT *
         FROM ${ordTable}
         WHERE organization_id = @organizationId
+          AND SAFE.PARSE_DATE('%Y-%m-%d', order_date) IS NOT NULL
+          ${platCond}
+      ),
+      totals AS (
+        SELECT
+          FORMAT_DATE('%Y-%m', SAFE.PARSE_DATE('%Y-%m-%d', order_date)) AS month,
+          COUNT(*) AS order_count,
+          SUM(quantity_sold) AS units_sold
+        FROM base
         GROUP BY month
       ),
       top_platform AS (
         SELECT
-          FORMAT_DATE('%Y-%m', PARSE_DATE('%Y-%m-%d', order_date)) AS month,
+          FORMAT_DATE('%Y-%m', SAFE.PARSE_DATE('%Y-%m-%d', order_date)) AS month,
           platform,
           ROW_NUMBER() OVER (
-            PARTITION BY FORMAT_DATE('%Y-%m', PARSE_DATE('%Y-%m-%d', order_date))
+            PARTITION BY FORMAT_DATE('%Y-%m', SAFE.PARSE_DATE('%Y-%m-%d', order_date))
             ORDER BY COUNT(*) DESC
           ) AS rn
-        FROM ${ordTable}
-        WHERE organization_id = @organizationId AND platform IS NOT NULL
+        FROM base
+        WHERE platform IS NOT NULL
         GROUP BY month, platform
       )
       SELECT t.month, t.order_count, t.units_sold, p.platform AS top_platform
@@ -152,10 +166,10 @@ export function createDashboardRepository({ bq, projectId }) {
 
     try {
       const [wR, pR, sR, mR] = await Promise.all([
-        bq.query({ query: weeklyQuery,   params: p }).then(r => r[0]),
-        bq.query({ query: platformQuery, params: p }).then(r => r[0]),
-        bq.query({ query: topSkuQuery,   params: p }).then(r => r[0]),
-        bq.query({ query: monthlyQuery,  params: p }).then(r => r[0]),
+        bq.query({ query: weeklyQuery,   params: p, types: pTypes }).then(r => r[0]),
+        bq.query({ query: platformQuery, params: p, types: pTypes }).then(r => r[0]),
+        bq.query({ query: topSkuQuery,   params: p, types: pTypes }).then(r => r[0]),
+        bq.query({ query: monthlyQuery,  params: p, types: pTypes }).then(r => r[0]),
       ]);
       return { weekly: wR, platforms: pR, topSkus: sR, monthly: mR };
     } catch {

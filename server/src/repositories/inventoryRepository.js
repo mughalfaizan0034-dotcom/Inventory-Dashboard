@@ -4,21 +4,39 @@ export function createInventoryRepository({ bq, projectId }) {
   const invTable = `\`${projectId}.${TABLES.INVENTORY}\``;
   const ordTable = `\`${projectId}.${TABLES.ORDERS}\``;
 
-  async function findAll({ organizationId, page, pageSize, search, sortBy, sortDir }) {
+  async function findAll({ organizationId, page, pageSize, search, sortBy, sortDir, undefined_only }) {
     const offset = (page - 1) * pageSize;
 
     const conditions = ['i.organization_id = @organizationId'];
     const params     = { organizationId };
 
     if (search) {
-      conditions.push('(LOWER(i.sku) LIKE @search OR LOWER(i.upc) LIKE @search OR LOWER(i.box_number) LIKE @search OR LOWER(i.part_number) LIKE @search)');
+      conditions.push('(LOWER(i.sku) LIKE @search OR LOWER(i.upc) LIKE @search OR LOWER(i.part_number) LIKE @search)');
       params.search = `%${search.toLowerCase()}%`;
+    }
+
+    if (undefined_only) {
+      conditions.push(`(
+        UPPER(TRIM(COALESCE(i.sku, '')))         IN ('NA','N/A','')
+        OR UPPER(TRIM(COALESCE(i.upc, '')))      IN ('NA','N/A','')
+        OR UPPER(TRIM(COALESCE(i.part_number,''))) IN ('NA','N/A','')
+      )`);
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
 
-    const allowedSort = ['sku', 'upc', 'box_number', 'quantity', 'date_added'];
-    const col = allowedSort.includes(sortBy) ? `i.${sortBy}` : 'i.date_added';
+    const sortMap = {
+      sku:             'i.sku',
+      upc:             'i.upc',
+      box_number:      'i.box_number',
+      quantity:        'i.quantity',
+      date_added:      'i.date_added',
+      part_number:     'i.part_number',
+      notes:           'i.notes',
+      units_sold:      'units_sold',
+      remaining_stock: 'remaining_stock',
+    };
+    const col = sortMap[sortBy] || 'i.date_added';
     const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
     const dataQuery = `
@@ -93,18 +111,45 @@ export function createInventoryRepository({ bq, projectId }) {
   }
 
   async function findAlternativeBoxes(organizationId, sku) {
-    const match = sku?.match(/^ARA\d+-(.+)-(.+)$/);
-    if (!match) return [];
-    const partNumber = match[1];
+    const match = sku?.match(/^ARA(\d+)-(.+)-(.+)$/);
+    if (!match) return { originalBox: null, alternatives: [] };
+
+    const [, boxNum, partNumber, upc] = match;
+    const originalBox = `ARA${boxNum}`;
 
     const query = `
-      SELECT sku, box_number, part_number, quantity
-      FROM ${invTable}
-      WHERE organization_id = @organizationId AND part_number = @partNumber
-      ORDER BY box_number
+      WITH ord_summary AS (
+        SELECT sku, SUM(quantity_sold) AS units_sold
+        FROM ${ordTable}
+        WHERE organization_id = @organizationId
+        GROUP BY sku
+      )
+      SELECT
+        i.box_number,
+        i.quantity - COALESCE(o.units_sold, 0) AS remaining_stock
+      FROM ${invTable} i
+      LEFT JOIN ord_summary o ON i.sku = o.sku
+      WHERE i.organization_id = @organizationId
+        AND i.part_number = @partNumber
+        AND i.upc         = @upc
+        AND i.box_number IS NOT NULL
+        AND TRIM(i.box_number) != ''
+      ORDER BY remaining_stock DESC
     `;
-    const [rows] = await bq.query({ query, params: { organizationId, partNumber } });
-    return rows;
+    const [rows] = await bq.query({
+      query,
+      params: { organizationId, partNumber, upc },
+    });
+
+    const seen = new Set();
+    const all  = rows
+      .map(r => ({ box_number: r.box_number, remaining_stock: Number(r.remaining_stock ?? 0) }))
+      .filter(r => { if (seen.has(r.box_number)) return false; seen.add(r.box_number); return true; });
+
+    return {
+      originalBox,
+      alternatives: all,
+    };
   }
 
   return { findAll, deleteBySkus, updateRow, findAlternativeBoxes };

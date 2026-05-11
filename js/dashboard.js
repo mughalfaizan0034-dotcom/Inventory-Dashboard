@@ -6,14 +6,14 @@
 const Dashboard = (() => {
 
   const KPI_DEFS = [
-    { id: 'kpi-total-skus',        label: 'Total SKUs',           icon: '📦', color: 'blue',   field: 'totalSkus',          format: 'number' },
-    { id: 'kpi-total-units',       label: 'Total Units',          icon: '🔢', color: 'purple', field: 'totalUnits',         format: 'number' },
-    { id: 'kpi-units-sold',        label: 'Units Sold',           icon: '🛒', color: 'orange', field: 'unitsSold',          format: 'number' },
-    { id: 'kpi-total-orders',      label: 'Total Orders',         icon: '📋', color: 'cyan',   field: 'totalOrders',        format: 'number' },
-    { id: 'kpi-remaining-stock',   label: 'Remaining Stock',      icon: '🏭', color: 'green',  field: 'remainingStock',     format: 'number' },
-    { id: 'kpi-phantom-units',     label: 'Phantom Units',        icon: '👻', color: 'red',    field: 'phantomUnits',       format: 'number' },
-    { id: 'kpi-undefined-orders',  label: 'Undefined SKU Orders', icon: '❓', color: 'pink',   field: 'undefinedSkuOrders', format: 'number' },
-    { id: 'kpi-last-upload',       label: 'Last Upload',          icon: '📤', color: 'gray',   field: 'lastUploadDate',     format: 'datetime' },
+    { id: 'kpi-total-skus',        label: 'Total SKUs',           icon: '📦', color: 'blue',   field: 'totalSkus',          format: 'number', navigate: 'inventory' },
+    { id: 'kpi-total-units',       label: 'Total Units',          icon: '🔢', color: 'purple', field: 'totalUnits',         format: 'number', navigate: 'inventory' },
+    { id: 'kpi-units-sold',        label: 'Units Sold',           icon: '🛒', color: 'orange', field: 'unitsSold',          format: 'number', navigate: 'orders' },
+    { id: 'kpi-total-orders',      label: 'Total Orders',         icon: '📋', color: 'cyan',   field: 'totalOrders',        format: 'number', navigate: 'orders' },
+    { id: 'kpi-remaining-stock',   label: 'Remaining Stock',      icon: '🏭', color: 'green',  field: 'remainingStock',     format: 'number', navigate: 'inventory' },
+    { id: 'kpi-phantom-units',     label: 'Phantom Units',        icon: '👻', color: 'red',    field: 'phantomUnits',       format: 'number', navigate: 'orders',    action: 'phantom' },
+    { id: 'kpi-undefined-orders',  label: 'Undefined SKU Orders', icon: '❓', color: 'pink',   field: 'undefinedSkuOrders', format: 'number', navigate: 'orders' },
+    { id: 'kpi-undefined-skus',    label: 'Undefined SKUs',       icon: '⚠', color: 'gray',   field: 'undefinedSkus',      format: 'number', navigate: 'inventory', action: 'undefined' },
   ];
 
   function _renderSkeletons() {
@@ -31,8 +31,7 @@ const Dashboard = (() => {
       let sub = '';
 
       if (value != null) {
-        if (def.format === 'number')   display = Utils.formatNumber(value);
-        if (def.format === 'datetime') display = value ? Utils.timeAgo(value) : '—';
+        if (def.format === 'number') display = Utils.formatNumber(value);
       }
 
       if (def.field === 'phantomUnits' && data.phantomUnits > 0) {
@@ -44,17 +43,35 @@ const Dashboard = (() => {
       if (def.field === 'remainingStock' && data.remainingStock < 0) {
         sub = 'Negative — oversold';
       }
-      if (def.field === 'lastUploadDate' && value) {
-        sub = Utils.formatDatetime(value);
+      if (def.field === 'undefinedSkus' && data.undefinedSkus > 0) {
+        sub = 'Inventory rows with NA/blank values';
       }
 
+      const clickable = def.navigate
+        ? `data-navigate="${def.navigate}" ${def.action ? `data-action="${def.action}"` : ''} style="cursor:pointer"`
+        : '';
+
       return `
-        <div class="kpi-card ${def.color}">
+        <div class="kpi-card ${def.color}" ${clickable}>
           <div class="kpi-label">${def.icon} ${Utils.escapeHtml(def.label)}</div>
           <div class="kpi-value" id="${def.id}">${Utils.escapeHtml(String(display))}</div>
           ${sub ? `<div class="kpi-sub">${Utils.escapeHtml(sub)}</div>` : ''}
         </div>`;
     }).join('');
+
+    // Wire up click navigation
+    grid.querySelectorAll('.kpi-card[data-navigate]').forEach(card => {
+      card.addEventListener('click', () => {
+        const target = card.dataset.navigate;
+        const action = card.dataset.action;
+        App.navigate(target);
+        if (action === 'phantom') {
+          setTimeout(() => Orders.setPhantomFilter?.(), 60);
+        } else if (action === 'undefined') {
+          setTimeout(() => InventoryList.setUndefinedFilter?.(), 60);
+        }
+      });
+    });
   }
 
   function _renderRecentActivity(items) {
@@ -100,13 +117,18 @@ const Perf = (() => {
   let _weeklyChart   = null;
   let _platformChart = null;
   let _weeks         = 12;
+  let _platform      = '';
 
   async function load() {
     const container = document.getElementById('perf-container');
     if (container) Loading.section(container, true);
 
     try {
-      const data = await API.getPerformanceData(_weeks);
+      const [data, platforms] = await Promise.all([
+        API.getPerformanceData(_weeks, _platform),
+        API.getPlatforms().catch(() => []),
+      ]);
+      _populatePlatformSelect(platforms);
       _renderWeeklyChart(data.weekly || []);
       _renderPlatformChart(data.platforms || []);
       _renderTopSkus(data.topSkus || []);
@@ -116,6 +138,18 @@ const Perf = (() => {
     } finally {
       if (container) Loading.section(container, false);
     }
+  }
+
+  function _populatePlatformSelect(platforms) {
+    const sel = document.getElementById('perf-platform-select');
+    if (!sel || sel.options.length > 1) return; // already populated
+    platforms.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      sel.appendChild(opt);
+    });
+    sel.value = _platform;
   }
 
   function _renderWeeklyChart(weekly) {
@@ -253,9 +287,16 @@ const Perf = (() => {
     load();
   }
 
+  function setPlatform(p) {
+    _platform = p || '';
+    load();
+  }
+
   function init() {
-    const sel = document.getElementById('perf-weeks-select');
-    if (sel) sel.addEventListener('change', e => setWeeks(e.target.value));
+    const sel     = document.getElementById('perf-weeks-select');
+    const platSel = document.getElementById('perf-platform-select');
+    if (sel)     sel.addEventListener('change', e => setWeeks(e.target.value));
+    if (platSel) platSel.addEventListener('change', e => setPlatform(e.target.value));
   }
 
   return { load, init };

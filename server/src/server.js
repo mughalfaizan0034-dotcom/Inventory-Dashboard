@@ -18,6 +18,7 @@ import { createOrdersRepository } from './repositories/ordersRepository.js';
 import { createDashboardRepository } from './repositories/dashboardRepository.js';
 import { createUploadsRepository } from './repositories/uploadsRepository.js';
 import { createActivityRepository } from './repositories/activityRepository.js';
+import { createLookupRepository } from './repositories/lookupRepository.js';
 
 import { createAuthService } from './services/authService.js';
 import { createInventoryService } from './services/inventoryService.js';
@@ -27,6 +28,7 @@ import { createUploadsService } from './services/uploadsService.js';
 import { createUsersService } from './services/usersService.js';
 import { createUsernameService } from './services/usernameService.js';
 import { createActivityService } from './services/activityService.js';
+import { createLookupService } from './services/lookupService.js';
 
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
@@ -38,6 +40,7 @@ import { usersRoutes } from './routes/users.js';
 import { membershipsRoutes } from './routes/memberships.js';
 import { organizationsRoutes } from './routes/organizations.js';
 import { activityRoutes } from './routes/activity.js';
+import { lookupRoutes } from './routes/lookup.js';
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -131,6 +134,7 @@ export async function buildApp() {
     const dashboardRepo    = createDashboardRepository(deps);
     const uploadsRepo      = createUploadsRepository(deps);
     const activityRepo     = createActivityRepository(deps);
+    const lookupRepo       = createLookupRepository(deps);
 
     // Services
     const usernameService  = createUsernameService({ usersRepo });
@@ -141,6 +145,7 @@ export async function buildApp() {
     const uploadsService   = createUploadsService({ uploadsRepo });
     const usersService     = createUsersService({ usersRepo, membershipsRepo, usernameService });
     const activityService  = createActivityService({ activityRepo });
+    const lookupService    = createLookupService({ lookupRepo });
 
     const tokenFactory = createTokenFactory(fastify);
 
@@ -155,6 +160,7 @@ export async function buildApp() {
     fastify.register(membershipsRoutes,   { prefix: '/memberships',   membershipsRepo });
     fastify.register(organizationsRoutes, { prefix: '/organizations', orgsRepo, membershipsRepo });
     fastify.register(activityRoutes,      { prefix: '/activity',      activityService });
+    fastify.register(lookupRoutes,        { prefix: '/lookup',        lookupService });
     console.log('[BOOT] all route plugins registered');
 
     if (process.env.DEBUG_ROUTES === 'true') {

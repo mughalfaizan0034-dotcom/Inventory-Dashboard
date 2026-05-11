@@ -9,15 +9,66 @@ const Orders = (() => {
   let _loading     = false;
   let _platforms   = [];
   let _selectedIds = new Set();
+  let _sortBy      = 'order_date';
+  let _sortDir     = 'desc';
 
   const DATA_COLS = ['Order Date', 'SKU', 'Qty Sold', 'Shipped From Box', 'Platform'];
-  const ALL_COLS  = ['', ...DATA_COLS, ''];
+  const ALL_COLS  = ['', ...DATA_COLS];
 
-  /* ── SKU parser for alternative box detection ────────────── */
+  /* ── SKU parser ──────────────────────────────────────────── */
   function _parseSku(sku) {
     const m = (sku || '').match(/^ARA(\d+)-(.+)-(.+)$/);
     if (!m) return null;
     return { box: m[1], partNumber: m[2], upc: m[3] };
+  }
+
+  /* ── Platform badge ──────────────────────────────────────── */
+  function _platformBadge(platform) {
+    if (!platform) return '<span style="color:var(--txt-4)">-</span>';
+    const colors = { amazon: 'info', ebay: 'warning', walmart: 'primary', shopify: 'success' };
+    return Utils.badgeHtml(colors[platform.toLowerCase()] || 'gray', platform);
+  }
+
+  /* ── Sort headers ────────────────────────────────────────── */
+  function _initSortHeaders() {
+    const table = document.getElementById('orders-table');
+    if (!table) return;
+    table.querySelectorAll('th[data-sort]').forEach(th => {
+      th.style.cursor = 'pointer';
+      th.style.userSelect = 'none';
+      const arrow = document.createElement('span');
+      arrow.className = 'sort-arrow';
+      arrow.style.cssText = 'margin-left:4px;opacity:.3;font-size:11px';
+      arrow.textContent = '↕';
+      th.appendChild(arrow);
+      th.addEventListener('click', () => {
+        const field = th.dataset.sort;
+        if (_sortBy === field) _sortDir = _sortDir === 'asc' ? 'desc' : 'asc';
+        else { _sortBy = field; _sortDir = 'desc'; }
+        _page = 1;
+        _updateSortHeaders();
+        load();
+      });
+    });
+    _updateSortHeaders();
+  }
+
+  function _updateSortHeaders() {
+    const table = document.getElementById('orders-table');
+    if (!table) return;
+    table.querySelectorAll('th[data-sort]').forEach(th => {
+      const arrow = th.querySelector('.sort-arrow');
+      if (!arrow) return;
+      if (th.dataset.sort === _sortBy) {
+        arrow.textContent = _sortDir === 'asc' ? '↑' : '↓';
+        arrow.style.opacity = '1';
+        arrow.style.color = 'var(--primary)';
+      } else {
+        arrow.textContent = '↕';
+        arrow.style.opacity = '0.3';
+        arrow.style.color = '';
+      }
+    });
   }
 
   /* ── Render table ────────────────────────────────────────── */
@@ -29,33 +80,35 @@ const Orders = (() => {
 
     if (!rows || !rows.length) {
       _selectedIds.clear();
-      _updateDeleteBar();
+      _updateDeleteBtn();
       tbody.innerHTML = `<tr><td colspan="${ALL_COLS.length}" style="padding:0">${Loading.empty('🛒', 'No orders found', 'Adjust your filters or upload order data')}</td></tr>`;
       if (info) info.textContent = '';
       Pagination.render('orders-pagination', 1, 0, () => {});
       return;
     }
 
+    const isPhantom = _filters.phantom_only;
+
     tbody.innerHTML = rows.map(row => {
       const id      = row.order_row_id || '';
       const checked = _selectedIds.has(id) ? ' checked' : '';
+      const trStyle = isPhantom ? ' style="background:rgba(220,38,38,.06)"' : '';
       return `<tr data-row-id="${Utils.escapeHtml(id)}"
                   data-order-date="${Utils.escapeHtml(row.order_date || '')}"
                   data-sku="${Utils.escapeHtml(row.sku || '')}"
                   data-qty="${Utils.escapeHtml(String(row.quantity_sold ?? ''))}"
                   data-shipped="${Utils.escapeHtml(row.shipped_from_box || '')}"
-                  data-platform="${Utils.escapeHtml(row.platform || '')}">
+                  data-platform="${Utils.escapeHtml(row.platform || '')}"${trStyle}>
         <td style="width:36px;text-align:center;padding:0 4px">
           <input type="checkbox" class="order-row-cb" data-id="${Utils.escapeHtml(id)}"${checked} style="cursor:pointer">
         </td>
         <td>${Utils.escapeHtml(row.order_date || '-')}</td>
         <td style="font-weight:500">${Utils.escapeHtml(row.sku || '-')}</td>
         <td class="num"><strong>${Utils.formatNumber(row.quantity_sold)}</strong></td>
-        <td>${Utils.escapeHtml(row.shipped_from_box || '-')}</td>
-        <td>${_platformBadge(row.platform)}</td>
-        <td style="width:36px;text-align:center;padding:0 4px">
-          <button class="btn btn-ghost btn-icon btn-sm order-edit-btn" data-id="${Utils.escapeHtml(id)}" title="Edit row" style="opacity:.6">✏️</button>
+        <td class="shipped-cell" style="white-space:nowrap">
+          <span>${Utils.escapeHtml(row.shipped_from_box || '-')}</span><button class="btn btn-ghost btn-icon btn-sm order-edit-btn" title="Edit shipped from box" style="opacity:.45;font-size:11px;padding:0 3px;margin-left:5px;vertical-align:middle">✏️</button>
         </td>
+        <td>${_platformBadge(row.platform)}</td>
       </tr>`;
     }).join('');
 
@@ -64,34 +117,28 @@ const Orders = (() => {
         if (cb.checked) _selectedIds.add(cb.dataset.id);
         else            _selectedIds.delete(cb.dataset.id);
         _syncSelectAll();
-        _updateDeleteBar();
+        _updateDeleteBtn();
       });
     });
 
     tbody.querySelectorAll('.order-edit-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const tr = btn.closest('tr');
-        _openEditModal(tr);
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        _openInlineBoxSelector(btn.closest('tr'));
       });
     });
 
     _syncSelectAll();
-    _updateDeleteBar();
+    _updateDeleteBtn();
 
+    const ps = CONFIG.getPageSize();
     if (info) {
-      const ps    = CONFIG.PAGE_SIZE;
       const start = ((_page - 1) * ps) + 1;
       const end   = Math.min(_page * ps, _total);
       info.textContent = `Showing ${start}–${end} of ${Utils.formatNumber(_total)} orders`;
     }
 
-    Pagination.render('orders-pagination', _page, Math.ceil(_total / CONFIG.PAGE_SIZE), p => { _page = p; load(); });
-  }
-
-  function _platformBadge(platform) {
-    if (!platform) return '<span style="color:var(--txt-4)">-</span>';
-    const colors = { amazon: 'info', ebay: 'warning', walmart: 'primary', shopify: 'success' };
-    return Utils.badgeHtml(colors[platform.toLowerCase()] || 'gray', platform);
+    Pagination.render('orders-pagination', _page, Math.ceil(_total / ps), p => { _page = p; load(); });
   }
 
   /* ── Selection helpers ───────────────────────────────────── */
@@ -105,16 +152,13 @@ const Orders = (() => {
     allCb.indeterminate = !allChk && anyChk;
   }
 
-  function _updateDeleteBar() {
-    const bar = document.getElementById('orders-delete-bar');
-    const cnt = document.getElementById('orders-selected-count');
-    if (!bar) return;
-    if (_selectedIds.size > 0) {
-      bar.style.display = 'flex';
-      if (cnt) cnt.textContent = `${_selectedIds.size} selected`;
-    } else {
-      bar.style.display = 'none';
-    }
+  function _updateDeleteBtn() {
+    const btn = document.getElementById('orders-delete-selected');
+    if (!btn) return;
+    btn.disabled = _selectedIds.size === 0;
+    btn.textContent = _selectedIds.size > 0
+      ? `Delete (${_selectedIds.size} selected)`
+      : 'Delete Selected';
   }
 
   function clearSelection() {
@@ -122,102 +166,119 @@ const Orders = (() => {
     document.querySelectorAll('.order-row-cb').forEach(cb => { cb.checked = false; });
     const allCb = document.getElementById('orders-select-all');
     if (allCb) { allCb.checked = false; allCb.indeterminate = false; }
-    _updateDeleteBar();
+    _updateDeleteBtn();
   }
 
-  /* ── Inline edit modal ───────────────────────────────────── */
-  async function _openEditModal(tr) {
-    const rowId    = tr.dataset.rowId;
-    const sku      = tr.dataset.sku;
-    const parsed   = _parseSku(sku);
+  /* ── Inline box selector ────────────────────────────────── */
+  function _closeInlineSelector() {
+    document.getElementById('inline-box-selector-row')?.remove();
+    document.querySelector('tr.inline-edit-active')?.classList.remove('inline-edit-active');
+  }
 
-    let altBoxOptions = '';
-    if (parsed) {
-      try {
-        const alts = await API.getInventoryAlternatives(sku);
-        if (alts && alts.length) {
-          const originalBox = tr.dataset.shipped;
-          altBoxOptions = `<datalist id="alt-boxes-list">` +
-            alts.map(a => {
-              const isOrig = a.box_number === originalBox;
-              return `<option value="${Utils.escapeHtml(a.box_number)}">${Utils.escapeHtml(a.box_number)}${isOrig ? ' ⭐ Original' : ''} (qty: ${a.quantity})</option>`;
-            }).join('') +
-          `</datalist>`;
-        }
-      } catch { /* ignore */ }
+  async function _openInlineBoxSelector(tr) {
+    const rowId      = tr.dataset.rowId;
+    const sku        = tr.dataset.sku;
+    const parsed     = _parseSku(sku);
+    const currentBox = tr.dataset.shipped || '';
+
+    // Toggle off if already open for this row
+    const existing = document.getElementById('inline-box-selector-row');
+    if (existing && existing.previousElementSibling === tr) {
+      _closeInlineSelector();
+      return;
+    }
+    _closeInlineSelector();
+
+    tr.classList.add('inline-edit-active');
+
+    const inlineRow = document.createElement('tr');
+    inlineRow.id = 'inline-box-selector-row';
+    inlineRow.innerHTML = `<td colspan="${ALL_COLS.length}" style="padding:0;border-top:none">
+      <div style="padding:10px 14px;background:var(--surface-2);border-bottom:2px solid var(--primary)">
+        <div style="font-size:11px;color:var(--txt-3);font-weight:700;letter-spacing:.04em;margin-bottom:8px">
+          SHIPPED FROM BOX — CLICK TO AUTO-SAVE
+          <button id="inline-box-close" style="float:right;background:none;border:none;cursor:pointer;color:var(--txt-4);font-size:14px;line-height:1;padding:0" title="Close">✕</button>
+        </div>
+        <div id="inline-box-cards" style="font-size:12px;color:var(--txt-4)">Loading alternatives…</div>
+      </div>
+    </td>`;
+    tr.after(inlineRow);
+
+    document.getElementById('inline-box-close')?.addEventListener('click', e => {
+      e.stopPropagation();
+      _closeInlineSelector();
+    });
+
+    const cardsWrap = document.getElementById('inline-box-cards');
+
+    if (!parsed) {
+      cardsWrap.innerHTML = `<span style="color:var(--txt-4)">SKU structure not recognized — cannot look up alternative boxes</span>`;
+      return;
     }
 
-    const hasAlt = altBoxOptions !== '';
+    try {
+      const result = await API.getInventoryAlternatives(sku);
+      const { originalBox, inStock } = result || {};
 
-    const bodyHtml = `
-      <div style="display:grid;gap:14px">
-        <div>
-          <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">ORDER DATE</label>
-          <input class="form-input" id="edit-order-date" type="date" value="${Utils.escapeHtml(tr.dataset.orderDate)}">
-        </div>
-        <div>
-          <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">QTY SOLD</label>
-          <input class="form-input" id="edit-qty-sold" type="number" min="1" value="${Utils.escapeHtml(tr.dataset.qty)}">
-        </div>
-        <div>
-          <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">PLATFORM</label>
-          <input class="form-input" id="edit-platform" value="${Utils.escapeHtml(tr.dataset.platform)}" list="platform-list">
-          <datalist id="platform-list">
-            ${_platforms.map(p => `<option value="${Utils.escapeHtml(p)}">`).join('')}
-          </datalist>
-        </div>
-        <div>
-          <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">
-            SHIPPED FROM BOX${hasAlt ? ' <span style="color:var(--txt-4);font-weight:400">(alternatives available)</span>' : ''}
-          </label>
-          <input class="form-input" id="edit-shipped-box" value="${Utils.escapeHtml(tr.dataset.shipped)}"
-            ${hasAlt ? 'list="alt-boxes-list"' : ''} placeholder="Optional">
-          ${altBoxOptions}
-        </div>
-        <div style="font-size:12px;color:var(--txt-4)">SKU: ${Utils.escapeHtml(sku)}</div>
-      </div>`;
-
-    const m = new Modal({
-      title: 'Edit Order',
-      body:  bodyHtml,
-      footer: `
-        <button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
-        <button class="btn btn-primary btn-sm" data-action="save">Save Changes</button>`,
-      maxWidth: '420px',
-    });
-    m.show();
-
-    m.footerEl.addEventListener('click', async e => {
-      const action = e.target.closest('[data-action]')?.dataset.action;
-      if (action === 'cancel') { m.hide(); m.destroy(); return; }
-      if (action === 'save') {
-        const saveBtn = m.footerEl.querySelector('[data-action="save"]');
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving…';
-        try {
-          const updates = {
-            order_date:       document.getElementById('edit-order-date').value,
-            quantity_sold:    parseInt(document.getElementById('edit-qty-sold').value, 10),
-            platform:         document.getElementById('edit-platform').value.trim(),
-            shipped_from_box: document.getElementById('edit-shipped-box').value.trim() || null,
-          };
-          if (!updates.order_date || !updates.quantity_sold || !updates.platform) {
-            Notify.warning('Validation', 'Order date, qty sold, and platform are required.');
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Save Changes';
-            return;
-          }
-          await API.updateOrder(rowId, updates);
-          Notify.success('Saved', 'Order updated successfully');
-          m.hide(); m.destroy();
-          load();
-        } catch (err) {
-          Notify.apiError(err);
-          saveBtn.disabled = false;
-          saveBtn.textContent = 'Save Changes';
-        }
+      if (!inStock?.length) {
+        cardsWrap.innerHTML = `<span style="color:var(--txt-4)">No alternative boxes in stock for this SKU</span>`;
+        return;
       }
-    });
+
+      const allOptions = inStock.map(a => ({
+        ...a,
+        isOriginal: a.box_number === originalBox,
+      })).sort((a, b) => {
+        if (a.isOriginal && !b.isOriginal) return -1;
+        if (!a.isOriginal && b.isOriginal) return 1;
+        return b.remaining_stock - a.remaining_stock;
+      });
+
+      cardsWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px';
+      cardsWrap.innerHTML = allOptions.map(opt => {
+        const isSelected = opt.box_number === currentBox;
+        const border = isSelected
+          ? '2px solid var(--primary)'
+          : (opt.isOriginal ? '2px solid #fbbf24' : '2px solid var(--border)');
+        const bg = opt.isOriginal ? 'rgba(251,191,36,.08)' : '#fff';
+        const shadow = isSelected ? 'box-shadow:0 0 0 3px rgba(37,99,235,.12);' : '';
+        return `
+          <div class="inline-box-opt" data-box="${Utils.escapeHtml(opt.box_number)}"
+            style="border:${border};border-radius:8px;padding:8px 12px;cursor:pointer;background:${bg};
+                   transition:border-color .15s,box-shadow .15s;min-width:130px;${shadow}">
+            <div style="font-size:11px;color:var(--txt-4);font-weight:600;margin-bottom:2px">
+              ${opt.isOriginal ? '📦 Original' : '📫 Alternative'}${isSelected ? ' <span style="color:var(--primary)">✓</span>' : ''}
+            </div>
+            <div style="font-weight:700;font-size:13px;color:var(--txt-1)">${Utils.escapeHtml(opt.box_number)}</div>
+            <div style="font-size:11.5px;color:var(--txt-3);margin-top:2px">${Utils.formatNumber(opt.remaining_stock)} in stock</div>
+          </div>`;
+      }).join('');
+
+      cardsWrap.querySelectorAll('.inline-box-opt').forEach(el => {
+        el.addEventListener('click', async () => {
+          const selectedBox = el.dataset.box;
+          el.style.opacity = '0.6';
+          try {
+            await API.updateOrder(rowId, {
+              order_date:       tr.dataset.orderDate,
+              quantity_sold:    parseInt(tr.dataset.qty, 10),
+              platform:         tr.dataset.platform,
+              shipped_from_box: selectedBox,
+            });
+            const shippedCell = tr.querySelector('td.shipped-cell');
+            if (shippedCell) shippedCell.firstChild.textContent = selectedBox;
+            tr.dataset.shipped = selectedBox;
+            Notify.success('Saved', `Shipped from box updated to ${selectedBox}`);
+            _closeInlineSelector();
+          } catch (err) {
+            Notify.apiError(err);
+            el.style.opacity = '1';
+          }
+        });
+      });
+    } catch {
+      cardsWrap.innerHTML = `<span style="color:var(--txt-4)">Failed to load alternatives</span>`;
+    }
   }
 
   /* ── Load ────────────────────────────────────────────────── */
@@ -230,8 +291,14 @@ const Orders = (() => {
     const tbody = document.getElementById('orders-tbody');
     if (tbody) tbody.innerHTML = Loading.tableRows(ALL_COLS.length, 8);
 
+    const ps = CONFIG.getPageSize();
+
     try {
-      const data = await API.getOrders(_page, CONFIG.PAGE_SIZE, _filters);
+      const data = await API.getOrders(_page, ps, {
+        ..._filters,
+        sort_by:  _sortBy,
+        sort_dir: _sortDir,
+      });
       _renderTable(data.items || [], data.total || 0);
     } catch (err) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="${ALL_COLS.length}">${Loading.error('Failed to load orders')}</td></tr>`;
@@ -255,15 +322,17 @@ const Orders = (() => {
   /* ── Filter helpers ──────────────────────────────────────── */
   function _collectFilters() {
     _filters = {};
-    const search   = document.getElementById('orders-search')?.value.trim();
-    const platform = document.getElementById('filter-platform')?.value;
-    const dateFrom = document.getElementById('filter-date-from')?.value;
-    const dateTo   = document.getElementById('filter-date-to')?.value;
+    const search    = document.getElementById('orders-search')?.value.trim();
+    const platform  = document.getElementById('filter-platform')?.value;
+    const dateFrom  = document.getElementById('filter-date-from')?.value;
+    const dateTo    = document.getElementById('filter-date-to')?.value;
+    const phantomCb = document.getElementById('filter-phantom');
 
-    if (search)   _filters.search     = search;
-    if (platform) _filters.platform   = platform;
-    if (dateFrom) _filters.start_date = dateFrom;
-    if (dateTo)   _filters.end_date   = dateTo;
+    if (search)   _filters.search      = search;
+    if (platform) _filters.platform    = platform;
+    if (dateFrom) _filters.start_date  = dateFrom;
+    if (dateTo)   _filters.end_date    = dateTo;
+    if (phantomCb?.checked) _filters.phantom_only = true;
   }
 
   function _resetFilters() {
@@ -271,19 +340,33 @@ const Orders = (() => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
+    const phantomCb = document.getElementById('filter-phantom');
+    if (phantomCb) phantomCb.checked = false;
     _filters = {};
     _page = 1;
     load();
   }
 
-  /* ── Bulk delete ─────────────────────────────────────────── */
-  function _confirmAndDelete({ label, payload }) {
+  /* ── Set filter programmatically (from dashboard KPI clicks) */
+  function setPhantomFilter() {
+    _filters = { phantom_only: true };
+    _page = 1;
+    const phantomCb = document.getElementById('filter-phantom');
+    if (phantomCb) phantomCb.checked = true;
+    load();
+  }
+
+  /* ── Bulk delete (selected rows) ─────────────────────────── */
+  function _deleteSelected() {
+    if (_selectedIds.size === 0) return;
+    const ids = Array.from(_selectedIds);
+
     const modal    = document.getElementById('orders-delete-modal');
     const msg      = document.getElementById('orders-delete-modal-msg');
     const confirmB = document.getElementById('orders-delete-confirm');
     const cancelB  = document.getElementById('orders-delete-cancel');
     if (!modal) return;
-    if (msg) msg.textContent = label;
+    if (msg) msg.textContent = `Delete ${ids.length} selected order${ids.length !== 1 ? 's' : ''}? This cannot be undone.`;
     modal.style.display = 'flex';
 
     const cleanup = () => { modal.style.display = 'none'; };
@@ -294,7 +377,7 @@ const Orders = (() => {
       cleanup();
       try {
         confirmB.disabled = true;
-        const result = await API.deleteOrders(payload);
+        const result = await API.deleteOrders({ row_ids: ids });
         _selectedIds.clear();
         Notify.success('Deleted', `Removed ${result.deleted ?? '?'} order${result.deleted !== 1 ? 's' : ''}`);
         _page = 1;
@@ -305,26 +388,16 @@ const Orders = (() => {
         confirmB.disabled = false;
       }
     };
-
     const onCancel = () => {
       confirmB.removeEventListener('click', onConfirm);
       cancelB.removeEventListener('click', onCancel);
       cleanup();
     };
-
     confirmB.addEventListener('click', onConfirm);
     cancelB.addEventListener('click',  onCancel);
   }
 
-  function _deleteSelected() {
-    if (_selectedIds.size === 0) return;
-    const ids = Array.from(_selectedIds);
-    _confirmAndDelete({
-      label:   `Delete ${ids.length} selected order${ids.length !== 1 ? 's' : ''}? This cannot be undone.`,
-      payload: { row_ids: ids },
-    });
-  }
-
+  /* ── Bulk delete (filter-based) ──────────────────────────── */
   function _deleteOrders() {
     _collectFilters();
     const hasFilter = Object.keys(_filters).length > 0;
@@ -333,21 +406,51 @@ const Orders = (() => {
       return;
     }
     const parts = [];
-    if (_filters.platform)   parts.push(`platform: ${_filters.platform}`);
-    if (_filters.start_date) parts.push(`from: ${_filters.start_date}`);
-    if (_filters.end_date)   parts.push(`to: ${_filters.end_date}`);
-    if (_filters.search)     parts.push(`SKU contains: "${_filters.search}"`);
-    _confirmAndDelete({
-      label:   `Delete ALL orders matching [${parts.join(', ')}]? This cannot be undone.`,
-      payload: {
-        filters: {
-          platform:   _filters.platform   || undefined,
-          start_date: _filters.start_date || undefined,
-          end_date:   _filters.end_date   || undefined,
-          search:     _filters.search     || undefined,
-        },
-      },
-    });
+    if (_filters.platform)     parts.push(`platform: ${_filters.platform}`);
+    if (_filters.start_date)   parts.push(`from: ${_filters.start_date}`);
+    if (_filters.end_date)     parts.push(`to: ${_filters.end_date}`);
+    if (_filters.search)       parts.push(`SKU contains: "${_filters.search}"`);
+    if (_filters.phantom_only) parts.push('phantom orders only');
+
+    const modal    = document.getElementById('orders-delete-modal');
+    const msg      = document.getElementById('orders-delete-modal-msg');
+    const confirmB = document.getElementById('orders-delete-confirm');
+    const cancelB  = document.getElementById('orders-delete-cancel');
+    if (!modal) return;
+    if (msg) msg.textContent = `Delete ALL orders matching [${parts.join(', ')}]? This cannot be undone.`;
+    modal.style.display = 'flex';
+
+    const cleanup = () => { modal.style.display = 'none'; };
+    const onConfirm = async () => {
+      confirmB.removeEventListener('click', onConfirm);
+      cancelB.removeEventListener('click', onCancel);
+      cleanup();
+      try {
+        confirmB.disabled = true;
+        const result = await API.deleteOrders({
+          filters: {
+            platform:    _filters.platform   || undefined,
+            start_date:  _filters.start_date || undefined,
+            end_date:    _filters.end_date   || undefined,
+            search:      _filters.search     || undefined,
+          },
+        });
+        Notify.success('Deleted', `Removed ${result.deleted ?? '?'} order${result.deleted !== 1 ? 's' : ''}`);
+        _page = 1;
+        load();
+      } catch (err) {
+        Notify.apiError(err);
+      } finally {
+        confirmB.disabled = false;
+      }
+    };
+    const onCancel = () => {
+      confirmB.removeEventListener('click', onConfirm);
+      cancelB.removeEventListener('click', onCancel);
+      cleanup();
+    };
+    confirmB.addEventListener('click', onConfirm);
+    cancelB.addEventListener('click',  onCancel);
   }
 
   /* ── Export modal ────────────────────────────────────────── */
@@ -355,12 +458,12 @@ const Orders = (() => {
     const m = new Modal({
       title: 'Export Orders',
       body: `
-        <div style="display:grid;gap:10px">
-          <button class="btn btn-secondary btn-sm" data-export="current" style="text-align:left;justify-content:flex-start">
-            📄 Current Page — export rows visible on screen
+        <div id="export-modal-content" style="display:grid;gap:10px">
+          <button class="btn btn-secondary btn-sm" data-export="alltime" style="text-align:left;justify-content:flex-start">
+            📥 Download All Time Orders
           </button>
-          <button class="btn btn-secondary btn-sm" data-export="filtered" style="text-align:left;justify-content:flex-start">
-            🔍 Current Filtered Results — re-fetch all matching rows
+          <button class="btn btn-secondary btn-sm" data-export="daterange" style="text-align:left;justify-content:flex-start">
+            📅 Select Date Range…
           </button>
         </div>`,
       footer: `<button class="btn btn-ghost btn-sm" data-action="cancel">Cancel</button>`,
@@ -372,37 +475,52 @@ const Orders = (() => {
       const btn = e.target.closest('[data-export]');
       if (!btn) return;
       const mode = btn.dataset.export;
-      m.hide(); m.destroy();
-      await _doExport(mode);
+
+      if (mode === 'alltime') {
+        m.hide(); m.destroy();
+        await _doExport('alltime');
+      } else if (mode === 'daterange') {
+        document.getElementById('export-modal-content').innerHTML = `
+          <div style="display:grid;gap:12px">
+            <div>
+              <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">FROM DATE</label>
+              <input class="form-input" id="export-date-from" type="date">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">TO DATE</label>
+              <input class="form-input" id="export-date-to" type="date">
+            </div>
+            <button class="btn btn-primary btn-sm" id="export-daterange-dl">Download</button>
+          </div>`;
+        document.getElementById('export-daterange-dl')?.addEventListener('click', async () => {
+          const from = document.getElementById('export-date-from')?.value;
+          const to   = document.getElementById('export-date-to')?.value;
+          m.hide(); m.destroy();
+          await _doExport('daterange', { from, to });
+        });
+      }
     });
     m.footerEl.addEventListener('click', e => {
       if (e.target.closest('[data-action="cancel"]')) { m.hide(); m.destroy(); }
     });
   }
 
-  async function _doExport(mode) {
+  async function _doExport(mode, options = {}) {
     let rows;
-
-    if (mode === 'current') {
-      const tbody = document.getElementById('orders-tbody');
-      if (!tbody) return;
-      const trs = Array.from(tbody.querySelectorAll('tr[data-row-id]'));
-      rows = trs.map(tr => ({
-        order_date:       tr.dataset.orderDate,
-        sku:              tr.dataset.sku,
-        quantity_sold:    tr.dataset.qty,
-        shipped_from_box: tr.dataset.shipped,
-        platform:         tr.dataset.platform,
-      }));
-    } else {
-      // Fetch all matching rows (up to 5000)
-      try {
-        const data = await API.getOrders(1, 5000, _filters);
+    try {
+      if (mode === 'alltime') {
+        const data = await API.getOrders(1, 5000, {});
         rows = data.items || [];
-      } catch (err) {
-        Notify.apiError(err);
-        return;
+      } else {
+        const filters = {};
+        if (options.from) filters.start_date = options.from;
+        if (options.to)   filters.end_date   = options.to;
+        const data = await API.getOrders(1, 5000, filters);
+        rows = data.items || [];
       }
+    } catch (err) {
+      Notify.apiError(err);
+      return;
     }
 
     const header = DATA_COLS.join(',');
@@ -433,12 +551,14 @@ const Orders = (() => {
     const selectAll    = document.getElementById('orders-select-all');
     const deleteSelBtn = document.getElementById('orders-delete-selected');
     const deleteOrdBtn = document.getElementById('orders-delete-filtered');
+    const phantomCb    = document.getElementById('filter-phantom');
 
     if (applyBtn)     applyBtn.addEventListener('click',     () => { _collectFilters(); _page = 1; load(); });
     if (resetBtn)     resetBtn.addEventListener('click',     _resetFilters);
     if (exportBtn)    exportBtn.addEventListener('click',    _openExportModal);
     if (deleteSelBtn) deleteSelBtn.addEventListener('click', _deleteSelected);
     if (deleteOrdBtn) deleteOrdBtn.addEventListener('click', _deleteOrders);
+    if (phantomCb)    phantomCb.addEventListener('change',   () => { _collectFilters(); _page = 1; load(); });
 
     if (selectAll) {
       selectAll.addEventListener('change', () => {
@@ -447,7 +567,7 @@ const Orders = (() => {
           if (selectAll.checked) _selectedIds.add(cb.dataset.id);
           else                   _selectedIds.delete(cb.dataset.id);
         });
-        _updateDeleteBar();
+        _updateDeleteBtn();
       });
     }
 
@@ -456,7 +576,22 @@ const Orders = (() => {
         if (e.key === 'Enter') { _collectFilters(); _page = 1; load(); }
       });
     }
+
+    _initSortHeaders();
+    _updateDeleteBtn();
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') _closeInlineSelector();
+    });
+    document.addEventListener('click', e => {
+      const sel = document.getElementById('inline-box-selector-row');
+      if (!sel) return;
+      const active = document.querySelector('tr.inline-edit-active');
+      if (active && !active.contains(e.target) && !sel.contains(e.target)) {
+        _closeInlineSelector();
+      }
+    });
   }
 
-  return { init, load, clearSelection };
+  return { init, load, clearSelection, setPhantomFilter };
 })();

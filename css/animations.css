@@ -108,3 +108,20 @@
 .kpi-value.updating {
   animation: scaleIn .15s var(--ease);
 }
+
+/* Upload guide header pulse */
+@keyframes guidePulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(37,99,235,.25); }
+  50%       { box-shadow: 0 2px 18px rgba(37,99,235,.45); }
+}
+.guide-pulse { animation: guidePulse 3s ease-in-out infinite; }
+
+/* Inline box selector expand */
+@keyframes expandDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+#inline-box-selector-row td > div { animation: expandDown .15s var(--ease); }
+
+/* Inline edit active row highlight */
+tr.inline-edit-active { background: rgba(37,99,235,.04) !important; }

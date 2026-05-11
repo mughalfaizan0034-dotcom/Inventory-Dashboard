@@ -17,6 +17,11 @@ var CONFIG = {
   TIMEOUT_MS:       30000,
   MAX_RETRIES:      2,
   PAGE_SIZE:        20,
+  getPageSize() {
+    const rowH     = 44;
+    const reserved = 340; // topbar + filter + section header + pagination + padding
+    return Math.max(10, Math.min(50, Math.floor((window.innerHeight - reserved) / rowH)));
+  },
 };
 
 /* ── Utils ──────────────────────────────────────────────────── */

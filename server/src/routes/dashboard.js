@@ -12,9 +12,10 @@ export async function dashboardRoutes(fastify, { dashboardService }) {
   });
 
   fastify.get('/performance', { preHandler: [authenticate] }, async (request, reply) => {
-    const weeks = Math.min(Math.max(parseInt(request.query.weeks, 10) || 12, 1), 52);
+    const weeks    = Math.min(Math.max(parseInt(request.query.weeks, 10) || 12, 1), 52);
+    const platform = request.query.platform || null;
     try {
-      const data = await dashboardService.getPerformance(request.user.organization_id, weeks);
+      const data = await dashboardService.getPerformance(request.user.organization_id, weeks, platform);
       return reply.send({ success: true, data });
     } catch (err) {
       request.log.error({ err }, 'Dashboard performance error');

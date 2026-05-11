@@ -3,75 +3,173 @@
    ============================================================ */
 
 const BoxLookup = (() => {
-  let _debounced = null;
+  let _lastData = null;
+  let _activeTab = 'instock';
 
-  function _renderResult(data) {
-    const el = document.getElementById('box-result');
-    if (!el) return;
-
-    const items = data?.items || data?.boxes || [];
-    if (!items.length) {
-      el.innerHTML = Loading.empty('🔍', 'No results found', 'Try a different SKU, UPC, or box number');
-      return;
-    }
-
-    el.innerHTML = items.map(item => {
-      const qty = Number(item.quantity ?? 0);
-      return `
-        <div class="card" style="margin-bottom:12px">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
-            <div>
-              <div style="font-size:16px;font-weight:700;color:var(--txt-1);margin-bottom:4px">${Utils.escapeHtml(item.sku || '—')}</div>
-              <div style="font-size:12px;color:var(--txt-4)">Box ${Utils.escapeHtml(item.box_number || '—')} · UPC ${Utils.escapeHtml(item.upc || '—')} · Part ${Utils.escapeHtml(item.part_number || '—')}</div>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              ${qty === 0 ? Utils.badgeHtml('error', 'Out of Stock') : ''}
-              ${qty > 0 && qty <= 10 ? Utils.badgeHtml('warning', 'Low Stock') : ''}
-              ${qty > 10 ? Utils.badgeHtml('success', 'In Stock') : ''}
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-top:16px">
-            ${_statBox('Quantity', Utils.formatNumber(qty), qty === 0 ? 'var(--error)' : qty <= 10 ? 'var(--warning)' : 'var(--success)')}
-          </div>
-          <div style="margin-top:12px;font-size:11.5px;color:var(--txt-4)">
-            Added ${Utils.formatDate(item.date_added)}
-            ${item.notes ? ` · ${Utils.escapeHtml(item.notes)}` : ''}
-          </div>
-        </div>`;
-    }).join('');
+  /* ── Stock badge helper ──────────────────────────────────── */
+  function _stockBadge(remaining) {
+    if (remaining > 0)  return `<span style="font-size:12px;font-weight:700;color:var(--success)">${Utils.formatNumber(remaining)}</span>`;
+    if (remaining === 0) return `<span style="font-size:12px;font-weight:700;color:var(--txt-4)">0 (OOS)</span>`;
+    return `<span style="font-size:12px;font-weight:700;color:var(--error)">${Utils.formatNumber(remaining)} (oversold)</span>`;
   }
 
-  function _statBox(label, value, color = 'var(--txt-1)') {
+  function _stockStatus(remaining) {
+    if (remaining > 0)  return '';
+    if (remaining === 0) return Utils.badgeHtml('warning', 'OOS');
+    return Utils.badgeHtml('error', 'Oversold');
+  }
+
+  /* ── Box row renderer ─────────────────────────────────────── */
+  function _boxRow(box, isFirst = false) {
+    const rem = Number(box.remaining_stock ?? 0);
+    const rowBg = rem < 0 ? 'background:rgba(220,38,38,.05)' : rem === 0 ? 'background:rgba(180,180,180,.05)' : '';
     return `
-      <div style="background:var(--surface-2);border-radius:var(--r-sm);padding:10px 12px">
-        <div style="font-size:11px;color:var(--txt-4);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${Utils.escapeHtml(label)}</div>
-        <div style="font-size:20px;font-weight:700;color:${color}">${Utils.escapeHtml(String(value))}</div>
-      </div>`;
+      <tr style="${rowBg}">
+        <td style="font-weight:600;color:var(--txt-1)">${Utils.escapeHtml(box.box_number || '—')}${isFirst ? ' <span style="font-size:10px;background:#dbeafe;color:#2563eb;padding:1px 5px;border-radius:3px;font-weight:600">ORIG</span>' : ''}</td>
+        <td style="font-family:monospace;font-size:12px">${Utils.escapeHtml(box.sku || '—')}</td>
+        <td>${Utils.escapeHtml(box.part_number || '—')}</td>
+        <td>${Utils.escapeHtml(box.upc || '—')}</td>
+        <td class="num">${Utils.formatNumber(box.initial_stock)}</td>
+        <td class="num">${Utils.formatNumber(box.units_sold)}</td>
+        <td class="num">${_stockBadge(rem)} ${_stockStatus(rem)}</td>
+      </tr>`;
+  }
+
+  /* ── Render grouped result ────────────────────────────────── */
+  function _renderGroup(group, filterFn) {
+    const rows = [];
+    for (const section of group) {
+      // section is {part_number, upcs:[{upc, boxes:[...]}]} or {upc, part_numbers:[...]}
+      const subSections = section.upcs || section.part_numbers || [];
+      for (const sub of subSections) {
+        const boxes = (sub.boxes || []).filter(filterFn);
+        if (!boxes.length) continue;
+        const subLabel = sub.upc != null ? `UPC ${sub.upc}` : `Part # ${sub.part_number}`;
+        const groupLabel = section.part_number != null ? `Part Number: ${section.part_number}` : `UPC: ${section.upc}`;
+        rows.push(`
+          <div class="card" style="margin-bottom:12px;padding:0;overflow:hidden">
+            <div style="background:var(--surface-2);padding:8px 16px;font-size:12px;font-weight:700;color:var(--txt-3);letter-spacing:.04em;text-transform:uppercase">${Utils.escapeHtml(groupLabel)}</div>
+            <div style="padding:6px 16px 2px;font-size:12px;color:var(--txt-4)">${Utils.escapeHtml(subLabel)}</div>
+            <div class="table-wrap" style="border:none;margin:0">
+              <table class="data-table" style="font-size:12.5px">
+                <thead>
+                  <tr>
+                    <th>Box #</th><th>SKU</th><th>Part #</th><th>UPC</th>
+                    <th class="num">Initial</th><th class="num">Sold</th><th class="num">Remaining</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${boxes.map((b, i) => _boxRow(b, i === 0)).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>`);
+      }
+    }
+    return rows.join('');
+  }
+
+  /* ── Render all groups ──────────────────────────────────────*/
+  function _renderResults(data, tab) {
+    const filterFn = tab === 'instock'
+      ? b => Number(b.remaining_stock ?? 0) > 0
+      : () => true;
+
+    const group = data.byPartNumber?.length ? data.byPartNumber : data.byUpc || [];
+    const html  = _renderGroup(group, filterFn);
+
+    const el = tab === 'instock'
+      ? document.getElementById('lookup-instock')
+      : document.getElementById('lookup-all');
+    if (!el) return;
+
+    el.innerHTML = html || Loading.empty('📦', tab === 'instock' ? 'No in-stock boxes found' : 'No boxes found', 'Try a different Part Number or UPC');
+  }
+
+  function _showResults(data) {
+    _lastData = data;
+    const hasResults = (data.byPartNumber?.length || data.byUpc?.length);
+
+    const tabsEl = document.getElementById('lookup-tabs');
+    if (tabsEl) tabsEl.style.display = hasResults ? 'block' : 'none';
+
+    _renderResults(data, 'instock');
+    _renderResults(data, 'all');
+
+    // Show/hide tabs based on active
+    const inStockEl = document.getElementById('lookup-instock');
+    const allEl     = document.getElementById('lookup-all');
+    if (inStockEl) inStockEl.style.display = _activeTab === 'instock' ? '' : 'none';
+    if (allEl)     allEl.style.display     = _activeTab === 'all'     ? '' : 'none';
+
+    _updateTabUI();
+  }
+
+  function _updateTabUI() {
+    document.querySelectorAll('.lookup-tab').forEach(btn => {
+      const isActive = btn.dataset.tab === _activeTab;
+      btn.style.color       = isActive ? 'var(--primary)' : 'var(--txt-3)';
+      btn.style.fontWeight  = isActive ? '600' : '500';
+      btn.style.borderBottom = isActive ? '2px solid var(--primary)' : '2px solid transparent';
+    });
   }
 
   async function search(query) {
-    const el = document.getElementById('box-result');
-    if (!el) return;
     query = (query || '').trim();
-    if (!query) { el.innerHTML = ''; return; }
-    el.innerHTML = `<div style="display:flex;justify-content:center;padding:32px">${Loading.spinnerHtml()}</div>`;
+    const clearBtn = document.getElementById('box-clear-btn');
+    if (!query) {
+      document.getElementById('lookup-instock').innerHTML = '';
+      document.getElementById('lookup-all').innerHTML = '';
+      const tabsEl = document.getElementById('lookup-tabs');
+      if (tabsEl) tabsEl.style.display = 'none';
+      if (clearBtn) clearBtn.style.display = 'none';
+      return;
+    }
+    if (clearBtn) clearBtn.style.display = '';
+
+    const inStockEl = document.getElementById('lookup-instock');
+    if (inStockEl) inStockEl.innerHTML = `<div style="display:flex;justify-content:center;padding:32px">${Loading.spinnerHtml()}</div>`;
+    document.getElementById('lookup-all').innerHTML = '';
+    const tabsEl = document.getElementById('lookup-tabs');
+    if (tabsEl) tabsEl.style.display = 'none';
+
     try {
-      const data = await API.searchBox(query);
-      _renderResult(data);
+      const data = await API.lookup(query);
+      _showResults(data);
     } catch (err) {
-      el.innerHTML = Loading.error('Search failed. Please try again.');
+      if (inStockEl) inStockEl.innerHTML = Loading.error('Search failed. Please try again.');
       Notify.apiError(err);
     }
   }
 
   function init() {
-    const input  = document.getElementById('box-search-input');
-    const btn    = document.getElementById('box-search-btn');
+    const input    = document.getElementById('box-search-input');
+    const btn      = document.getElementById('box-search-btn');
+    const clearBtn = document.getElementById('box-clear-btn');
+    const tabsEl   = document.getElementById('lookup-tabs');
     if (!input) return;
-    _debounced = Utils.debounce(val => search(val), 500);
-    input.addEventListener('input', e => _debounced(e.target.value));
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); search(input.value); } });
-    if (btn) btn.addEventListener('click', () => search(input.value));
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); search(input.value); }
+    });
+    if (btn)      btn.addEventListener('click',   () => search(input.value));
+    if (clearBtn) clearBtn.addEventListener('click', () => {
+      input.value = '';
+      clearBtn.style.display = 'none';
+      search('');
+    });
+
+    if (tabsEl) {
+      tabsEl.addEventListener('click', e => {
+        const tab = e.target.closest('.lookup-tab')?.dataset.tab;
+        if (!tab || tab === _activeTab) return;
+        _activeTab = tab;
+        _updateTabUI();
+        document.getElementById('lookup-instock').style.display = tab === 'instock' ? '' : 'none';
+        document.getElementById('lookup-all').style.display     = tab === 'all'     ? '' : 'none';
+        if (_lastData) _renderResults(_lastData, tab);
+      });
+    }
   }
 
   return { init, search };
@@ -79,13 +177,64 @@ const BoxLookup = (() => {
 
 /* ── Inventory List page ────────────────────────────────────── */
 const InventoryList = (() => {
-  let _page        = 1;
-  let _search      = '';
-  let _total       = 0;
-  let _loading     = false;
-  let _selectedSkus = new Set();
+  let _page          = 1;
+  let _search        = '';
+  let _total         = 0;
+  let _loading       = false;
+  let _selectedSkus  = new Set();
+  let _sortBy        = 'date_added';
+  let _sortDir       = 'desc';
+  let _undefinedOnly = false;
 
   const COLS = ['', 'SKU', 'Box #', 'Part #', 'UPC', 'Qty', 'Sold', 'Remaining', 'Date Added', 'Notes', ''];
+
+  /* ── Undefined SKU check ─────────────────────────────────── */
+  function _isUndefined(val) {
+    const v = (val || '').trim().toUpperCase();
+    return v === '' || v === 'NA' || v === 'N/A';
+  }
+
+  /* ── Sort headers ────────────────────────────────────────── */
+  function _initSortHeaders() {
+    const table = document.getElementById('inventory-table');
+    if (!table) return;
+    table.querySelectorAll('th[data-sort]').forEach(th => {
+      th.style.cursor = 'pointer';
+      th.style.userSelect = 'none';
+      const arrow = document.createElement('span');
+      arrow.className = 'sort-arrow';
+      arrow.style.cssText = 'margin-left:4px;opacity:.3;font-size:11px';
+      arrow.textContent = '↕';
+      th.appendChild(arrow);
+      th.addEventListener('click', () => {
+        const field = th.dataset.sort;
+        if (_sortBy === field) _sortDir = _sortDir === 'asc' ? 'desc' : 'asc';
+        else { _sortBy = field; _sortDir = 'desc'; }
+        _page = 1;
+        _updateSortHeaders();
+        load();
+      });
+    });
+    _updateSortHeaders();
+  }
+
+  function _updateSortHeaders() {
+    const table = document.getElementById('inventory-table');
+    if (!table) return;
+    table.querySelectorAll('th[data-sort]').forEach(th => {
+      const arrow = th.querySelector('.sort-arrow');
+      if (!arrow) return;
+      if (th.dataset.sort === _sortBy) {
+        arrow.textContent = _sortDir === 'asc' ? '↑' : '↓';
+        arrow.style.opacity = '1';
+        arrow.style.color = 'var(--primary)';
+      } else {
+        arrow.textContent = '↕';
+        arrow.style.opacity = '0.3';
+        arrow.style.color = '';
+      }
+    });
+  }
 
   /* ── Render ─────────────────────────────────────────────── */
   function _renderTable(items, total) {
@@ -109,17 +258,21 @@ const InventoryList = (() => {
       const checked   = _selectedSkus.has(item.sku) ? ' checked' : '';
       const remColor  = remaining < 0 ? 'color:var(--error);font-weight:700' : remaining === 0 ? 'color:var(--txt-4)' : 'color:var(--success);font-weight:600';
 
+      const isUndef    = _isUndefined(item.sku) || _isUndefined(item.upc) || _isUndefined(item.part_number);
+      const undefBadge = isUndef ? ` <span style="font-size:10px;background:#fee2e2;color:#dc2626;padding:1px 5px;border-radius:3px;font-weight:600;vertical-align:middle">UNDEF</span>` : '';
+      const rowBg      = isUndef ? ' style="background:rgba(220,38,38,.04)"' : '';
+
       return `<tr data-sku="${Utils.escapeHtml(item.sku || '')}"
                   data-upc="${Utils.escapeHtml(item.upc || '')}"
                   data-qty="${Utils.escapeHtml(String(qty))}"
                   data-part="${Utils.escapeHtml(item.part_number || '')}"
                   data-box="${Utils.escapeHtml(item.box_number || '')}"
                   data-notes="${Utils.escapeHtml(item.notes || '')}"
-                  data-date="${Utils.escapeHtml(item.date_added || '')}">
+                  data-date="${Utils.escapeHtml(item.date_added || '')}"${rowBg}>
         <td style="width:36px;text-align:center;padding:0 4px">
           <input type="checkbox" class="inv-row-cb" data-sku="${Utils.escapeHtml(item.sku || '')}"${checked} style="cursor:pointer">
         </td>
-        <td style="font-weight:600;color:var(--txt-1)">${Utils.escapeHtml(item.sku || '—')}</td>
+        <td style="font-weight:600;color:var(--txt-1)">${Utils.escapeHtml(item.sku || '—')}${undefBadge}</td>
         <td>${Utils.escapeHtml(item.box_number || '—')}</td>
         <td>${Utils.escapeHtml(item.part_number || '—')}</td>
         <td>${Utils.escapeHtml(item.upc || '—')}</td>
@@ -150,14 +303,14 @@ const InventoryList = (() => {
     _syncSelectAll();
     _updateDeleteBar();
 
+    const ps = CONFIG.getPageSize();
     if (info) {
-      const ps    = CONFIG.PAGE_SIZE;
       const start = ((_page - 1) * ps) + 1;
       const end   = Math.min(_page * ps, _total);
       info.textContent = `Showing ${start}–${end} of ${Utils.formatNumber(_total)}`;
     }
 
-    Pagination.render('inventory-pagination', _page, Math.ceil(_total / CONFIG.PAGE_SIZE), p => { _page = p; load(); });
+    Pagination.render('inventory-pagination', _page, Math.ceil(_total / ps), p => { _page = p; load(); });
   }
 
   /* ── Selection helpers ───────────────────────────────────── */
@@ -241,13 +394,13 @@ const InventoryList = (() => {
         saveBtn.textContent = 'Saving…';
         try {
           const updates = {
-            sku:        document.getElementById('inv-edit-sku').value.trim(),
-            upc:        document.getElementById('inv-edit-upc').value.trim(),
-            quantity:   parseInt(document.getElementById('inv-edit-qty').value, 10),
-            box_number: document.getElementById('inv-edit-box').value.trim(),
+            sku:         document.getElementById('inv-edit-sku').value.trim(),
+            upc:         document.getElementById('inv-edit-upc').value.trim(),
+            quantity:    parseInt(document.getElementById('inv-edit-qty').value, 10),
+            box_number:  document.getElementById('inv-edit-box').value.trim(),
             part_number: document.getElementById('inv-edit-part').value.trim(),
-            notes:      document.getElementById('inv-edit-notes').value.trim(),
-            date_added: document.getElementById('inv-edit-date').value,
+            notes:       document.getElementById('inv-edit-notes').value.trim(),
+            date_added:  document.getElementById('inv-edit-date').value,
           };
           if (!updates.sku || !updates.upc || isNaN(updates.quantity)) {
             Notify.warning('Validation', 'SKU, UPC, and quantity are required.');
@@ -290,6 +443,18 @@ const InventoryList = (() => {
     }
   }
 
+  /* ── Set filter programmatically (from dashboard KPI clicks) */
+  function setUndefinedFilter() {
+    _undefinedOnly = true;
+    _page = 1;
+    _search = '';
+    const searchEl = document.getElementById('inventory-search');
+    if (searchEl) searchEl.value = '';
+    const cb = document.getElementById('filter-undefined-only');
+    if (cb) cb.checked = true;
+    load();
+  }
+
   /* ── Load ────────────────────────────────────────────────── */
   async function load() {
     if (_loading) return;
@@ -298,8 +463,15 @@ const InventoryList = (() => {
     const tbody = document.getElementById('inventory-tbody');
     if (tbody) tbody.innerHTML = Loading.tableRows(COLS.length, 6);
 
+    const ps = CONFIG.getPageSize();
+
     try {
-      const data = await API.getInventoryList(_page, CONFIG.PAGE_SIZE, _search);
+      const options = {
+        sort_by:        _sortBy,
+        sort_dir:       _sortDir,
+        ...(  _undefinedOnly ? { undefined_only: true } : {}),
+      };
+      const data = await API.getInventoryList(_page, ps, _search, options);
       _renderTable(data.items || data.rows || [], data.total || 0);
     } catch (err) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="${COLS.length}">${Loading.error('Failed to load inventory')}</td></tr>`;
@@ -310,17 +482,33 @@ const InventoryList = (() => {
   }
 
   function init() {
-    const searchInput  = document.getElementById('inventory-search');
-    const searchBtn    = document.getElementById('inventory-search-btn');
-    const selectAll    = document.getElementById('inv-select-all');
-    const deleteSelBtn = document.getElementById('inv-delete-selected');
+    const searchInput   = document.getElementById('inventory-search');
+    const searchBtn     = document.getElementById('inventory-search-btn');
+    const selectAll     = document.getElementById('inv-select-all');
+    const deleteSelBtn  = document.getElementById('inv-delete-selected');
+    const undefOnlyCb   = document.getElementById('filter-undefined-only');
 
+    // Button-triggered search only (no debounce auto-search)
     if (searchInput) {
-      const debouncedSearch = Utils.debounce(val => { _search = val; _page = 1; load(); }, 500);
-      searchInput.addEventListener('input', e => debouncedSearch(e.target.value));
-      searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') { _search = e.target.value; _page = 1; load(); } });
+      searchInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { _search = e.target.value.trim(); _page = 1; load(); }
+      });
     }
-    if (searchBtn) searchBtn.addEventListener('click', () => { _search = searchInput?.value || ''; _page = 1; load(); });
+    if (searchBtn) {
+      searchBtn.addEventListener('click', () => {
+        _search = searchInput?.value.trim() || '';
+        _page = 1;
+        load();
+      });
+    }
+
+    if (undefOnlyCb) {
+      undefOnlyCb.addEventListener('change', () => {
+        _undefinedOnly = undefOnlyCb.checked;
+        _page = 1;
+        load();
+      });
+    }
 
     if (selectAll) {
       selectAll.addEventListener('change', () => {
@@ -334,9 +522,11 @@ const InventoryList = (() => {
     }
 
     if (deleteSelBtn) deleteSelBtn.addEventListener('click', _deleteSelected);
+
+    _initSortHeaders();
   }
 
-  return { init, load };
+  return { init, load, setUndefinedFilter };
 })();
 
 /* ── Pagination helper ──────────────────────────────────────── */
