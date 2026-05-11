@@ -10,7 +10,7 @@
 //
 // DEPLOYMENT: replace the empty string with your Cloud Run service URL:
 //   var CLOUD_RUN_URL = 'https://patman-inventory-api-xxxx-uc.a.run.app';
-var CLOUD_RUN_URL   = '';
+var CLOUD_RUN_URL = 'https://patman-inventory-api-znfextdp4q-uc.a.run.app';
 var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxLfROgpoO-4JC_TZmEfJnD62NBqJGDlmbFgU_CKULeGv46k7K0oo4RocNWMUFTfdU/exec';
 
 var CONFIG = {
