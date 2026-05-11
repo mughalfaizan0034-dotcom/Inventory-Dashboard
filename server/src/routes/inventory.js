@@ -23,7 +23,12 @@ export async function inventoryRoutes(fastify, { inventoryService, activityServi
       return reply.code(400).send({ success: false, error: 'Invalid query parameters', details: parsed.error.flatten() });
     }
     try {
-      const result = await inventoryService.list(request.user.organization_id, parsed.data);
+      const { sort_by, sort_dir, ...rest } = parsed.data;
+      const result = await inventoryService.list(request.user.organization_id, {
+        ...rest,
+        sortBy:  sort_by,
+        sortDir: sort_dir,
+      });
       return reply.send({ success: true, data: result });
     } catch (err) {
       request.log.error({ err }, 'Inventory list error');

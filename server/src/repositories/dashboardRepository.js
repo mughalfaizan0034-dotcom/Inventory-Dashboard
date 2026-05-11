@@ -87,7 +87,8 @@ export function createDashboardRepository({ bq, projectId }) {
         activePlatforms:    Number(ordR.active_platforms     ?? 0),
         undefinedSkus:      Number(undR.undefined_skus       ?? 0),
       };
-    } catch {
+    } catch (err) {
+      console.error('[dashboardRepo.getKPIs] query failed:', err?.message ?? err);
       return {
         totalSkus: 0, totalUnits: 0, unitsSold: 0, totalOrders: 0,
         remainingStock: 0, phantomUnits: 0, undefinedSkuOrders: 0,
@@ -98,18 +99,21 @@ export function createDashboardRepository({ bq, projectId }) {
 
   async function getPerformance(organizationId, weeks = 12, platform = null) {
     const safeWeeks = Math.min(Math.max(parseInt(weeks, 10) || 12, 1), 52);
-    const p = { organizationId, platform: platform ?? null };
+    const p      = { organizationId, platform: platform ?? null };
     const pTypes = { platform: 'STRING' };
     const platCond = `AND (@platform IS NULL OR platform = @platform)`;
 
+    // SAFE_CAST(order_date AS DATE) works whether the column is DATE or STRING,
+    // unlike SAFE.PARSE_DATE which requires a STRING column and fails at compile
+    // time on DATE columns, silently returning empty results via the catch block.
     const weeklyQuery = `
       SELECT
-        DATE_TRUNC(SAFE.PARSE_DATE('%Y-%m-%d', order_date), WEEK) AS week_start,
+        DATE_TRUNC(SAFE_CAST(order_date AS DATE), WEEK) AS week_start,
         SUM(quantity_sold) AS units_sold,
         COUNT(*)           AS orders
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND SAFE.PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
         ${platCond}
       GROUP BY week_start
       ORDER BY week_start ASC
@@ -119,7 +123,7 @@ export function createDashboardRepository({ bq, projectId }) {
       SELECT platform, SUM(quantity_sold) AS units_sold, COUNT(*) AS order_count
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND SAFE.PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
         AND platform IS NOT NULL
         ${platCond}
       GROUP BY platform
@@ -130,7 +134,7 @@ export function createDashboardRepository({ bq, projectId }) {
       SELECT sku, SUM(quantity_sold) AS units_sold
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND SAFE.PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
         ${platCond}
       GROUP BY sku
       ORDER BY units_sold DESC
@@ -142,12 +146,12 @@ export function createDashboardRepository({ bq, projectId }) {
         SELECT *
         FROM ${ordTable}
         WHERE organization_id = @organizationId
-          AND SAFE.PARSE_DATE('%Y-%m-%d', order_date) IS NOT NULL
+          AND SAFE_CAST(order_date AS DATE) IS NOT NULL
           ${platCond}
       ),
       totals AS (
         SELECT
-          FORMAT_DATE('%Y-%m', SAFE.PARSE_DATE('%Y-%m-%d', order_date)) AS month,
+          FORMAT_DATE('%Y-%m', SAFE_CAST(order_date AS DATE)) AS month,
           COUNT(*) AS order_count,
           SUM(quantity_sold) AS units_sold
         FROM base
@@ -155,10 +159,10 @@ export function createDashboardRepository({ bq, projectId }) {
       ),
       top_platform AS (
         SELECT
-          FORMAT_DATE('%Y-%m', SAFE.PARSE_DATE('%Y-%m-%d', order_date)) AS month,
+          FORMAT_DATE('%Y-%m', SAFE_CAST(order_date AS DATE)) AS month,
           platform,
           ROW_NUMBER() OVER (
-            PARTITION BY FORMAT_DATE('%Y-%m', SAFE.PARSE_DATE('%Y-%m-%d', order_date))
+            PARTITION BY FORMAT_DATE('%Y-%m', SAFE_CAST(order_date AS DATE))
             ORDER BY COUNT(*) DESC
           ) AS rn
         FROM base
@@ -172,17 +176,21 @@ export function createDashboardRepository({ bq, projectId }) {
       LIMIT 12
     `;
 
-    try {
-      const [wR, pR, sR, mR] = await Promise.all([
-        bq.query({ query: weeklyQuery,   params: p, types: pTypes }).then(r => r[0]),
-        bq.query({ query: platformQuery, params: p, types: pTypes }).then(r => r[0]),
-        bq.query({ query: topSkuQuery,   params: p, types: pTypes }).then(r => r[0]),
-        bq.query({ query: monthlyQuery,  params: p, types: pTypes }).then(r => r[0]),
-      ]);
-      return { weekly: wR, platforms: pR, topSkus: sR, monthly: mR };
-    } catch {
-      return { weekly: [], platforms: [], topSkus: [], monthly: [] };
-    }
+    const run = (query, label) =>
+      bq.query({ query, params: p, types: pTypes })
+        .then(r => r[0])
+        .catch(err => {
+          console.error(`[dashboardRepo.getPerformance] ${label} failed:`, err?.message ?? err);
+          return [];
+        });
+
+    const [wR, pR, sR, mR] = await Promise.all([
+      run(weeklyQuery,   'weekly'),
+      run(platformQuery, 'platform'),
+      run(topSkuQuery,   'topSku'),
+      run(monthlyQuery,  'monthly'),
+    ]);
+    return { weekly: wR, platforms: pR, topSkus: sR, monthly: mR };
   }
 
   return { getKPIs, getPerformance };

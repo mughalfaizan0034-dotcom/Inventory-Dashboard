@@ -5,7 +5,7 @@ const positiveInt = z.coerce.number().int().positive();
 
 const ordersQuerySchema = z.object({
   page:         positiveInt.optional().default(1),
-  pageSize:     positiveInt.max(200).optional().default(50),
+  pageSize:     positiveInt.max(10000).optional().default(50),
   platform:     z.string().optional(),
   start_date:   z.string().optional(),
   end_date:     z.string().optional(),

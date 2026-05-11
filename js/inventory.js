@@ -458,7 +458,12 @@ const InventoryList = (() => {
   }
 
   /* ── Export ──────────────────────────────────────────────── */
+  let _exporting = false;
   async function _doExportInventory() {
+    if (_exporting) return;
+    _exporting = true;
+    const btn = document.getElementById('inventory-export-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Exporting…'; }
     const isFiltered = _search || _statusFilter !== 'all';
     try {
       const data = await API.getInventoryList(1, 5000, _search, {
@@ -484,6 +489,9 @@ const InventoryList = (() => {
       URL.revokeObjectURL(url);
     } catch (err) {
       Notify.apiError(err);
+    } finally {
+      _exporting = false;
+      if (btn) { btn.disabled = false; btn.textContent = '📥 Export'; }
     }
   }
 
@@ -498,7 +506,7 @@ const InventoryList = (() => {
     const ps = CONFIG.getPageSize();
 
     try {
-      const options = { sort_by: _sortBy, sort_dir: _sortDir, status: _statusFilter };
+      const options = { sort_by: _sortBy, sort_dir: _sortDir, status: _statusFilter || 'all' };
       const data = await API.getInventoryList(_page, ps, _search, options);
       _renderTable(data.items || data.rows || [], data.total || 0);
     } catch (err) {
