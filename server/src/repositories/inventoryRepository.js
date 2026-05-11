@@ -11,8 +11,8 @@ export function createInventoryRepository({ bq, projectId }) {
     const params     = { organizationId };
 
     if (search) {
-      conditions.push('(LOWER(i.sku) LIKE @search OR LOWER(i.upc) LIKE @search OR LOWER(i.part_number) LIKE @search)');
-      params.search = `%${search.toLowerCase()}%`;
+      conditions.push('(LOWER(i.sku) = @search OR LOWER(i.upc) = @search OR LOWER(i.part_number) = @search)');
+      params.search = search.toLowerCase();
     }
 
     if (undefined_only) {
