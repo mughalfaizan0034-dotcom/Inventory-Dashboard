@@ -65,11 +65,11 @@ const BoxLookup = (() => {
       </tr>`;
   }
 
-  /* ── Deduplicate boxes by sku|upc|box_number ─────────────── */
+  /* ── Deduplicate boxes by box_number|part_number|upc ────── */
   function _dedup(boxes) {
     const seen = new Set();
     return (boxes || []).filter(b => {
-      const key = `${b.sku}|${b.upc}|${b.box_number}`;
+      const key = `${b.box_number}|${b.part_number}|${b.upc}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -119,8 +119,9 @@ const BoxLookup = (() => {
         const totalSold      = allBoxes.reduce((s, b) => s + Number(b.units_sold       ?? 0), 0);
         const totalRemaining = allBoxes.reduce((s, b) => s + Number(b.remaining_stock  ?? 0), 0);
 
-        // In Stock tab: skip UPCs with zero or negative total remaining
-        if (isInstockTab && totalRemaining <= 0) continue;
+        // In Stock tab: show UPC if ANY individual box has remaining > 0
+        const hasAnyInStock = allBoxes.some(b => Number(b.remaining_stock ?? 0) > 0);
+        if (isInstockTab && !hasAnyInStock) continue;
 
         const visibleBoxes = isInstockTab
           ? allBoxes.filter(b => Number(b.remaining_stock ?? 0) > 0)

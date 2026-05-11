@@ -43,7 +43,10 @@ export function createDashboardRepository({ bq, projectId }) {
 
     const metricsQuery = `
       WITH inv AS (
-        SELECT sku, quantity FROM ${invTable} WHERE organization_id = @organizationId
+        SELECT sku, SUM(quantity) AS quantity
+        FROM ${invTable}
+        WHERE organization_id = @organizationId
+        GROUP BY sku
       ),
       ord AS (
         SELECT
@@ -222,6 +225,12 @@ export function createDashboardRepository({ bq, projectId }) {
 
     const stockStatusQuery = `
       WITH ${ordAgg},
+      inv_agg AS (
+        SELECT sku, upc, part_number, SUM(quantity) AS quantity
+        FROM ${invTable}
+        WHERE organization_id = @organizationId
+        GROUP BY sku, upc, part_number
+      ),
       remaining AS (
         SELECT
           i.sku,
@@ -231,9 +240,8 @@ export function createDashboardRepository({ bq, projectId }) {
             UPPER(TRIM(COALESCE(i.upc, '')))          IN ('NA','N/A','') OR
             UPPER(TRIM(COALESCE(i.part_number, ''))) IN ('NA','N/A','')
           ) AS is_undefined
-        FROM ${invTable} i
+        FROM inv_agg i
         LEFT JOIN orders_agg o ON i.sku = o.effective_sku
-        WHERE i.organization_id = @organizationId
       )
       SELECT
         CASE
@@ -250,15 +258,20 @@ export function createDashboardRepository({ bq, projectId }) {
 
     const topBoxesQuery = `
       WITH ${ordAgg},
+      inv_agg AS (
+        SELECT sku, box_number, SUM(quantity) AS quantity
+        FROM ${invTable}
+        WHERE organization_id = @organizationId
+          AND box_number IS NOT NULL AND TRIM(CAST(box_number AS STRING)) != ''
+        GROUP BY sku, box_number
+      ),
       box_remaining AS (
         SELECT
           i.box_number,
           SUM(i.quantity - COALESCE(o.sold, 0)) AS remaining_units,
           COUNT(DISTINCT i.sku) AS sku_count
-        FROM ${invTable} i
+        FROM inv_agg i
         LEFT JOIN orders_agg o ON i.sku = o.effective_sku
-        WHERE i.organization_id = @organizationId
-          AND i.box_number IS NOT NULL AND TRIM(CAST(i.box_number AS STRING)) != ''
         GROUP BY i.box_number
       )
       SELECT box_number, remaining_units, sku_count
@@ -269,15 +282,23 @@ export function createDashboardRepository({ bq, projectId }) {
 
     const healthByMonthQuery = `
       WITH ${ordAgg},
+      inv_agg AS (
+        SELECT
+          sku,
+          LEFT(COALESCE(CAST(date_added AS STRING), ''), 7) AS month,
+          SUM(quantity) AS quantity
+        FROM ${invTable}
+        WHERE organization_id = @organizationId
+          AND date_added IS NOT NULL
+          AND LENGTH(CAST(date_added AS STRING)) >= 7
+        GROUP BY sku, LEFT(COALESCE(CAST(date_added AS STRING), ''), 7)
+      ),
       remaining AS (
         SELECT
-          LEFT(COALESCE(CAST(i.date_added AS STRING), ''), 7) AS month,
+          i.month,
           i.quantity - COALESCE(o.sold, 0) AS rem
-        FROM ${invTable} i
+        FROM inv_agg i
         LEFT JOIN orders_agg o ON i.sku = o.effective_sku
-        WHERE i.organization_id = @organizationId
-          AND i.date_added IS NOT NULL
-          AND LENGTH(CAST(i.date_added AS STRING)) >= 7
       )
       SELECT
         month,
@@ -293,31 +314,41 @@ export function createDashboardRepository({ bq, projectId }) {
     `;
 
     const oversoldSkusQuery = `
-      WITH ${ordAgg}
+      WITH ${ordAgg},
+      inv_agg AS (
+        SELECT sku, SUM(quantity) AS quantity
+        FROM ${invTable}
+        WHERE organization_id = @organizationId
+        GROUP BY sku
+      )
       SELECT
         i.sku,
-        i.quantity                      AS original_qty,
-        COALESCE(o.sold, 0)             AS units_sold,
+        i.quantity                       AS original_qty,
+        COALESCE(o.sold, 0)              AS units_sold,
         i.quantity - COALESCE(o.sold, 0) AS remaining
-      FROM ${invTable} i
+      FROM inv_agg i
       LEFT JOIN orders_agg o ON i.sku = o.effective_sku
-      WHERE i.organization_id = @organizationId
-        AND i.quantity - COALESCE(o.sold, 0) < 0
+      WHERE i.quantity - COALESCE(o.sold, 0) < 0
       ORDER BY remaining ASC
       LIMIT 10
     `;
 
     const boxUtilizationQuery = `
       WITH ${ordAgg},
+      inv_agg AS (
+        SELECT sku, box_number, SUM(quantity) AS quantity
+        FROM ${invTable}
+        WHERE organization_id = @organizationId
+          AND box_number IS NOT NULL AND TRIM(CAST(box_number AS STRING)) != ''
+        GROUP BY sku, box_number
+      ),
       box_stats AS (
         SELECT
           i.box_number,
           COUNT(DISTINCT i.sku) AS total_skus,
           COUNT(DISTINCT CASE WHEN i.quantity - COALESCE(o.sold, 0) > 0 THEN i.sku END) AS active_skus
-        FROM ${invTable} i
+        FROM inv_agg i
         LEFT JOIN orders_agg o ON i.sku = o.effective_sku
-        WHERE i.organization_id = @organizationId
-          AND i.box_number IS NOT NULL AND TRIM(CAST(i.box_number AS STRING)) != ''
         GROUP BY i.box_number
       )
       SELECT box_number, total_skus, active_skus

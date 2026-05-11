@@ -15,7 +15,7 @@ export function createLookupRepository({ bq, projectId }) {
     const sql = `
       WITH inv_grouped AS (
         SELECT
-          sku,
+          MIN(sku)                  AS sku,
           COALESCE(upc, '')         AS upc,
           COALESCE(part_number, '') AS part_number,
           COALESCE(box_number, '')  AS box_number,
@@ -23,10 +23,10 @@ export function createLookupRepository({ bq, projectId }) {
         FROM ${invTable}
         WHERE organization_id = @organizationId
           AND (
-            LOWER(TRIM(COALESCE(upc, '')))         = LOWER(TRIM(@query))
+            LOWER(TRIM(COALESCE(upc, '')))            = LOWER(TRIM(@query))
             OR LOWER(TRIM(COALESCE(part_number, ''))) = LOWER(TRIM(@query))
           )
-        GROUP BY sku, upc, part_number, box_number
+        GROUP BY COALESCE(box_number, ''), COALESCE(part_number, ''), COALESCE(upc, '')
       ),
       ord_summary AS (
         SELECT
