@@ -170,19 +170,26 @@ export async function authRoutes(fastify, { authService, usersRepo, membershipsR
       return reply.code(400).send({ success: false, error: 'Invalid request body' });
     }
 
+    // Phase 1: verify the refresh token (pure crypto, no DB).
+    let payload;
     try {
-      const payload = fastify.jwt.verify(parsed.data.refresh_token);
-      if (payload.type !== 'refresh') {
-        return reply.code(401).send({ success: false, error: 'Invalid token type' });
-      }
+      payload = fastify.jwt.verify(parsed.data.refresh_token);
+    } catch {
+      request.log.warn({ event: 'refresh_failure' }, 'Refresh token invalid or expired');
+      return reply.code(401).send({ success: false, error: 'Refresh token invalid or expired' });
+    }
+    if (payload.type !== 'refresh') {
+      return reply.code(401).send({ success: false, error: 'Invalid token type' });
+    }
 
+    // Phase 2: load user and memberships (DB calls — may fail transiently).
+    try {
       const user = await usersRepo.findById(payload.user_id);
       if (!user || !user.is_active) {
         request.log.warn({ event: 'refresh_failure', user_id: payload.user_id }, 'Account inactive');
         return reply.code(401).send({ success: false, error: 'Account inactive or not found' });
       }
 
-      // Prefer the membership_id from the request (sent by frontend to re-scope to same org).
       const memberships = await membershipsRepo.getUserMemberships(user.user_id);
       const m = (parsed.data.membership_id
         ? memberships.find(x => x.membership_id === parsed.data.membership_id)
@@ -196,11 +203,12 @@ export async function authRoutes(fastify, { authService, usersRepo, membershipsR
       const refreshToken = tokenFactory.signRefreshToken(user.user_id);
 
       request.log.info({ event: 'token_refresh', user_id: user.user_id }, 'Tokens rotated');
-
       return reply.send({ success: true, data: { access_token: accessToken, refresh_token: refreshToken } });
-    } catch {
-      request.log.warn({ event: 'refresh_failure' }, 'Refresh token invalid or expired');
-      return reply.code(401).send({ success: false, error: 'Refresh token invalid or expired' });
+    } catch (err) {
+      // DB / BigQuery error — NOT an auth failure. Return 503 so the frontend
+      // keeps the session alive and retries rather than forcing logout.
+      request.log.error({ err, user_id: payload.user_id }, 'Refresh DB error');
+      return reply.code(503).send({ success: false, error: 'Service temporarily unavailable — please try again' });
     }
   });
 }

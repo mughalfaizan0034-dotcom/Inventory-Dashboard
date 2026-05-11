@@ -7,21 +7,25 @@ export function createDashboardRepository({ bq, projectId }) {
   async function getKPIs(organizationId) {
     const query = `
       SELECT
-        COUNT(*)                          AS total_skus,
-        COUNTIF(quantity = 0)             AS out_of_stock,
+        COUNT(*)                           AS total_skus,
+        COUNTIF(quantity = 0)              AS out_of_stock,
         COUNTIF(quantity BETWEEN 1 AND 10) AS low_stock,
-        SUM(quantity)                     AS total_units
+        SUM(quantity)                      AS total_units
       FROM ${invTable}
       WHERE organization_id = @organizationId
     `;
-    const [rows] = await bq.query({ query, params: { organizationId } });
-    const r = rows[0] ?? {};
-    return {
-      total_skus:   Number(r.total_skus   ?? 0),
-      out_of_stock: Number(r.out_of_stock ?? 0),
-      low_stock:    Number(r.low_stock    ?? 0),
-      total_units:  Number(r.total_units  ?? 0),
-    };
+    try {
+      const [rows] = await bq.query({ query, params: { organizationId } });
+      const r = rows[0] ?? {};
+      return {
+        total_skus:   Number(r.total_skus   ?? 0),
+        out_of_stock: Number(r.out_of_stock ?? 0),
+        low_stock:    Number(r.low_stock    ?? 0),
+        total_units:  Number(r.total_units  ?? 0),
+      };
+    } catch {
+      return { total_skus: 0, out_of_stock: 0, low_stock: 0, total_units: 0 };
+    }
   }
 
   async function getPerformance(organizationId, weeks = 12) {
@@ -37,8 +41,12 @@ export function createDashboardRepository({ bq, projectId }) {
       GROUP BY week_start
       ORDER BY week_start ASC
     `;
-    const [rows] = await bq.query({ query, params: { organizationId } });
-    return rows;
+    try {
+      const [rows] = await bq.query({ query, params: { organizationId } });
+      return rows;
+    } catch {
+      return [];
+    }
   }
 
   return { getKPIs, getPerformance };

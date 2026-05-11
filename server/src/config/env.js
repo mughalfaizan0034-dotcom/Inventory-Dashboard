@@ -17,7 +17,7 @@ export const env = {
   GCP_PROJECT_ID: required('GCP_PROJECT_ID'),
 
   JWT_SECRET:          required('JWT_SECRET'),
-  JWT_ACCESS_EXPIRES:  optional('JWT_ACCESS_EXPIRES',  '15m'),
+  JWT_ACCESS_EXPIRES:  optional('JWT_ACCESS_EXPIRES',  '2h'),
   JWT_REFRESH_EXPIRES: optional('JWT_REFRESH_EXPIRES', '7d'),
 
   LOG_LEVEL: optional('LOG_LEVEL', 'info'),

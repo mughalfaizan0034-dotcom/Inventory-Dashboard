@@ -29,11 +29,54 @@ const Auth = (() => {
     sessionStorage.removeItem(REFRESH_KEY);
   }
 
-  function getUser()         { try { return JSON.parse(sessionStorage.getItem(CONFIG.USER_KEY)) || null; } catch { return null; } }
-  function getOrganization() { try { return JSON.parse(sessionStorage.getItem(CONFIG.ORG_KEY))  || null; } catch { return null; } }
-  function getMemberships()  { try { return JSON.parse(sessionStorage.getItem(CONFIG.MEMBERSHIPS_KEY)) || []; } catch { return []; } }
-  function getToken()        { return sessionStorage.getItem(CONFIG.SESSION_KEY) || null; }
-  function isLoggedIn()      { return !!getToken(); }
+  function _decodeJwt(token) {
+    try { return JSON.parse(atob(token.split('.')[1])); } catch { return null; }
+  }
+
+  function getToken()   { return sessionStorage.getItem(CONFIG.SESSION_KEY) || null; }
+  function isLoggedIn() { return !!getToken(); }
+
+  function getUser() {
+    const stored = sessionStorage.getItem(CONFIG.USER_KEY);
+    if (stored) { try { const u = JSON.parse(stored); if (u) return u; } catch {} }
+    // Fallback: reconstruct from JWT payload so a partial session still works.
+    const token = getToken();
+    if (token) {
+      const p = _decodeJwt(token);
+      if (p?.user_id) {
+        const u = { user_id: p.user_id, username: p.username, display_name: p.display_name };
+        sessionStorage.setItem(CONFIG.USER_KEY, JSON.stringify(u));
+        return u;
+      }
+    }
+    return null;
+  }
+
+  function getOrganization() {
+    const stored = sessionStorage.getItem(CONFIG.ORG_KEY);
+    if (stored) { try { const o = JSON.parse(stored); if (o) return o; } catch {} }
+    // Fallback: reconstruct from JWT payload — handles old sessions missing org data.
+    const token = getToken();
+    if (token) {
+      const p = _decodeJwt(token);
+      if (p?.organization_id && p?.membership_id) {
+        const o = {
+          organization_id: p.organization_id,
+          membership_id:   p.membership_id,
+          role:            p.role,
+          display_name:    p.display_name || '—',
+          slug:            p.slug || '',
+        };
+        sessionStorage.setItem(CONFIG.ORG_KEY, JSON.stringify(o));
+        return o;
+      }
+    }
+    return null;
+  }
+
+  function getMemberships() {
+    try { return JSON.parse(sessionStorage.getItem(CONFIG.MEMBERSHIPS_KEY)) || []; } catch { return []; }
+  }
 
   function _getMembershipId() {
     const token = getToken();
@@ -257,19 +300,24 @@ const Auth = (() => {
     const now   = Date.now();
 
     if (expMs && now >= expMs) {
+      // Token is expired. Attempt refresh.
       const storedRefresh = sessionStorage.getItem(REFRESH_KEY);
       if (!storedRefresh) { clearSession(); return false; }
       try {
         const data = await API.refreshToken(storedRefresh, _getMembershipId());
         saveSession(data.access_token, getUser(), getOrganization(), data.refresh_token, getMemberships());
-      } catch { clearSession(); return false; }
+      } catch (err) {
+        // 401 = actual auth failure (bad token, inactive user) → must logout.
+        // 500/503/network = server issue → keep session; API calls will retry refresh.
+        if (err.status === 401 || !err.status) { clearSession(); return false; }
+      }
     } else if (expMs && expMs - now < 2 * 60 * 1000) {
+      // Token expiring soon — proactive refresh, non-critical.
       const storedRefresh = sessionStorage.getItem(REFRESH_KEY);
       if (storedRefresh) {
-        try {
-          const data = await API.refreshToken(storedRefresh, _getMembershipId());
-          saveSession(data.access_token, getUser(), getOrganization(), data.refresh_token, getMemberships());
-        } catch { /* keep current token */ }
+        API.refreshToken(storedRefresh, _getMembershipId())
+          .then(data => saveSession(data.access_token, getUser(), getOrganization(), data.refresh_token, getMemberships()))
+          .catch(() => { /* non-critical: keep current token */ });
       }
     }
 

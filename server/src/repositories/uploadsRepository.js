@@ -26,8 +26,13 @@ export function createUploadsRepository({ bq, projectId }) {
 
     const combined = queries.join('\nUNION ALL\n');
     const query    = `${combined} ORDER BY created_at DESC LIMIT 100`;
-    const [rows]   = await bq.query({ query, params: { organizationId } });
-    return rows;
+    try {
+      const [rows] = await bq.query({ query, params: { organizationId } });
+      return rows;
+    } catch {
+      // Tables may not exist yet (migration pending). Return empty rather than crashing.
+      return [];
+    }
   }
 
   async function logInventoryUpload({ uploadId, organizationId, userId, filename, rowCount, status }) {
