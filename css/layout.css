@@ -36,14 +36,17 @@
   color: var(--txt-3);
 }
 
-/* ── Login screen ───────────────────────────────────────────── */
-#login-screen {
+/* ── Login / auth screens ───────────────────────────────────── */
+#login-screen,
+#org-selector-screen {
   min-height: 100vh;
+  width: 100vw;
   background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+  box-sizing: border-box;
 }
 
 .login-card {
