@@ -75,7 +75,10 @@ const Auth = (() => {
   }
 
   function getMemberships() {
-    try { return JSON.parse(sessionStorage.getItem(CONFIG.MEMBERSHIPS_KEY)) || []; } catch { return []; }
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(CONFIG.MEMBERSHIPS_KEY));
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch { return []; }
   }
 
   function _getMembershipId() {
@@ -328,7 +331,7 @@ const Auth = (() => {
     }
 
     const user        = getUser();
-    const memberships = getMemberships();
+    const memberships = getMemberships().filter(m => m && m.organization_id);
     let   org         = getOrganization();
     console.log('[AUTH] memberships restored:', memberships.length, 'entries');
 
@@ -337,9 +340,9 @@ const Auth = (() => {
       // Memberships are the source of truth — reconstruct active org from them.
       const p       = _decodeJwt(getToken());
       const matched = p?.organization_id
-        ? memberships.find(m => m.organization_id === p.organization_id)
+        ? memberships.find(m => m.organization_id === p.organization_id) ?? null
         : null;
-      org = matched || (memberships.length === 1 ? memberships[0] : null);
+      org = matched ?? (memberships.length === 1 ? memberships[0] : null);
       if (org) {
         sessionStorage.setItem(CONFIG.ORG_KEY, JSON.stringify(org));
         console.log('[AUTH] org auto-restored from membership:', org.organization_id);
