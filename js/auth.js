@@ -19,6 +19,7 @@ const Auth = (() => {
     sessionStorage.setItem(CONFIG.ORG_KEY,         JSON.stringify(organization));
     if (refreshToken) sessionStorage.setItem(REFRESH_KEY, refreshToken);
     if (memberships)  sessionStorage.setItem(CONFIG.MEMBERSHIPS_KEY, JSON.stringify(memberships));
+    console.log('[AUTH] saveSession — org:', organization?.organization_id, 'memberships:', Array.isArray(memberships) ? memberships.length : memberships, 'hasRefresh:', !!refreshToken);
   }
 
   function clearSession() {
@@ -303,9 +304,13 @@ const Auth = (() => {
 
     // ── Step 1: Reconstruct memberships from JWT if storage is empty/stale.
     // Must happen BEFORE any refresh call so saveSession gets the right memberships.
+    const rawMemberships = sessionStorage.getItem(CONFIG.MEMBERSHIPS_KEY);
+    console.log('[AUTH] raw memberships storage:', rawMemberships);
     let memberships = getMemberships();
+
     if (memberships.length === 0) {
       const p = _decodeJwt(token);
+      console.log('[AUTH] JWT fields for reconstruction — org_id:', p?.organization_id, 'mbr_id:', p?.membership_id, 'role:', p?.role, 'type:', p?.type);
       if (p?.organization_id && p?.membership_id) {
         const synthetic = {
           organization_id: p.organization_id,
@@ -316,7 +321,9 @@ const Auth = (() => {
         };
         memberships = [synthetic];
         sessionStorage.setItem(CONFIG.MEMBERSHIPS_KEY, JSON.stringify(memberships));
-        console.log('[AUTH] memberships reconstructed from JWT');
+        console.log('[AUTH] memberships reconstructed from JWT:', synthetic.organization_id);
+      } else {
+        console.warn('[AUTH] JWT missing org fields — token issued by old backend, redeploy required');
       }
     }
     console.log('[AUTH] memberships restored:', memberships.length, 'entries');
