@@ -15,8 +15,8 @@ steps:
       - -t
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
       - -f
-      - server/Dockerfile
-      - server/
+      - Dockerfile
+      - .
 
   # 2 — Push to Artifact Registry
   - name: gcr.io/cloud-builders/docker
@@ -41,8 +41,8 @@ steps:
       - --timeout=60
       # Uncomment after creating the dedicated service account:
       # - --service-account=patman-api@$PROJECT_ID.iam.gserviceaccount.com
-      - --set-secrets=JWT_SECRET=patman-jwt-secret:latest,GCP_PROJECT_ID=patman-project-id:latest
-      - --set-env-vars=CORS_ORIGIN=https://mughalfaizan0034-dotcom.github.io,NODE_ENV=production,LOG_LEVEL=info
+      - --set-secrets=JWT_SECRET=patman-jwt-secret:latest
+      - --set-env-vars=GCP_PROJECT_ID=$PROJECT_ID,CORS_ORIGIN=https://mughalfaizan0034-dotcom.github.io,NODE_ENV=production,LOG_LEVEL=info
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
