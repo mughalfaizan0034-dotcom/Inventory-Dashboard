@@ -3,8 +3,18 @@
                   file conversion, Modal class
    ============================================================ */
 
+// ── API endpoints ─────────────────────────────────────────────────────────────
+// MIGRATION: set CLOUD_RUN_URL once the Cloud Run service is deployed.
+// Auth will move to Cloud Run first; Apps Script stays for inventory/orders
+// until each endpoint is migrated.
+const CLOUD_RUN_URL  = '';   // e.g. 'https://patman-inventory-api-xxxx-uc.a.run.app'
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxLfROgpoO-4JC_TZmEfJnD62NBqJGDlmbFgU_CKULeGv46k7K0oo4RocNWMUFTfdU/exec';
+
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbxxLfROgpoO-4JC_TZmEfJnD62NBqJGDlmbFgU_CKULeGv46k7K0oo4RocNWMUFTfdU/exec',
+  // Primary API — switches to Cloud Run once CLOUD_RUN_URL is set
+  API_URL:           CLOUD_RUN_URL  || APPS_SCRIPT_URL,
+  APPS_SCRIPT_URL,
+  CLOUD_RUN_URL,
   SESSION_KEY: 'patman_token',
   USER_KEY:    'patman_user',
   TIMEOUT_MS:  30000,

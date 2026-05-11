@@ -2,12 +2,11 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY --chown=node:node package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY src/ ./src/
+COPY --chown=node:node src/ ./src/
 
-# Run as non-root
 USER node
 
 ENV NODE_ENV=production \

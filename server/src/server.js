@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
@@ -21,11 +22,34 @@ export async function buildApp() {
       transport: env.NODE_ENV === 'development'
         ? { target: 'pino-pretty', options: { colorize: true } }
         : undefined,
+      // Serialize errors consistently
+      serializers: {
+        err: (err) => ({ type: err.name, message: err.message, stack: err.stack }),
+      },
     },
+    // Use x-request-id header if present, otherwise generate one
+    requestIdHeader: 'x-request-id',
+    genReqId: () => randomUUID(),
+  });
+
+  // Inject Cloud Trace context so Cloud Logging can correlate requests to traces
+  fastify.addHook('onRequest', (request, _reply, done) => {
+    const traceHeader = request.headers['x-cloud-trace-context'];
+    if (traceHeader) {
+      const traceId = traceHeader.split('/')[0];
+      request.log = request.log.child({
+        'logging.googleapis.com/trace': `projects/${env.GCP_PROJECT_ID}/traces/${traceId}`,
+      });
+    }
+    done();
   });
 
   // Plugins are queued; after() fires once they've all loaded (during ready/listen)
-  fastify.register(cors, { origin: env.CORS_ORIGIN });
+  fastify.register(cors, {
+    origin:  env.CORS_ORIGIN,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
   fastify.register(jwt,  { secret: env.JWT_SECRET });
   fastify.register(sensible);
   fastify.register(bigqueryPlugin);
@@ -42,7 +66,7 @@ export async function buildApp() {
     const tokenFactory = createTokenFactory(fastify);
 
     fastify.register(healthRoutes);
-    fastify.register(authRoutes,      { prefix: '/auth',      authService, tokenFactory });
+    fastify.register(authRoutes,      { prefix: '/auth',      authService, usersRepo, tokenFactory });
     fastify.register(inventoryRoutes, { prefix: '/inventory', inventoryService });
   });
 

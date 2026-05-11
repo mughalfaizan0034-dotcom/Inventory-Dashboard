@@ -1,9 +1,12 @@
 /* ============================================================
-   api.js — Centralized fetch layer to Apps Script Web App.
+   api.js — Centralized fetch layer.
 
-   Transport (temporary, until Cloud Run migration):
-     Read/auth actions → GET  ?action=<name>&token=<t>&<params>
-     Upload actions    → POST JSON body (CSV too large for URL)
+   When CLOUD_RUN_URL is set in CONFIG:
+     Auth (login/refresh/verify)  → POST  Cloud Run  (JSON body)
+     All other actions            → GET   Apps Script (query params)
+
+   When CLOUD_RUN_URL is empty:
+     Everything falls through to Apps Script GET transport.
 
    All fetch goes through this module.  No other file may call
    fetch() directly.
@@ -13,6 +16,32 @@ const API = (() => {
 
   function getToken() {
     return sessionStorage.getItem(CONFIG.SESSION_KEY) || null;
+  }
+
+  /* ── Cloud Run POST — JSON body, Bearer auth ────────────── */
+  async function _crPost(path, body, retries = 0) {
+    const tok = getToken();
+    const options = {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+      },
+      body: JSON.stringify(body),
+    };
+
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await _fetchWithTimeout(CONFIG.CLOUD_RUN_URL + path, options, CONFIG.TIMEOUT_MS);
+        return await _parseResponse(res);
+      } catch (err) {
+        lastErr = err;
+        if (err.serverError) throw err;
+        if (attempt < retries) await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
+    throw lastErr;
   }
 
   /* ── Abort-controller timeout wrapper ────────────────────── */
@@ -103,8 +132,14 @@ const API = (() => {
   /* ── Public API methods ─────────────────────────────────── */
   return {
 
-    /* Auth */
+    /* Auth — Cloud Run when available, Apps Script fallback */
     async login(email, password) {
+      if (CONFIG.CLOUD_RUN_URL) {
+        const data = await _crPost('/auth/login', { email, password }, 0);
+        // Cloud Run returns { access_token, refresh_token, user }
+        // Normalize to Apps Script shape { token, user } for Auth.saveSession()
+        return { token: data.access_token, refresh_token: data.refresh_token, user: data.user };
+      }
       return _get('login', { email, password }, 0);
     },
 
@@ -112,9 +147,17 @@ const API = (() => {
       try { await _get('logout', {}, 0); } catch { /* best-effort */ }
       sessionStorage.removeItem(CONFIG.SESSION_KEY);
       sessionStorage.removeItem(CONFIG.USER_KEY);
+      sessionStorage.removeItem('patman_refresh_token');
     },
 
     async verifySession() {
+      if (CONFIG.CLOUD_RUN_URL) {
+        // JWT is stateless — if the token parses, session is valid.
+        // Return the user from local storage rather than making a round-trip.
+        const user = JSON.parse(sessionStorage.getItem(CONFIG.USER_KEY) || 'null');
+        if (user) return { user };
+        throw new Error('No session');
+      }
       return _get('verifySession', {}, 0);
     },
 

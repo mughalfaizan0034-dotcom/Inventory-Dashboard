@@ -1,7 +1,7 @@
 import { loginBodySchema, refreshBodySchema } from '../validation/authSchemas.js';
 import { AppError } from '../utils/errors.js';
 
-export async function authRoutes(fastify, { authService, tokenFactory }) {
+export async function authRoutes(fastify, { authService, usersRepo, tokenFactory }) {
   fastify.post('/login', async (request, reply) => {
     const parsed = loginBodySchema.safeParse(request.body);
     if (!parsed.success) {
@@ -39,17 +39,22 @@ export async function authRoutes(fastify, { authService, tokenFactory }) {
     }
 
     try {
-      const payload = fastify.jwt.verify(parsed.data.refresh_token);
+      const payload = await fastify.jwt.verify(parsed.data.refresh_token);
       if (payload.type !== 'refresh') {
         return reply.code(401).send({ success: false, error: 'Invalid token type' });
       }
 
-      // Re-fetch user to get current role and active status would require usersRepo here.
-      // For now, sign a new access token from the refresh payload — role is preserved.
+      // Re-fetch user to get current role and active status
+      const user = await usersRepo.findById(payload.user_id);
+      if (!user || !user.is_active) {
+        return reply.code(401).send({ success: false, error: 'Account inactive or not found' });
+      }
+
       const accessToken = tokenFactory.signAccessToken({
-        user_id: payload.user_id,
-        email:   payload.email ?? '',
-        role:    payload.role  ?? 'viewer',
+        user_id:      user.user_id,
+        email:        user.email,
+        role:         user.role,
+        display_name: user.display_name,
       });
 
       return reply.send({ success: true, data: { access_token: accessToken } });

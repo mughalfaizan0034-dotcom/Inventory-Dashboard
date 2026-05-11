@@ -35,9 +35,14 @@ steps:
       - --region=${_REGION}
       - --platform=managed
       - --allow-unauthenticated
-      # Uncomment and set after creating the dedicated service account:
+      - --memory=512Mi
+      - --cpu=1
+      - --concurrency=20
+      - --timeout=60
+      # Uncomment after creating the dedicated service account:
       # - --service-account=patman-api@$PROJECT_ID.iam.gserviceaccount.com
-      - --set-secrets=JWT_SECRET=patman-jwt-secret:latest,JWT_REFRESH_SECRET=patman-jwt-refresh-secret:latest,GCP_PROJECT_ID=patman-project-id:latest
+      - --set-secrets=JWT_SECRET=patman-jwt-secret:latest,GCP_PROJECT_ID=patman-project-id:latest
+      - --set-env-vars=CORS_ORIGIN=https://mughalfaizan0034-dotcom.github.io,NODE_ENV=production,LOG_LEVEL=info
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA

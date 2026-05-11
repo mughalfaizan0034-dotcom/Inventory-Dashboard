@@ -14,6 +14,17 @@ export function createUsersRepository({ bq, projectId }) {
     return rows[0] ?? null;
   }
 
+  async function findById(userId) {
+    const query = `
+      SELECT user_id, email, password_hash, role, display_name, is_active
+      FROM ${table}
+      WHERE user_id = @userId
+      LIMIT 1
+    `;
+    const [rows] = await bq.query({ query, params: { userId } });
+    return rows[0] ?? null;
+  }
+
   async function updatePasswordHash(userId, passwordHash) {
     const query = `
       UPDATE ${table}
@@ -23,5 +34,5 @@ export function createUsersRepository({ bq, projectId }) {
     await bq.query({ query, params: { passwordHash, userId } });
   }
 
-  return { findByEmail, updatePasswordHash };
+  return { findByEmail, findById, updatePasswordHash };
 }

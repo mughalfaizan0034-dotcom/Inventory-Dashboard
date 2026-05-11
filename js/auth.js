@@ -7,14 +7,18 @@
 const Auth = (() => {
 
   /* ── Session helpers ──────────────────────────────────────── */
-  function saveSession(token, user) {
+  const REFRESH_KEY = 'patman_refresh_token';
+
+  function saveSession(token, user, refreshToken = null) {
     sessionStorage.setItem(CONFIG.SESSION_KEY, token);
     sessionStorage.setItem(CONFIG.USER_KEY, JSON.stringify(user));
+    if (refreshToken) sessionStorage.setItem(REFRESH_KEY, refreshToken);
   }
 
   function clearSession() {
     sessionStorage.removeItem(CONFIG.SESSION_KEY);
     sessionStorage.removeItem(CONFIG.USER_KEY);
+    sessionStorage.removeItem(REFRESH_KEY);
   }
 
   function getUser() {
@@ -87,7 +91,7 @@ const Auth = (() => {
 
     try {
       const result = await API.login(email, password);
-      saveSession(result.token, result.user);
+      saveSession(result.token, result.user, result.refresh_token || null);
       _passwordInput.value = '';
       App.showApp();
     } catch (err) {
