@@ -5,16 +5,10 @@
 
 // ── Runtime config ────────────────────────────────────────────────────────────
 // Using var (not const) so these live on window and are visible in DevTools.
-// Set CLOUD_RUN_URL after deploying the Cloud Run service — auth is mandatory.
-// Non-auth endpoints continue using Apps Script until each is migrated.
-//
-// DEPLOYMENT: replace the empty string with your Cloud Run service URL:
-//   var CLOUD_RUN_URL = 'https://patman-inventory-api-xxxx-uc.a.run.app';
+// DEPLOYMENT: replace with your Cloud Run service URL.
 var CLOUD_RUN_URL = 'https://patman-inventory-api-znfextdp4q-uc.a.run.app';
-var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxLfROgpoO-4JC_TZmEfJnD62NBqJGDlmbFgU_CKULeGv46k7K0oo4RocNWMUFTfdU/exec';
 
 var CONFIG = {
-  API_URL:     APPS_SCRIPT_URL,   // non-auth operational endpoints
   CLOUD_RUN_URL,
   SESSION_KEY: 'patman_token',
   USER_KEY:    'patman_user',

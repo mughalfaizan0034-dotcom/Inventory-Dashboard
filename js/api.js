@@ -1,16 +1,14 @@
 /* ============================================================
-   api.js — Centralized fetch layer.
+   api.js — Cloud Run API client. All requests go to Cloud Run.
+   Apps Script transport has been fully removed.
 
-   When CLOUD_RUN_URL is set in CONFIG:
-     Auth (login/refresh)         → _crPostRaw  Cloud Run  (no 401 interception)
-     Protected data endpoints     → _crGet       Cloud Run  (Bearer + 401 auto-refresh)
-     All other actions            → _get         Apps Script (query params)
+   Transport functions:
+     _crGet(path, params)  — GET  with Bearer token + 401 auto-refresh
+     _crPost(path, body)   — POST with Bearer token + 401 auto-refresh
+     _crPostRaw(path,body) — POST without 401 interception (auth endpoints)
 
-   When CLOUD_RUN_URL is empty:
-     Everything falls through to Apps Script GET transport.
-
-   All fetch goes through this module.  No other file may call
-   fetch() directly.
+   Auth endpoints use Raw transport to break the refresh retry loop.
+   All other endpoints use the intercepted transport.
    ============================================================ */
 
 const API = (() => {
@@ -74,13 +72,13 @@ const API = (() => {
   }
 
   /* ── Cloud Run GET — with 401 auto-refresh ──────────────── */
-  async function _crGet(path, params = {}, retries = 0) {
+  async function _crGet(path, params = {}, retries = 1) {
     try {
       return await _crGetRaw(path, params, retries);
     } catch (err) {
       if (err.status !== 401) throw err;
       await _attemptRefresh();
-      return _crGetRaw(path, params, retries);
+      return _crGetRaw(path, params, 0);
     }
   }
 
@@ -117,7 +115,77 @@ const API = (() => {
     } catch (err) {
       if (err.status !== 401) throw err;
       await _attemptRefresh();
-      return _crPostRaw(path, body, retries);
+      return _crPostRaw(path, body, 0);
+    }
+  }
+
+  /* ── Cloud Run PATCH — raw, no 401 interception ─────────── */
+  async function _crPatchRaw(path, body, retries = 0) {
+    const tok = getToken();
+    const options = {
+      method:  'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+      },
+      body: JSON.stringify(body),
+    };
+
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await _fetchWithTimeout(CONFIG.CLOUD_RUN_URL + path, options, CONFIG.TIMEOUT_MS);
+        return await _parseResponse(res);
+      } catch (err) {
+        lastErr = err;
+        if (err.serverError || err.status === 401) throw err;
+        if (attempt < retries) await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
+    throw lastErr;
+  }
+
+  /* ── Cloud Run PATCH — with 401 auto-refresh ────────────── */
+  async function _crPatch(path, body, retries = 0) {
+    try {
+      return await _crPatchRaw(path, body, retries);
+    } catch (err) {
+      if (err.status !== 401) throw err;
+      await _attemptRefresh();
+      return _crPatchRaw(path, body, 0);
+    }
+  }
+
+  /* ── Cloud Run DELETE — raw, no 401 interception ────────── */
+  async function _crDeleteRaw(path, retries = 0) {
+    const tok = getToken();
+    const options = {
+      method:  'DELETE',
+      headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+    };
+
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await _fetchWithTimeout(CONFIG.CLOUD_RUN_URL + path, options, CONFIG.TIMEOUT_MS);
+        return await _parseResponse(res);
+      } catch (err) {
+        lastErr = err;
+        if (err.serverError || err.status === 401) throw err;
+        if (attempt < retries) await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
+    throw lastErr;
+  }
+
+  /* ── Cloud Run DELETE — with 401 auto-refresh ───────────── */
+  async function _crDelete(path, retries = 0) {
+    try {
+      return await _crDeleteRaw(path, retries);
+    } catch (err) {
+      if (err.status !== 401) throw err;
+      await _attemptRefresh();
+      return _crDeleteRaw(path, 0);
     }
   }
 
@@ -140,7 +208,7 @@ const API = (() => {
   async function _parseResponse(res) {
     const text = await res.text();
     let parsed;
-    try { parsed = JSON.parse(text); } catch { /* non-JSON — fall through to status check */ }
+    try { parsed = JSON.parse(text); } catch { /* non-JSON — fall through */ }
 
     if (!res.ok) {
       const message = parsed?.error || `HTTP ${res.status}: ${res.statusText}`;
@@ -158,75 +226,17 @@ const API = (() => {
     return parsed?.data !== undefined ? parsed.data : parsed;
   }
 
-  /* ── GET request — Apps Script primary transport ─────────── */
-  async function _get(action, params = {}, retries = CONFIG.MAX_RETRIES) {
-    const url = new URL(CONFIG.API_URL);
-    url.searchParams.set('action', action);
-    const tok = getToken();
-    if (tok) url.searchParams.set('token', tok);
-
-    for (const [key, value] of Object.entries(params)) {
-      if (value == null || value === '') continue;
-      url.searchParams.set(
-        key,
-        typeof value === 'object' ? JSON.stringify(value) : String(value)
-      );
-    }
-
-    const options = { method: 'GET', redirect: 'follow' };
-
-    let lastErr;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const res = await _fetchWithTimeout(url.toString(), options, CONFIG.TIMEOUT_MS);
-        return await _parseResponse(res);
-      } catch (err) {
-        lastErr = err;
-        if (err.serverError) throw err;
-        if (attempt < retries) await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
-      }
-    }
-    throw lastErr;
-  }
-
-  /* ── POST request — uploads only (large CSV bodies) ─────── */
-  async function _post(action, data = {}, retries = 0) {
-    const body = JSON.stringify({ action, data, token: getToken() });
-    const options = {
-      method:   'POST',
-      redirect: 'follow',
-      headers:  { 'Content-Type': 'text/plain;charset=utf-8' },
-      body,
-    };
-
-    let lastErr;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const res = await _fetchWithTimeout(CONFIG.API_URL, options, CONFIG.TIMEOUT_MS);
-        return await _parseResponse(res);
-      } catch (err) {
-        lastErr = err;
-        if (err.serverError) throw err;
-        if (attempt < retries) await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
-      }
-    }
-    throw lastErr;
-  }
-
-  /* ── Public API methods ─────────────────────────────────── */
+  /* ── Public API ─────────────────────────────────────────── */
   return {
 
-    /* Auth — Cloud Run only. Fails closed if CLOUD_RUN_URL is not configured. */
+    /* Auth — raw transport: never trigger 401 refresh on auth endpoints */
     async login(username, password) {
-      if (!CONFIG.CLOUD_RUN_URL) {
-        throw new Error('Authentication service not configured. Contact your administrator.');
-      }
       const data = await _crPostRaw('/auth/login', { username, password }, 0);
       return { token: data.access_token, refresh_token: data.refresh_token, user: data.user };
     },
 
     async logout() {
-      // JWT is stateless — nothing to revoke server-side until token revocation is implemented.
+      // JWT is stateless — no server call needed; just clear local storage.
       sessionStorage.removeItem(CONFIG.SESSION_KEY);
       sessionStorage.removeItem(CONFIG.USER_KEY);
       sessionStorage.removeItem('patman_refresh_token');
@@ -237,8 +247,6 @@ const API = (() => {
     },
 
     async verifySession() {
-      // JWT sessions are validated locally — no round-trip needed.
-      // Expiry enforcement is handled by checkSession() via _tokenExpiresAt().
       const user = JSON.parse(sessionStorage.getItem(CONFIG.USER_KEY) || 'null');
       if (user) return { user };
       throw new Error('No session');
@@ -246,78 +254,72 @@ const API = (() => {
 
     /* Dashboard */
     async getDashboardKPIs() {
-      return _get('getDashboardKPIs');
+      return _crGet('/dashboard/kpis');
     },
 
-    /* Performance */
     async getPerformanceData(weeks = 12) {
-      return _get('getPerformanceData', { weeks });
+      return _crGet('/dashboard/performance', { weeks });
     },
 
-    /* Inventory / Box Lookup */
+    /* Inventory */
     async searchBox(query) {
-      return _get('searchBox', { query });
+      return _crGet('/inventory', { search: query, pageSize: 10, page: 1 });
     },
 
     async getInventoryList(page = 1, pageSize = CONFIG.PAGE_SIZE, search = '') {
-      if (CONFIG.CLOUD_RUN_URL) return _crGet('/inventory', { page, pageSize, search });
-      return _get('getInventoryList', { page, pageSize, search });
+      return _crGet('/inventory', { page, pageSize, search });
     },
 
     /* Orders */
     async getOrders(page = 1, pageSize = CONFIG.PAGE_SIZE, filters = {}) {
-      return _get('getOrders', { page, pageSize, filters });
+      return _crGet('/orders', { page, pageSize, ...filters });
     },
 
     async getPlatforms() {
-      return _get('getPlatforms');
+      return _crGet('/orders/platforms');
     },
 
-    /* Uploads — POST because CSV data is too large for a URL */
+    /* Uploads */
     async uploadInventory(csvText, filename) {
-      return _post('uploadInventory', { csvText, filename }, 0);
+      return _crPost('/uploads/inventory', { csvText, filename }, 0);
     },
 
     async uploadOrders(csvText, filename) {
-      return _post('uploadOrders', { csvText, filename }, 0);
+      return _crPost('/uploads/orders', { csvText, filename }, 0);
     },
 
     async getUploadHistory(type = '') {
-      return _get('getUploadHistory', { type });
+      return _crGet('/uploads/history', { type });
     },
 
     /* Users */
     async getUsers() {
-      return _get('getUsers');
+      return _crGet('/users');
     },
 
     async createUser(userData) {
-      return _get('createUser', userData, 0);
+      return _crPost('/users', userData, 0);
     },
 
     async updateUser(userId, updates) {
-      return _get('updateUser', { userId, updates }, 0);
+      return _crPatch(`/users/${userId}`, updates, 0);
     },
 
     async deleteUser(userId) {
-      return _get('deleteUser', { userId }, 0);
+      return _crDelete(`/users/${userId}`, 0);
     },
 
     /* System */
     async ping() {
-      return _get('ping', {}, 0);
+      return _crGet('/health');
     },
 
     async getSystemStatus() {
-      return _get('getSystemStatus');
+      return _crGet('/health');
     },
 
     async getLogs() {
-      return _get('getLogs');
-    },
-
-    async bootstrapAdmin() {
-      return _get('bootstrapAdmin', {}, 0);
+      return { entries: [] }; // Logs are server-side via Cloud Logging
     },
   };
 })();

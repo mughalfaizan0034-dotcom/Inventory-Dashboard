@@ -8,15 +8,29 @@ import sensible from '@fastify/sensible';
 import { env } from './config/env.js';
 import bigqueryPlugin from './plugins/bigquery.js';
 import { createTokenFactory } from './auth/tokens.js';
+
 import { createOrganizationsRepository } from './repositories/organizationsRepository.js';
 import { createUsersRepository } from './repositories/usersRepository.js';
 import { createInventoryRepository } from './repositories/inventoryRepository.js';
+import { createOrdersRepository } from './repositories/ordersRepository.js';
+import { createDashboardRepository } from './repositories/dashboardRepository.js';
+import { createUploadsRepository } from './repositories/uploadsRepository.js';
+
 import { createAuthService } from './services/authService.js';
 import { createInventoryService } from './services/inventoryService.js';
+import { createOrdersService } from './services/ordersService.js';
+import { createDashboardService } from './services/dashboardService.js';
+import { createUploadsService } from './services/uploadsService.js';
+import { createUsersService } from './services/usersService.js';
 import { createUsernameService } from './services/usernameService.js';
+
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { inventoryRoutes } from './routes/inventory.js';
+import { ordersRoutes } from './routes/orders.js';
+import { dashboardRoutes } from './routes/dashboard.js';
+import { uploadsRoutes } from './routes/uploads.js';
+import { usersRoutes } from './routes/users.js';
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -25,23 +39,19 @@ export async function buildApp() {
       transport: env.NODE_ENV === 'development'
         ? { target: 'pino-pretty', options: { colorize: true } }
         : undefined,
-      // Serialize errors consistently
       serializers: {
         err: (err) => ({ type: err.name, message: err.message, stack: err.stack }),
       },
     },
-    // Use x-request-id header if present, otherwise generate one
     requestIdHeader: 'x-request-id',
     genReqId: () => randomUUID(),
   });
 
-  // Propagate request ID to every response
   fastify.addHook('onSend', (request, reply, _payload, done) => {
     reply.header('x-request-id', request.id);
     done();
   });
 
-  // Inject Cloud Trace context so Cloud Logging can correlate requests to traces
   fastify.addHook('onRequest', (request, _reply, done) => {
     const traceHeader = request.headers['x-cloud-trace-context'];
     if (traceHeader) {
@@ -53,7 +63,6 @@ export async function buildApp() {
     done();
   });
 
-  // Centralized error handler — masks internals in production, includes request_id always
   fastify.setErrorHandler((error, request, reply) => {
     const statusCode = error.statusCode ?? error.status ?? 500;
     const isServer   = statusCode >= 500;
@@ -75,11 +84,10 @@ export async function buildApp() {
     return reply.code(statusCode).send(body);
   });
 
-  // Plugins are queued; after() fires once they've all loaded (during ready/listen)
   fastify.register(helmet, { global: true });
   fastify.register(cors, {
     origin:  env.CORS_ORIGIN,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
   fastify.register(jwt, { secret: env.JWT_SECRET });
@@ -89,19 +97,35 @@ export async function buildApp() {
   fastify.after(() => {
     const deps = { bq: fastify.bq, projectId: env.GCP_PROJECT_ID };
 
+    // Repositories
     const orgsRepo      = createOrganizationsRepository(deps);
     const usersRepo     = createUsersRepository(deps);
     const inventoryRepo = createInventoryRepository(deps);
+    const ordersRepo    = createOrdersRepository(deps);
+    const dashboardRepo = createDashboardRepository(deps);
+    const uploadsRepo   = createUploadsRepository(deps);
 
+    // Services
     const usernameService  = createUsernameService({ usersRepo });
-    const authService      = createAuthService({ usersRepo }); // orgsRepo available for Phase 3 org management routes
+    const authService      = createAuthService({ usersRepo });
     const inventoryService = createInventoryService({ inventoryRepo });
+    const ordersService    = createOrdersService({ ordersRepo });
+    const dashboardService = createDashboardService({ dashboardRepo });
+    const uploadsService   = createUploadsService({ uploadsRepo, ordersRepo });
+    const usersService     = createUsersService({ usersRepo, usernameService });
 
     const tokenFactory = createTokenFactory(fastify);
+
+    // orgsRepo available for Phase 3 org management routes
+    void orgsRepo;
 
     fastify.register(healthRoutes);
     fastify.register(authRoutes,      { prefix: '/auth',      authService, usersRepo, tokenFactory });
     fastify.register(inventoryRoutes, { prefix: '/inventory', inventoryService });
+    fastify.register(ordersRoutes,    { prefix: '/orders',    ordersService });
+    fastify.register(dashboardRoutes, { prefix: '/dashboard', dashboardService });
+    fastify.register(uploadsRoutes,   { prefix: '/uploads',   uploadsService });
+    fastify.register(usersRoutes,     { prefix: '/users',     usersService });
   });
 
   return fastify;

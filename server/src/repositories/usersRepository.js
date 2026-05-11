@@ -54,6 +54,43 @@ export function createUsersRepository({ bq, projectId }) {
     return rows[0] ?? null;
   }
 
+  async function findAllByOrg(organizationId) {
+    const query = `
+      SELECT user_id, organization_id, username, email, display_name, role, is_active
+      FROM ${table}
+      WHERE organization_id = @organizationId
+      ORDER BY display_name
+    `;
+    const [rows] = await bq.query({ query, params: { organizationId } });
+    return rows;
+  }
+
+  async function insert(user) {
+    const query = `
+      INSERT INTO ${table}
+        (user_id, organization_id, username, email, display_name, password_hash,
+         role, is_active, created_at, updated_at)
+      VALUES
+        (@user_id, @organization_id, @username, @email, @display_name, @password_hash,
+         @role, @is_active, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+    `;
+    await bq.query({ query, params: user });
+  }
+
+  async function update(userId, updates) {
+    const allowed = ['display_name', 'role', 'is_active'];
+    const setClauses = Object.keys(updates)
+      .filter(k => allowed.includes(k))
+      .map(k => `${k} = @${k}`);
+    if (!setClauses.length) return;
+    const query = `
+      UPDATE ${table}
+      SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP()
+      WHERE user_id = @userId
+    `;
+    await bq.query({ query, params: { ...updates, userId } });
+  }
+
   async function updatePasswordHash(userId, passwordHash) {
     const query = `
       UPDATE ${table}
@@ -63,5 +100,8 @@ export function createUsersRepository({ bq, projectId }) {
     await bq.query({ query, params: { passwordHash, userId } });
   }
 
-  return { findByUsername, findByUsernameGlobal, findById, findByEmail, updatePasswordHash };
+  return {
+    findByUsername, findByUsernameGlobal, findById, findByEmail,
+    findAllByOrg, insert, update, updatePasswordHash,
+  };
 }
