@@ -32,12 +32,12 @@ export function createDashboardRepository({ bq, projectId }) {
     const safeWeeks = Math.min(Math.max(parseInt(weeks, 10) || 12, 1), 52);
     const query = `
       SELECT
-        DATE_TRUNC(order_date, WEEK)  AS week_start,
-        SUM(quantity_sold)            AS units_sold,
-        COUNT(DISTINCT order_id)      AS orders
+        DATE_TRUNC(PARSE_DATE('%Y-%m-%d', order_date), WEEK) AS week_start,
+        SUM(quantity_sold)                                   AS units_sold,
+        COUNT(DISTINCT order_id)                             AS orders
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        AND PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
       GROUP BY week_start
       ORDER BY week_start ASC
     `;

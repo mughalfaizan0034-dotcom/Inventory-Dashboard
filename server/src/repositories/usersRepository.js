@@ -45,7 +45,7 @@ export function createUsersRepository({ bq, projectId }) {
         (@user_id, @username, @email, @display_name, @password_hash,
          @is_active, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
     `;
-    await bq.query({ query, params: user });
+    await bq.query({ query, params: user, types: { email: 'STRING' } });
   }
 
   async function update(userId, updates) {
