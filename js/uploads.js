@@ -32,11 +32,18 @@ const Uploads = (() => {
     const fileEl = zone.querySelector('.drop-file');
     const btnId  = zoneId.replace('drop-zone-', 'upload-btn-');
     const btn    = document.getElementById(btnId);
+    const statusEl = document.getElementById(zoneId.replace('drop-zone-', 'upload-status-'));
+    const progressWrap = document.getElementById(zoneId.replace('drop-zone-', 'progress-'));
+    const progressBar  = progressWrap?.querySelector('.progress-bar');
+
+    // Capture original placeholder text from DOM so reset is always accurate
+    const _origIcon = icon?.textContent || '';
+    const _origText = text?.textContent || '';
+    const _origSub  = sub?.textContent  || '';
 
     let selectedFile = null;
 
     function setFile(file) {
-      // Client-side validation: type and size
       if (!file.name.toLowerCase().endsWith('.txt')) {
         Notify.error(
           'Invalid file type',
@@ -58,15 +65,24 @@ const Uploads = (() => {
       if (btn)    btn.disabled = false;
     }
 
-    function clearFile() {
+    function clearFile({ keepStatus = false } = {}) {
       selectedFile = null;
+      input.value  = '';
       zone.classList.remove('has-file');
-      if (icon)   icon.textContent = fileType === 'inventory' ? '📦' : '📋';
-      if (text)   text.textContent = 'Drop file here or click to browse';
-      if (sub)    sub.textContent  = 'UTF-8 tab-delimited TXT (.txt) · Max 10 MB';
-      if (fileEl) fileEl.style.display = 'none';
+
+      // Restore exact original placeholder content from DOM snapshot
+      if (icon)   icon.textContent = _origIcon;
+      if (text)   text.textContent = _origText;
+      if (sub)    sub.textContent  = _origSub;
+      if (fileEl) { fileEl.textContent = ''; fileEl.style.display = 'none'; }
       if (btn)    btn.disabled = true;
-      input.value = '';
+
+      // Clear button clears everything; post-upload reset keeps result visible
+      if (!keepStatus) {
+        if (statusEl)    statusEl.innerHTML = '';
+        if (progressBar) { progressBar.style.width = '0%'; progressBar.className = 'progress-bar'; }
+        if (progressWrap) progressWrap.style.display = 'none';
+      }
     }
 
     zone.addEventListener('click', e => { if (!e.target.closest('button')) input.click(); });
@@ -86,7 +102,7 @@ const Uploads = (() => {
       btn.addEventListener('click', async () => {
         if (!selectedFile) return;
         await _doUpload(selectedFile, fileType, btn, zoneId);
-        clearFile();
+        clearFile({ keepStatus: true });
       });
     }
 
