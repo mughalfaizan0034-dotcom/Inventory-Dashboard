@@ -16,6 +16,10 @@ const Uploads = (() => {
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
+  // Stores error arrays keyed by a temporary ID so onclick handlers
+  // don't need to inline potentially huge JSON blobs in HTML attributes.
+  const _errorCache = {};
+
   /* ── Drop zone setup ────────────────────────────────────── */
   function _initDropZone(zoneId, inputId, fileType) {
     const zone  = document.getElementById(zoneId);
@@ -124,7 +128,7 @@ const Uploads = (() => {
             ${Utils.badgeHtml('success', `✓ ${inserted} rows imported`)}
             ${skipped > 0 ? Utils.badgeHtml('warning', `${skipped} skipped`) : ''}
           </div>
-          ${errors.length > 0 ? _renderErrors(errors, result.upload_id) : ''}`;
+          ${errors.length > 0 ? _renderErrors(errors) : ''}`;
       }
 
       Notify.success('Upload complete', `${inserted} rows imported successfully.`);
@@ -139,33 +143,50 @@ const Uploads = (() => {
     }
   }
 
-  function _renderErrors(errors, uploadId) {
+  function _formatErrorReason(e) {
+    const field  = String(e.field  || '');
+    const reason = String(e.reason || '');
+    // If reason starts with the field name, replace it with uppercase version
+    if (field && reason.toLowerCase().startsWith(field.toLowerCase())) {
+      return field.toUpperCase() + reason.slice(field.length);
+    }
+    return reason.charAt(0).toUpperCase() + reason.slice(1);
+  }
+
+  function _renderErrors(errors) {
     if (!errors.length) return '';
+    const cacheKey = 'e' + Date.now();
+    _errorCache[cacheKey] = errors;
     const shown = errors.slice(0, 10);
-    const downloadLink = uploadId
-      ? `<a href="#" style="font-size:12px;color:var(--primary)" onclick="Uploads.downloadFailedRows(${JSON.stringify(errors)});return false">Download failed_rows.txt</a>`
-      : '';
     return `
       <div style="margin-top:8px;background:var(--error-bg);border:1px solid var(--error-bd);border-radius:var(--r-sm);padding:10px;font-size:12px;color:var(--error)">
         <strong>Validation issues (${errors.length} rows rejected):</strong>
         <ul style="margin:4px 0 0 16px;padding:0">
-          ${shown.map(e => `<li>Row ${e.row}: <strong>${Utils.escapeHtml(String(e.field))}</strong> = ${Utils.escapeHtml(String(e.value ?? ''))} — ${Utils.escapeHtml(e.reason)}</li>`).join('')}
+          ${shown.map(e => `<li>Row ${e.row} → ${Utils.escapeHtml(_formatErrorReason(e))}</li>`).join('')}
           ${errors.length > 10 ? `<li>…and ${errors.length - 10} more</li>` : ''}
         </ul>
-        <div style="margin-top:6px">${downloadLink}</div>
+        <div style="margin-top:6px">
+          <a href="#" style="font-size:12px;color:var(--primary)"
+             onclick="Uploads.downloadFailedRows('${cacheKey}');return false">
+            Download failed_rows.txt
+          </a>
+        </div>
       </div>`;
   }
 
-  function downloadFailedRows(errors) {
-    const lines = ['row\tfield\tvalue\treason'];
-    errors.forEach(e => {
-      lines.push(`${e.row}\t${e.field}\t${String(e.value ?? '')}\t${e.reason}`);
-    });
+  function downloadFailedRows(cacheKey) {
+    const errors = _errorCache[cacheKey] || [];
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const ts  = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+    const lines = ['row\tfield\treason'];
+    errors.forEach(e => lines.push(`${e.row}\t${String(e.field ?? '')}\t${String(e.reason ?? '')}`));
     const blob = new Blob([lines.join('\r\n')], { type: 'text/plain;charset=utf-8' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = 'failed_rows.txt';
+    a.download = `failed_rows_${ts}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -208,29 +229,41 @@ const Uploads = (() => {
   }
 
   /* ── Template downloads ─────────────────────────────────── */
+  const _templates = {
+    inventory: {
+      filename: 'inventory_template.csv',
+      // Headers + one example row. UPC/SKU are TEXT — format those columns as
+      // Text in Excel BEFORE entering values to prevent leading-zero loss.
+      content: [
+        'sku,upc,quantity,part_number,box_number,date_added,notes',
+        'SKU-001,012345678901,25,PT-123,BX-001,2026-05-11,Sample item',
+        'SKU-002,098765432109,10,,,2026-05-11,',
+      ].join('\r\n'),
+    },
+    orders: {
+      filename: 'orders_template.csv',
+      content: [
+        'order_date,sku,quantity_sold,shipped_from_box,platform',
+        '2026-05-11,SKU-001,2,BX-001,Amazon',
+        '2026-05-11,SKU-002,1,BX-002,eBay',
+      ].join('\r\n'),
+    },
+  };
+
   function _bindTemplateLinks() {
     document.querySelectorAll('[data-download-template]').forEach(link => {
-      link.addEventListener('click', async e => {
+      link.addEventListener('click', e => {
         e.preventDefault();
         const type = link.dataset.downloadTemplate;
-        try {
-          const text = await API.downloadTemplate(type);
-          // template is returned as plain text from server
-          const content = typeof text === 'string' ? text : JSON.stringify(text);
-          const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-          const url  = URL.createObjectURL(blob);
-          const a    = document.createElement('a');
-          a.href     = url;
-          a.download = `${type}_template.txt`;
-          a.click();
-          URL.revokeObjectURL(url);
-        } catch {
-          // Fallback: download from static assets
-          const a    = document.createElement('a');
-          a.href     = `assets/templates/${type}_template.csv`;
-          a.download = `${type}_template.csv`;
-          a.click();
-        }
+        const tpl  = _templates[type];
+        if (!tpl) return;
+        const blob = new Blob([tpl.content], { type: 'text/csv;charset=utf-8' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = tpl.filename;
+        a.click();
+        URL.revokeObjectURL(url);
       });
     });
   }

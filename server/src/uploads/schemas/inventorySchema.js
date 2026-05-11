@@ -14,6 +14,11 @@ export const inventorySchema = {
     const qty = parsePositiveInt(raw.quantity, 'quantity', lineNum);
     if (qty.error) return { error: qty.error };
 
+    const dateAdded = safeString(raw.date_added) || null;
+    if (dateAdded && isNaN(new Date(dateAdded).getTime())) {
+      return { error: { row: lineNum, field: 'date_added', value: raw.date_added, reason: 'date_added has an invalid format (expected YYYY-MM-DD)' } };
+    }
+
     return {
       row: {
         organization_id: organizationId,
@@ -22,7 +27,7 @@ export const inventorySchema = {
         part_number: safeString(raw.part_number) || null,
         box_number:  safeString(raw.box_number)  || null,
         quantity:    qty.value,
-        date_added:  safeString(raw.date_added)  || null,
+        date_added:  dateAdded,
         notes:       safeString(raw.notes)       || null,
         updated_at:  new Date().toISOString(),
       },

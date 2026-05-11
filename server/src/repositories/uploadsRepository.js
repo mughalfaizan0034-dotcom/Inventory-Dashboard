@@ -28,7 +28,10 @@ export function createUploadsRepository({ bq, projectId }) {
     const query    = `${combined} ORDER BY created_at DESC LIMIT 100`;
     try {
       const [rows] = await bq.query({ query, params: { organizationId } });
-      return rows;
+      return rows.map(r => ({
+        ...r,
+        created_at: r.created_at?.value ?? r.created_at ?? null,
+      }));
     } catch {
       // Tables may not exist yet (migration pending). Return empty rather than crashing.
       return [];

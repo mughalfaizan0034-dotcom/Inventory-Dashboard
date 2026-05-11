@@ -26,8 +26,8 @@ export function createOrdersRepository({ bq, projectId }) {
 
     const dataQuery = `
       SELECT
-        order_id, order_date, sku, upc, quantity_sold,
-        platform, source_file, shipped_from_box, created_at
+        order_date, sku, quantity_sold,
+        shipped_from_box, platform, created_at
       FROM ${table}
       ${where}
       ORDER BY order_date DESC, created_at DESC
@@ -41,7 +41,7 @@ export function createOrdersRepository({ bq, projectId }) {
     ]);
 
     return {
-      items: rows[0],
+      items: rows[0].map(r => ({ ...r, created_at: r.created_at?.value ?? r.created_at ?? null })),
       total: Number(countRows[0][0]?.total ?? 0),
     };
   }

@@ -34,7 +34,7 @@ export function createDashboardRepository({ bq, projectId }) {
       SELECT
         DATE_TRUNC(PARSE_DATE('%Y-%m-%d', order_date), WEEK) AS week_start,
         SUM(quantity_sold)                                   AS units_sold,
-        COUNT(DISTINCT order_id)                             AS orders
+        COUNT(*)                                             AS orders
       FROM ${ordTable}
       WHERE organization_id = @organizationId
         AND PARSE_DATE('%Y-%m-%d', order_date) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)

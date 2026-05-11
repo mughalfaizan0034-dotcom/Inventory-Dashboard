@@ -111,8 +111,16 @@ export async function uploadsRoutes(fastify, { uploadsService }) {
       const { type } = request.params;
 
       const templates = {
-        inventory: 'sku\tupc\tpart_number\tbox_number\tquantity\tdate_added\tnotes\r\nSKU-001\t001234567890\tPT-123\tBX-001\t25\t2026-05-11\tSample item',
-        orders:    'order_id\torder_date\tsku\tupc\tquantity_sold\tplatform\tsource_file\tshipped_from_box\r\nORD-1001\t2026-05-11\tSKU-001\t001234567890\t2\tAmazon\tbatch1.txt\tBX-001',
+        inventory: [
+          'sku,upc,quantity,part_number,box_number,date_added,notes',
+          'SKU-001,012345678901,25,PT-123,BX-001,2026-05-11,Sample item',
+          'SKU-002,098765432109,10,,,2026-05-11,',
+        ].join('\r\n'),
+        orders: [
+          'order_date,sku,quantity_sold,shipped_from_box,platform',
+          '2026-05-11,SKU-001,2,BX-001,Amazon',
+          '2026-05-11,SKU-002,1,BX-002,eBay',
+        ].join('\r\n'),
       };
 
       if (!templates[type]) {
@@ -120,8 +128,8 @@ export async function uploadsRoutes(fastify, { uploadsService }) {
       }
 
       return reply
-        .header('Content-Type', 'text/plain; charset=utf-8')
-        .header('Content-Disposition', `attachment; filename="${type}_template.txt"`)
+        .header('Content-Type', 'text/csv; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${type}_template.csv"`)
         .send(templates[type]);
     }
   );

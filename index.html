@@ -359,15 +359,19 @@
 
             <!-- Upload instructions -->
             <div style="grid-column:1/-1;background:var(--info-bg,#eff6ff);border:1px solid var(--info-bd,#bfdbfe);border-radius:var(--r-sm);padding:12px 16px;font-size:13px;color:var(--txt-2)">
-              <strong>How to prepare your file:</strong> Download the template → fill it in Excel or Google Sheets → <strong>File → Save As → Tab delimited Text (.txt) with UTF-8 encoding</strong> → upload the .txt file here.
-              <div style="margin-top:4px;color:var(--error,#dc2626);font-size:12px">⚠ Direct Excel/XLSX uploads are not supported. Export to UTF-8 tab-delimited TXT first to prevent UPC and SKU corruption.</div>
+              <strong>How to prepare your file:</strong> Download the CSV template → open in Excel or Google Sheets → fill in your data → <strong>File → Save As → Tab delimited Text (.txt) with UTF-8 encoding</strong> → upload the .txt file here.
+              <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px;font-size:12px">
+                <span>⚠ <strong>SKU / UPC / Order ID columns must be formatted as Text</strong> in Excel before entering values — otherwise Excel removes leading zeros and corrupts barcodes.</span>
+                <span>⚠ <strong>Direct CSV or XLSX uploads are not supported.</strong> You must export to UTF-8 tab-delimited TXT (.txt) before uploading.</span>
+                <span>ℹ <strong>quantity</strong> and <strong>quantity_sold</strong> must be whole numbers. <strong>date_added</strong> / <strong>order_date</strong> must be YYYY-MM-DD format.</span>
+              </div>
             </div>
 
             <!-- Inventory upload -->
             <div class="upload-card">
               <div class="upload-card-header">
                 <div class="upload-card-title">📦 Inventory Data</div>
-                <a href="#" class="btn btn-ghost btn-sm" data-download-template="inventory">Download template</a>
+                <a href="#" class="btn btn-ghost btn-sm" data-download-template="inventory">Download CSV template</a>
               </div>
               <div class="upload-card-desc">
                 Required: sku, upc, quantity &nbsp;·&nbsp; Optional: part_number, box_number, date_added, notes
@@ -393,10 +397,10 @@
             <div class="upload-card">
               <div class="upload-card-header">
                 <div class="upload-card-title">🛒 Order Data</div>
-                <a href="#" class="btn btn-ghost btn-sm" data-download-template="orders">Download template</a>
+                <a href="#" class="btn btn-ghost btn-sm" data-download-template="orders">Download CSV template</a>
               </div>
               <div class="upload-card-desc">
-                Required: order_id, order_date, sku, upc, quantity_sold, platform &nbsp;·&nbsp; Optional: source_file, shipped_from_box
+                Required: order_date, sku, quantity_sold, shipped_from_box, platform &nbsp;·&nbsp; All fields mandatory
               </div>
               <div class="drop-zone" id="drop-zone-orders">
                 <input type="file" id="file-input-orders" accept=".txt">
