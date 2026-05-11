@@ -10,10 +10,18 @@ export function createLookupRepository({ bq, projectId }) {
 
     const sql = `
       WITH ord_summary AS (
-        SELECT sku, SUM(quantity_sold) AS units_sold
+        SELECT
+          CASE
+            WHEN shipped_from_box IS NOT NULL
+                 AND TRIM(CAST(shipped_from_box AS STRING)) != ''
+                 AND REGEXP_CONTAINS(sku, r'^ARA[0-9]+-.+$')
+            THEN CONCAT('ARA', TRIM(CAST(shipped_from_box AS STRING)), REGEXP_EXTRACT(sku, r'^ARA[0-9]+(.+)$'))
+            ELSE sku
+          END AS effective_sku,
+          SUM(quantity_sold) AS units_sold
         FROM ${ordTable}
         WHERE organization_id = @organizationId
-        GROUP BY sku
+        GROUP BY effective_sku
       )
       SELECT
         i.sku,
@@ -24,7 +32,7 @@ export function createLookupRepository({ bq, projectId }) {
         COALESCE(o.units_sold, 0)   AS units_sold,
         i.quantity - COALESCE(o.units_sold, 0) AS remaining_stock
       FROM ${invTable} i
-      LEFT JOIN ord_summary o ON i.sku = o.sku AND o.sku IS NOT NULL
+      LEFT JOIN ord_summary o ON i.sku = o.effective_sku
       WHERE i.organization_id = @organizationId
         AND (
           LOWER(TRIM(i.upc))         = LOWER(TRIM(@query))

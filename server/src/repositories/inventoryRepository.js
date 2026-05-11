@@ -4,7 +4,7 @@ export function createInventoryRepository({ bq, projectId }) {
   const invTable = `\`${projectId}.${TABLES.INVENTORY}\``;
   const ordTable = `\`${projectId}.${TABLES.ORDERS}\``;
 
-  async function findAll({ organizationId, page, pageSize, search, sortBy, sortDir, filter = 'all' }) {
+  async function findAll({ organizationId, page, pageSize, search, sortBy, sortDir, status = 'all' }) {
     const offset = (page - 1) * pageSize;
 
     const conditions = ['i.organization_id = @organizationId'];
@@ -15,7 +15,7 @@ export function createInventoryRepository({ bq, projectId }) {
       params.search = search.toLowerCase();
     }
 
-    if (filter === 'undefined') {
+    if (status === 'undefined') {
       conditions.push(`(
         UPPER(TRIM(COALESCE(i.sku, '')))           IN ('NA','N/A','')
         OR UPPER(TRIM(COALESCE(i.upc, '')))        IN ('NA','N/A','')
@@ -40,17 +40,29 @@ export function createInventoryRepository({ bq, projectId }) {
     const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
     // Stock-based filters require joining orders to compute remaining_stock
-    const needsStockFilter = filter === 'in-stock' || filter === 'oos';
+    const needsStockFilter = status === 'in_stock' || status === 'oos' || status === 'phantom';
     const stockCond = needsStockFilter
-      ? `AND (i.quantity - COALESCE(o.units_sold, 0)) ${filter === 'in-stock' ? '> 0' : '<= 0'}`
+      ? `AND (i.quantity - COALESCE(o.units_sold, 0)) ${
+          status === 'in_stock' ? '> 0' :
+          status === 'oos'      ? '= 0' :
+          '< 0'
+        }`
       : '';
 
     const cte = `
       WITH ord_summary AS (
-        SELECT sku, SUM(quantity_sold) AS units_sold
+        SELECT
+          CASE
+            WHEN shipped_from_box IS NOT NULL
+                 AND TRIM(CAST(shipped_from_box AS STRING)) != ''
+                 AND REGEXP_CONTAINS(sku, r'^ARA[0-9]+-.+$')
+            THEN CONCAT('ARA', TRIM(CAST(shipped_from_box AS STRING)), REGEXP_EXTRACT(sku, r'^ARA[0-9]+(.+)$'))
+            ELSE sku
+          END AS effective_sku,
+          SUM(quantity_sold) AS units_sold
         FROM ${ordTable}
         WHERE organization_id = @organizationId
-        GROUP BY sku
+        GROUP BY effective_sku
       )`;
 
     const dataQuery = `
@@ -60,14 +72,14 @@ export function createInventoryRepository({ bq, projectId }) {
         COALESCE(o.units_sold, 0) AS units_sold,
         i.quantity - COALESCE(o.units_sold, 0) AS remaining_stock
       FROM ${invTable} i
-      LEFT JOIN ord_summary o ON i.sku = o.sku
+      LEFT JOIN ord_summary o ON i.sku = o.effective_sku
       ${where} ${stockCond}
       ORDER BY ${col} ${dir}
       LIMIT ${pageSize} OFFSET ${offset}
     `;
 
     const countQuery = needsStockFilter
-      ? `${cte} SELECT COUNT(*) AS total FROM ${invTable} i LEFT JOIN ord_summary o ON i.sku = o.sku ${where} ${stockCond}`
+      ? `${cte} SELECT COUNT(*) AS total FROM ${invTable} i LEFT JOIN ord_summary o ON i.sku = o.effective_sku ${where} ${stockCond}`
       : `SELECT COUNT(*) AS total FROM ${invTable} i ${where}`;
 
     const [rows, countRows] = await Promise.all([
@@ -130,16 +142,24 @@ export function createInventoryRepository({ bq, projectId }) {
 
     const query = `
       WITH ord_summary AS (
-        SELECT sku, SUM(quantity_sold) AS units_sold
+        SELECT
+          CASE
+            WHEN shipped_from_box IS NOT NULL
+                 AND TRIM(CAST(shipped_from_box AS STRING)) != ''
+                 AND REGEXP_CONTAINS(sku, r'^ARA[0-9]+-.+$')
+            THEN CONCAT('ARA', TRIM(CAST(shipped_from_box AS STRING)), REGEXP_EXTRACT(sku, r'^ARA[0-9]+(.+)$'))
+            ELSE sku
+          END AS effective_sku,
+          SUM(quantity_sold) AS units_sold
         FROM ${ordTable}
         WHERE organization_id = @organizationId
-        GROUP BY sku
+        GROUP BY effective_sku
       )
       SELECT
         i.box_number,
         i.quantity - COALESCE(o.units_sold, 0) AS remaining_stock
       FROM ${invTable} i
-      LEFT JOIN ord_summary o ON i.sku = o.sku
+      LEFT JOIN ord_summary o ON i.sku = o.effective_sku
       WHERE i.organization_id = @organizationId
         AND i.part_number = @partNumber
         AND i.upc         = @upc

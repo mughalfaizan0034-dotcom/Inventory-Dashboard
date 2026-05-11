@@ -90,14 +90,21 @@ const Orders = (() => {
     const isPhantom = _filters.phantom_only;
 
     tbody.innerHTML = rows.map(row => {
-      const id      = row.order_row_id || '';
-      const checked = _selectedIds.has(id) ? ' checked' : '';
-      const trStyle = isPhantom ? ' style="background:rgba(220,38,38,.06)"' : '';
+      const id         = row.order_row_id || '';
+      const checked    = _selectedIds.has(id) ? ' checked' : '';
+      const trStyle    = isPhantom ? ' style="background:rgba(220,38,38,.06)"' : '';
+      const parsedSku  = _parseSku(row.sku || '');
+      const origBox    = parsedSku?.box || '';
+      const shipped    = row.shipped_from_box || '';
+      const isOverride = !!(shipped && shipped !== origBox);
+      const shippedHtml = isOverride
+        ? `${Utils.escapeHtml(shipped)}<span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span>`
+        : `<span style="color:var(--primary);font-weight:600">★ ${Utils.escapeHtml(origBox || '—')}</span>`;
       return `<tr data-row-id="${Utils.escapeHtml(id)}"
                   data-order-date="${Utils.escapeHtml(row.order_date || '')}"
                   data-sku="${Utils.escapeHtml(row.sku || '')}"
                   data-qty="${Utils.escapeHtml(String(row.quantity_sold ?? ''))}"
-                  data-shipped="${Utils.escapeHtml(row.shipped_from_box || '')}"
+                  data-shipped="${Utils.escapeHtml(shipped)}"
                   data-platform="${Utils.escapeHtml(row.platform || '')}"${trStyle}>
         <td style="width:36px;text-align:center;padding:0 4px">
           <input type="checkbox" class="order-row-cb" data-id="${Utils.escapeHtml(id)}"${checked} style="cursor:pointer">
@@ -106,7 +113,7 @@ const Orders = (() => {
         <td style="font-weight:500">${Utils.escapeHtml(row.sku || '-')}</td>
         <td class="num"><strong>${Utils.formatNumber(row.quantity_sold)}</strong></td>
         <td class="shipped-cell" style="white-space:nowrap">
-          <span>${Utils.escapeHtml(row.shipped_from_box || '-')}</span><button class="btn btn-ghost btn-icon btn-sm order-edit-btn" title="Edit shipped from box" style="opacity:.45;font-size:11px;padding:0 3px;margin-left:5px;vertical-align:middle">✏️</button>
+          ${shippedHtml}<button class="btn btn-ghost btn-icon btn-sm order-edit-btn" title="Change shipped from box" style="opacity:.45;font-size:11px;padding:0 3px;margin-left:5px;vertical-align:middle">✏️</button>
         </td>
         <td>${_platformBadge(row.platform)}</td>
       </tr>`;
@@ -171,9 +178,24 @@ const Orders = (() => {
 
   /* ── Inline box select (in shipped-from-box cell) ───────── */
   function _restoreShippedCell(cell, boxValue) {
+    const origBox  = _parseSku(cell.closest('tr')?.dataset.sku || '')?.box || '';
+    const shipped  = boxValue || '';
+    const isOverride = !!(shipped && shipped !== origBox);
+
     cell.innerHTML = '';
     const span = document.createElement('span');
-    span.textContent = boxValue || '-';
+
+    if (isOverride) {
+      span.textContent = shipped;
+      const badge = document.createElement('span');
+      badge.textContent = 'Override';
+      badge.style.cssText = 'font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle';
+      span.appendChild(badge);
+    } else {
+      span.textContent = origBox ? `★ ${origBox}` : '—';
+      span.style.cssText = 'color:var(--primary);font-weight:600';
+    }
+
     const btn = document.createElement('button');
     btn.className = 'btn btn-ghost btn-icon btn-sm order-edit-btn';
     btn.title = 'Change shipped from box';
@@ -188,7 +210,7 @@ const Orders = (() => {
     cell.innerHTML = '';
     const select = document.createElement('select');
     select.className = 'box-select';
-    select.style.cssText = 'max-width:190px;height:26px;font-size:12px;border:1.5px solid var(--primary);border-radius:4px;background:#fff;color:var(--txt-1);padding:0 4px;cursor:' + (disabled ? 'not-allowed' : 'pointer') + ';outline:none;vertical-align:middle';
+    select.style.cssText = 'max-width:220px;height:28px;font-size:12px;border:1.5px solid var(--primary);border-radius:4px;background:#fff;color:var(--txt-1);padding:0 6px;cursor:' + (disabled ? 'not-allowed' : 'pointer') + ';outline:none;vertical-align:middle';
     select.disabled = disabled;
 
     if (!options.length) {
@@ -199,7 +221,14 @@ const Orders = (() => {
       options.forEach(opt => {
         const el = document.createElement('option');
         el.value = opt.box_number;
-        el.textContent = `${opt.box_number}${opt.isOriginal ? ' • Original' : ''} • Qty ${opt.remaining_stock}`;
+        if (opt.isOriginal) {
+          el.textContent = `★ Box ${opt.box_number} (Original) • Qty ${opt.remaining_stock}`;
+          el.style.backgroundColor = '#dbeafe';
+          el.style.fontWeight = 'bold';
+          el.style.color = '#1d4ed8';
+        } else {
+          el.textContent = `Box ${opt.box_number} • Qty ${opt.remaining_stock}`;
+        }
         if (opt.box_number === selectedBox) el.selected = true;
         select.appendChild(el);
       });
@@ -212,7 +241,7 @@ const Orders = (() => {
       select.addEventListener('keydown', e => {
         if (e.key === 'Escape') {
           e.preventDefault(); e.stopPropagation();
-          _restoreShippedCell(cell, cell.closest('tr')?.dataset.shipped || selectedBox);
+          _restoreShippedCell(cell, cell.closest('tr')?.dataset.shipped || '');
         }
       });
     }
@@ -226,7 +255,7 @@ const Orders = (() => {
     const cell       = tr.querySelector('td.shipped-cell');
     if (!cell) return;
 
-    // Toggle off if already showing a select for this row
+    // Toggle off if already showing
     if (cell.querySelector('select.box-select')) {
       _restoreShippedCell(cell, currentBox);
       return;
@@ -248,32 +277,43 @@ const Orders = (() => {
 
     try {
       const result = await API.getInventoryAlternatives(sku);
-      const { originalBox, inStock } = result || {};
+      const { originalBox, alternatives } = result || {};
+      const effectiveOrigBox = originalBox || parsed.box;
 
-      if (!inStock?.length) {
-        _showBoxSelect(cell, [], '', true, 'No alternatives');
-        return;
-      }
+      // Original box is ALWAYS first, even if OOS
+      const origData = (alternatives || []).find(a => a.box_number === effectiveOrigBox);
+      const allOptions = [
+        {
+          box_number:      effectiveOrigBox,
+          remaining_stock: origData?.remaining_stock ?? 0,
+          isOriginal:      true,
+        },
+        ...(alternatives || [])
+          .filter(a => a.box_number !== effectiveOrigBox && a.remaining_stock > 0)
+          .sort((a, b) => b.remaining_stock - a.remaining_stock)
+          .map(a => ({ ...a, isOriginal: false })),
+      ];
 
-      const options = inStock.map(a => ({
-        ...a, isOriginal: a.box_number === originalBox,
-      })).sort((a, b) => {
-        if (a.isOriginal && !b.isOriginal) return -1;
-        if (!a.isOriginal && b.isOriginal) return 1;
-        return b.remaining_stock - a.remaining_stock;
-      });
+      // Pre-select: current override, or the original box if no override
+      const selectedDisplay = currentBox || effectiveOrigBox;
 
-      _showBoxSelect(cell, options, currentBox || originalBox, false, null, async selectedBox => {
-        _restoreShippedCell(cell, selectedBox);
+      _showBoxSelect(cell, allOptions, selectedDisplay, false, null, async selectedBox => {
+        const isOriginalSelected = selectedBox === effectiveOrigBox;
+        // Save '' (empty string) to clear override back to original; backend converts '' → NULL
+        const newShipped  = isOriginalSelected ? '' : selectedBox;
+        const prevLabel   = currentBox && currentBox !== effectiveOrigBox ? currentBox : `★ ${effectiveOrigBox}`;
+        const nextLabel   = isOriginalSelected ? `★ ${effectiveOrigBox} (Original)` : selectedBox;
+
+        _restoreShippedCell(cell, newShipped);
         try {
           await API.updateOrder(rowId, {
             order_date:       tr.dataset.orderDate,
             quantity_sold:    parseInt(tr.dataset.qty, 10),
             platform:         tr.dataset.platform,
-            shipped_from_box: selectedBox,
+            shipped_from_box: newShipped,
           });
-          tr.dataset.shipped = selectedBox;
-          Notify.success('Saved', `Shipped from box → ${selectedBox}`);
+          tr.dataset.shipped = newShipped;
+          Notify.success('Saved', `Fulfillment: ${prevLabel} → ${nextLabel}`);
         } catch (err) {
           Notify.apiError(err);
           _restoreShippedCell(cell, currentBox);

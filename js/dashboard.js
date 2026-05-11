@@ -11,7 +11,7 @@ const Dashboard = (() => {
     { id: 'kpi-units-sold',        label: 'Units Sold',           icon: '🛒', color: 'orange', field: 'unitsSold',          format: 'number', navigate: 'orders' },
     { id: 'kpi-total-orders',      label: 'Total Orders',         icon: '📋', color: 'cyan',   field: 'totalOrders',        format: 'number', navigate: 'orders' },
     { id: 'kpi-remaining-stock',   label: 'Remaining Stock',      icon: '🏭', color: 'green',  field: 'remainingStock',     format: 'number', navigate: 'inventory' },
-    { id: 'kpi-phantom-units',     label: 'Phantom Units',        icon: '👻', color: 'red',    field: 'phantomUnits',       format: 'number', navigate: 'orders',    action: 'phantom' },
+    { id: 'kpi-phantom-units',     label: 'Phantom Units',        icon: '👻', color: 'red',    field: 'phantomUnits',       format: 'number', navigate: 'inventory', action: 'phantom' },
     { id: 'kpi-undefined-orders',  label: 'Undefined SKU Orders', icon: '❓', color: 'pink',   field: 'undefinedSkuOrders', format: 'number', navigate: 'orders' },
     { id: 'kpi-undefined-skus',    label: 'Undefined SKUs',       icon: '⚠', color: 'gray',   field: 'undefinedSkus',      format: 'number', navigate: 'inventory', action: 'undefined' },
   ];
@@ -66,9 +66,9 @@ const Dashboard = (() => {
         const action = card.dataset.action;
         App.navigate(target);
         if (action === 'phantom') {
-          setTimeout(() => Orders.setPhantomFilter?.(), 60);
+          setTimeout(() => InventoryList.setStatusFilter?.('phantom'), 60);
         } else if (action === 'undefined') {
-          setTimeout(() => InventoryList.setUndefinedFilter?.(), 60);
+          setTimeout(() => InventoryList.setStatusFilter?.('undefined'), 60);
         }
       });
     });

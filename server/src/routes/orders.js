@@ -90,7 +90,9 @@ export async function ordersRoutes(fastify, { ordersService, activityService }) 
         userId:         request.user.user_id,
         actionType:     'edit_order',
         entityType:     'orders',
-        description:    `Updated order (SKU ${updates.order_date})`,
+        description:    updates.shipped_from_box
+          ? `Changed fulfillment box to ${updates.shipped_from_box} (order ${rowId})`
+          : `Reverted to original fulfillment box (order ${rowId})`,
       }).catch(() => {});
       return reply.send({ success: true });
     } catch (err) {

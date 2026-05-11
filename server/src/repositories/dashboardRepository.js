@@ -27,13 +27,21 @@ export function createDashboardRepository({ bq, projectId }) {
         SELECT sku, quantity FROM ${invTable} WHERE organization_id = @organizationId
       ),
       ord AS (
-        SELECT sku, SUM(quantity_sold) AS sold
+        SELECT
+          CASE
+            WHEN shipped_from_box IS NOT NULL
+                 AND TRIM(CAST(shipped_from_box AS STRING)) != ''
+                 AND REGEXP_CONTAINS(sku, r'^ARA[0-9]+-.+$')
+            THEN CONCAT('ARA', TRIM(CAST(shipped_from_box AS STRING)), REGEXP_EXTRACT(sku, r'^ARA[0-9]+(.+)$'))
+            ELSE sku
+          END AS effective_sku,
+          SUM(quantity_sold) AS sold
         FROM ${ordTable} WHERE organization_id = @organizationId
-        GROUP BY sku
+        GROUP BY effective_sku
       ),
       remaining AS (
         SELECT i.quantity - COALESCE(o.sold, 0) AS rem
-        FROM inv i LEFT JOIN ord o USING(sku)
+        FROM inv i LEFT JOIN ord o ON i.sku = o.effective_sku
       )
       SELECT
         ABS(SUM(CASE WHEN rem < 0 THEN rem ELSE 0 END)) AS phantom_units,
