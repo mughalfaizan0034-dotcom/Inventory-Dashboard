@@ -301,11 +301,31 @@ const Auth = (() => {
     if (!token) { console.log('[AUTH] no token — showing login'); return false; }
     console.log('[AUTH] token restored');
 
+    // ── Step 1: Reconstruct memberships from JWT if storage is empty/stale.
+    // Must happen BEFORE any refresh call so saveSession gets the right memberships.
+    let memberships = getMemberships();
+    if (memberships.length === 0) {
+      const p = _decodeJwt(token);
+      if (p?.organization_id && p?.membership_id) {
+        const synthetic = {
+          organization_id: p.organization_id,
+          membership_id:   p.membership_id,
+          role:            p.role            || 'viewer',
+          display_name:    p.org_display_name || '—',
+          slug:            p.org_slug         || '',
+        };
+        memberships = [synthetic];
+        sessionStorage.setItem(CONFIG.MEMBERSHIPS_KEY, JSON.stringify(memberships));
+        console.log('[AUTH] memberships reconstructed from JWT');
+      }
+    }
+    console.log('[AUTH] memberships restored:', memberships.length, 'entries');
+
+    // ── Step 2: Refresh expired token, using now-restored memberships.
     const expMs = _tokenExpiresAt(token);
     const now   = Date.now();
 
     if (expMs && now >= expMs) {
-      // Token is expired. Attempt refresh.
       console.log('[AUTH] token expired — attempting refresh');
       const storedRefresh = sessionStorage.getItem(REFRESH_KEY);
       if (!storedRefresh) { console.log('[AUTH] no refresh token — clearing session'); clearSession(); return false; }
@@ -314,30 +334,24 @@ const Auth = (() => {
         saveSession(data.access_token, getUser(), getOrganization(), data.refresh_token, getMemberships());
         console.log('[AUTH] token refreshed');
       } catch (err) {
-        // 401 = actual auth failure (bad token, inactive user) → must logout.
-        // 500/503/network = server issue → keep session; API calls will retry refresh.
+        // 401 = real auth failure → logout. 503/500/network → keep session.
         console.warn('[AUTH] refresh failed', err.status, err.message);
         if (err.status === 401 || !err.status) { clearSession(); return false; }
-        // On 503/500: keep existing token and continue — app will show errors on API calls
       }
     } else if (expMs && expMs - now < 2 * 60 * 1000) {
-      // Token expiring soon — proactive refresh, non-critical.
       const storedRefresh = sessionStorage.getItem(REFRESH_KEY);
       if (storedRefresh) {
         API.refreshToken(storedRefresh, _getMembershipId())
           .then(data => saveSession(data.access_token, getUser(), getOrganization(), data.refresh_token, getMemberships()))
-          .catch(() => { /* non-critical: keep current token */ });
+          .catch(() => {});
       }
     }
 
-    const user        = getUser();
-    const memberships = getMemberships().filter(m => m && m.organization_id);
-    let   org         = getOrganization();
-    console.log('[AUTH] memberships restored:', memberships.length, 'entries');
+    // ── Step 3: Restore active org — prefer stored value, fall back to memberships.
+    const user = getUser();
+    let   org  = getOrganization();
 
     if (!org && memberships.length > 0) {
-      // org missing from sessionStorage (old session, partial clear, or key mismatch).
-      // Memberships are the source of truth — reconstruct active org from them.
       const p       = _decodeJwt(getToken());
       const matched = p?.organization_id
         ? memberships.find(m => m.organization_id === p.organization_id) ?? null
