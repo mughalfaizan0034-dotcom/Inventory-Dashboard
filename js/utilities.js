@@ -3,17 +3,18 @@
                   file conversion, Modal class
    ============================================================ */
 
-// ── API endpoints ─────────────────────────────────────────────────────────────
-// MIGRATION: set CLOUD_RUN_URL once the Cloud Run service is deployed.
-// Auth will move to Cloud Run first; Apps Script stays for inventory/orders
-// until each endpoint is migrated.
-const CLOUD_RUN_URL  = '';   // e.g. 'https://patman-inventory-api-xxxx-uc.a.run.app'
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxLfROgpoO-4JC_TZmEfJnD62NBqJGDlmbFgU_CKULeGv46k7K0oo4RocNWMUFTfdU/exec';
+// ── Runtime config ────────────────────────────────────────────────────────────
+// Using var (not const) so these live on window and are visible in DevTools.
+// Set CLOUD_RUN_URL after deploying the Cloud Run service — auth is mandatory.
+// Non-auth endpoints continue using Apps Script until each is migrated.
+//
+// DEPLOYMENT: replace the empty string with your Cloud Run service URL:
+//   var CLOUD_RUN_URL = 'https://patman-inventory-api-xxxx-uc.a.run.app';
+var CLOUD_RUN_URL   = '';
+var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxLfROgpoO-4JC_TZmEfJnD62NBqJGDlmbFgU_CKULeGv46k7K0oo4RocNWMUFTfdU/exec';
 
-const CONFIG = {
-  // Primary API — switches to Cloud Run once CLOUD_RUN_URL is set
-  API_URL:           CLOUD_RUN_URL  || APPS_SCRIPT_URL,
-  APPS_SCRIPT_URL,
+var CONFIG = {
+  API_URL:     APPS_SCRIPT_URL,   // non-auth operational endpoints
   CLOUD_RUN_URL,
   SESSION_KEY: 'patman_token',
   USER_KEY:    'patman_user',
