@@ -1,16 +1,28 @@
 import { inventorySchema } from '../schemas/inventorySchema.js';
 
 export const inventoryImporter = {
-  type:   'inventory',
-  schema: inventorySchema,
+  type:     'inventory',
+  schema:   inventorySchema,
+  keyField: 'sku',
 
-  // Full replacement on each upload: delete existing org inventory before first batch.
-  async prepare(uploadsRepo, organizationId) {
-    await uploadsRepo.deleteInventory(organizationId);
+  getKey(row) {
+    return row.sku;
   },
 
-  async insertBatch(uploadsRepo, rows) {
+  async fetchKeySet(uploadsRepo, organizationId, keys) {
+    return uploadsRepo.getInventoryKeySet(organizationId, keys);
+  },
+
+  async addBatch(uploadsRepo, rows) {
     await uploadsRepo.insertInventoryBatch(rows);
+  },
+
+  async updateBatch(uploadsRepo, organizationId, rows) {
+    await uploadsRepo.updateInventoryBySku(organizationId, rows);
+  },
+
+  async removeBatch(uploadsRepo, organizationId, keys) {
+    await uploadsRepo.deleteInventoryBySkus(organizationId, keys);
   },
 
   async logUpload(uploadsRepo, meta) {

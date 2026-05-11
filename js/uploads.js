@@ -134,20 +134,27 @@ const Uploads = (() => {
       setProgress(100);
       if (progressBar) progressBar.classList.add('success');
 
-      const inserted = result.inserted ?? 0;
-      const skipped  = result.skipped  ?? 0;
-      const errors   = result.errors   ?? [];
+      const added   = result.added   ?? 0;
+      const updated = result.updated ?? 0;
+      const removed = result.removed ?? 0;
+      const failed  = result.failed  ?? 0;
+      const errors  = result.errors  ?? [];
+      const total   = added + updated + removed;
 
       if (statusEl) {
+        const badges = [
+          added   > 0 ? Utils.badgeHtml('success', `✓ ${added} added`)     : '',
+          updated > 0 ? Utils.badgeHtml('info',    `↻ ${updated} updated`) : '',
+          removed > 0 ? Utils.badgeHtml('gray',    `✕ ${removed} removed`) : '',
+          failed  > 0 ? Utils.badgeHtml('warning', `${failed} failed`)     : '',
+        ].filter(Boolean).join(' ');
+
         statusEl.innerHTML = `
-          <div style="margin-top:10px;font-size:13px">
-            ${Utils.badgeHtml('success', `✓ ${inserted} rows imported`)}
-            ${skipped > 0 ? Utils.badgeHtml('warning', `${skipped} skipped`) : ''}
-          </div>
+          <div style="margin-top:10px;font-size:13px">${badges || Utils.badgeHtml('gray', 'No rows processed')}</div>
           ${errors.length > 0 ? _renderErrors(errors) : ''}`;
       }
 
-      Notify.success('Upload complete', `${inserted} rows imported successfully.`);
+      Notify.success('Upload complete', `${total} row${total !== 1 ? 's' : ''} processed (${added} added, ${updated} updated, ${removed} removed).`);
       loadHistory();
     } catch (err) {
       if (progressBar) progressBar.classList.add('error');
@@ -247,21 +254,27 @@ const Uploads = (() => {
   /* ── Template downloads ─────────────────────────────────── */
   const _templates = {
     inventory: {
-      filename: 'inventory_template.csv',
-      // Headers + one example row. UPC/SKU are TEXT — format those columns as
-      // Text in Excel BEFORE entering values to prevent leading-zero loss.
+      filename: 'inventory_template.txt',
+      // Tab-delimited. UPC/SKU are TEXT — format those columns as Text in Excel
+      // BEFORE entering values to prevent leading-zero loss.
+      // action: Add (insert new), Update (partial update by sku), Remove (delete by sku)
       content: [
-        'sku,upc,quantity,part_number,box_number,date_added,notes',
-        'SKU-001,012345678901,25,PT-123,BX-001,2026-05-11,Sample item',
-        'SKU-002,098765432109,10,,,2026-05-11,',
+        'action\tsku\tupc\tquantity\tpart_number\tbox_number\tdate_added\tnotes',
+        'Add\tSKU-001\t012345678901\t25\tPT-123\tBX-001\t2026-05-11\tSample item',
+        'Add\tSKU-002\t098765432109\t10\t\t\t2026-05-11\t',
+        'Update\tSKU-001\t\t30\t\t\t\t',
+        'Remove\tSKU-002\t\t\t\t\t\t',
       ].join('\r\n'),
     },
     orders: {
-      filename: 'orders_template.csv',
+      filename: 'orders_template.txt',
+      // action: Add (insert new order, order_id auto-generated), Update/Remove (require order_id)
       content: [
-        'order_date,sku,quantity_sold,platform,shipped_from_box',
-        '2026-05-11,SKU-001,2,Amazon,BX-001',
-        '2026-05-11,SKU-002,1,eBay,',
+        'action\torder_id\torder_date\tsku\tquantity_sold\tplatform\tshipped_from_box',
+        'Add\t\t2026-05-11\tSKU-001\t2\tAmazon\tBX-001',
+        'Add\t\t2026-05-11\tSKU-002\t1\teBay\t',
+        'Update\tORD-UUID-HERE\t\t\t3\t\t',
+        'Remove\tORD-UUID-HERE\t\t\t\t\t',
       ].join('\r\n'),
     },
   };

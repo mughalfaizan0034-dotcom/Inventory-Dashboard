@@ -1,12 +1,46 @@
 import { safeString, parsePositiveInt, normalizeDate } from '../core/rowNormalizer.js';
 
+const VALID_ACTIONS = new Set(['Add', 'Update', 'Remove']);
+
 export const inventorySchema = {
-  required: ['sku', 'upc', 'quantity', 'part_number', 'box_number', 'date_added'],
+  // Only 'sku' is universally required across all action types.
+  // Action-specific required fields are validated in buildRow.
+  required: ['sku'],
 
   buildRow(raw, organizationId, lineNum) {
-    if (!raw.sku?.trim()) {
-      return { error: { row: lineNum, field: 'sku', value: raw.sku, reason: 'sku is required' } };
+    const action = raw.action?.trim() || 'Add';
+    if (!VALID_ACTIONS.has(action)) {
+      return { error: { row: lineNum, field: 'action', reason: `action must be Add, Update, or Remove (got "${action}")` } };
     }
+
+    const sku = raw.sku?.trim();
+    if (!sku) {
+      return { error: { row: lineNum, field: 'sku', reason: 'sku is required' } };
+    }
+
+    if (action === 'Remove') {
+      return { action, row: { organization_id: organizationId, sku } };
+    }
+
+    if (action === 'Update') {
+      const row = { organization_id: organizationId, sku, updated_at: new Date().toISOString() };
+
+      if (raw.upc?.trim())         row.upc         = safeString(raw.upc);
+      if (raw.part_number?.trim()) row.part_number  = safeString(raw.part_number);
+      if (raw.box_number?.trim())  row.box_number   = safeString(raw.box_number);
+      if (raw.date_added?.trim())  row.date_added   = normalizeDate(raw.date_added);
+      if (raw.notes !== undefined && raw.notes !== '') row.notes = safeString(raw.notes) || null;
+
+      if (raw.quantity !== undefined && raw.quantity !== '') {
+        const qty = parsePositiveInt(raw.quantity, 'quantity', lineNum);
+        if (qty.error) return { error: qty.error };
+        row.quantity = qty.value;
+      }
+
+      return { action, row };
+    }
+
+    // Add: all fields required
     if (!raw.upc?.trim()) {
       return { error: { row: lineNum, field: 'upc', value: raw.upc, reason: 'upc is required' } };
     }
@@ -23,9 +57,8 @@ export const inventorySchema = {
     const qty = parsePositiveInt(raw.quantity, 'quantity', lineNum);
     if (qty.error) return { error: qty.error };
 
-    const dateAdded = normalizeDate(raw.date_added);
-
     return {
+      action,
       row: {
         organization_id: organizationId,
         sku:         safeString(raw.sku),
@@ -33,7 +66,7 @@ export const inventorySchema = {
         part_number: safeString(raw.part_number),
         box_number:  safeString(raw.box_number),
         quantity:    qty.value,
-        date_added:  dateAdded,
+        date_added:  normalizeDate(raw.date_added),
         notes:       safeString(raw.notes) || null,
         updated_at:  new Date().toISOString(),
       },

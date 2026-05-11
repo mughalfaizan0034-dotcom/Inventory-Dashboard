@@ -37,7 +37,7 @@ export async function uploadsRoutes(fastify, { uploadsService }) {
         );
 
         request.log.info(
-          { event: 'inventory_upload', user_id, organization_id, rows: result.inserted },
+          { event: 'inventory_upload', user_id, organization_id, added: result.added, updated: result.updated, removed: result.removed },
           'Inventory uploaded'
         );
         return reply.send({ success: true, data: result });
@@ -72,7 +72,7 @@ export async function uploadsRoutes(fastify, { uploadsService }) {
         );
 
         request.log.info(
-          { event: 'orders_upload', user_id, organization_id, rows: result.inserted },
+          { event: 'orders_upload', user_id, organization_id, added: result.added, updated: result.updated, removed: result.removed },
           'Orders uploaded'
         );
         return reply.send({ success: true, data: result });
@@ -112,14 +112,18 @@ export async function uploadsRoutes(fastify, { uploadsService }) {
 
       const templates = {
         inventory: [
-          'sku,upc,quantity,part_number,box_number,date_added,notes',
-          'SKU-001,012345678901,25,PT-123,BX-001,2026-05-11,Sample item',
-          'SKU-002,098765432109,10,,,2026-05-11,',
+          'action\tsku\tupc\tquantity\tpart_number\tbox_number\tdate_added\tnotes',
+          'Add\tSKU-001\t012345678901\t25\tPT-123\tBX-001\t2026-05-11\tSample item',
+          'Add\tSKU-002\t098765432109\t10\t\t\t2026-05-11\t',
+          'Update\tSKU-001\t\t30\t\t\t\t',
+          'Remove\tSKU-002\t\t\t\t\t\t',
         ].join('\r\n'),
         orders: [
-          'order_date,sku,quantity_sold,shipped_from_box,platform',
-          '2026-05-11,SKU-001,2,BX-001,Amazon',
-          '2026-05-11,SKU-002,1,BX-002,eBay',
+          'action\torder_id\torder_date\tsku\tquantity_sold\tplatform\tshipped_from_box',
+          'Add\t\t2026-05-11\tSKU-001\t2\tAmazon\tBX-001',
+          'Add\t\t2026-05-11\tSKU-002\t1\teBay\t',
+          'Update\tORD-UUID-HERE\t\t\t3\t\t',
+          'Remove\tORD-UUID-HERE\t\t\t\t\t',
         ].join('\r\n'),
       };
 
@@ -128,8 +132,8 @@ export async function uploadsRoutes(fastify, { uploadsService }) {
       }
 
       return reply
-        .header('Content-Type', 'text/csv; charset=utf-8')
-        .header('Content-Disposition', `attachment; filename="${type}_template.csv"`)
+        .header('Content-Type', 'text/plain; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${type}_template.txt"`)
         .send(templates[type]);
     }
   );

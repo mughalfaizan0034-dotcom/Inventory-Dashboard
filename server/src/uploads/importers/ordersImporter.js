@@ -1,14 +1,28 @@
 import { ordersSchema } from '../schemas/ordersSchema.js';
 
 export const ordersImporter = {
-  type:   'orders',
-  schema: ordersSchema,
+  type:     'orders',
+  schema:   ordersSchema,
+  keyField: 'order_id',
 
-  // Append mode: orders are cumulative, no pre-delete.
-  async prepare(_uploadsRepo, _organizationId) {},
+  getKey(row) {
+    return row.order_row_id;
+  },
 
-  async insertBatch(uploadsRepo, rows) {
+  async fetchKeySet(uploadsRepo, organizationId, keys) {
+    return uploadsRepo.getOrderKeySet(organizationId, keys);
+  },
+
+  async addBatch(uploadsRepo, rows) {
     await uploadsRepo.insertOrdersBatch(rows);
+  },
+
+  async updateBatch(uploadsRepo, organizationId, rows) {
+    await uploadsRepo.updateOrdersByOrderId(organizationId, rows);
+  },
+
+  async removeBatch(uploadsRepo, organizationId, keys) {
+    await uploadsRepo.deleteOrdersByOrderIds(organizationId, keys);
   },
 
   async logUpload(uploadsRepo, meta) {
