@@ -6,14 +6,14 @@
 const Dashboard = (() => {
 
   const KPI_DEFS = [
-    { id: 'kpi-total-skus',        label: 'Total SKUs',         icon: '📦', color: 'blue',   field: 'totalSkus',         format: 'number' },
-    { id: 'kpi-total-units',       label: 'Total Units',        icon: '🔢', color: 'purple', field: 'totalUnits',        format: 'number' },
-    { id: 'kpi-units-sold',        label: 'Units Sold',         icon: '🛒', color: 'orange', field: 'unitsSold',         format: 'number' },
-    { id: 'kpi-remaining-stock',   label: 'Remaining Stock',    icon: '🏭', color: 'green',  field: 'remainingStock',    format: 'number' },
-    { id: 'kpi-phantom-units',     label: 'Phantom Units',      icon: '👻', color: 'red',    field: 'phantomUnits',      format: 'number' },
-    { id: 'kpi-undefined-skus',    label: 'Undefined SKU Sales',icon: '❓', color: 'pink',   field: 'undefinedSkuSales', format: 'number' },
-    { id: 'kpi-active-platforms',  label: 'Active Platforms',   icon: '🛍', color: 'cyan',   field: 'activePlatforms',   format: 'number' },
-    { id: 'kpi-last-upload',       label: 'Last Upload',        icon: '📤', color: 'gray',   field: 'lastUploadDate',    format: 'date' },
+    { id: 'kpi-total-skus',        label: 'Total SKUs',           icon: '📦', color: 'blue',   field: 'totalSkus',          format: 'number' },
+    { id: 'kpi-total-units',       label: 'Total Units',          icon: '🔢', color: 'purple', field: 'totalUnits',         format: 'number' },
+    { id: 'kpi-units-sold',        label: 'Units Sold',           icon: '🛒', color: 'orange', field: 'unitsSold',          format: 'number' },
+    { id: 'kpi-total-orders',      label: 'Total Orders',         icon: '📋', color: 'cyan',   field: 'totalOrders',        format: 'number' },
+    { id: 'kpi-remaining-stock',   label: 'Remaining Stock',      icon: '🏭', color: 'green',  field: 'remainingStock',     format: 'number' },
+    { id: 'kpi-phantom-units',     label: 'Phantom Units',        icon: '👻', color: 'red',    field: 'phantomUnits',       format: 'number' },
+    { id: 'kpi-undefined-orders',  label: 'Undefined SKU Orders', icon: '❓', color: 'pink',   field: 'undefinedSkuOrders', format: 'number' },
+    { id: 'kpi-last-upload',       label: 'Last Upload',          icon: '📤', color: 'gray',   field: 'lastUploadDate',     format: 'datetime' },
   ];
 
   function _renderSkeletons() {
@@ -32,34 +32,36 @@ const Dashboard = (() => {
 
       if (value != null) {
         if (def.format === 'number')   display = Utils.formatNumber(value);
-        else if (def.format === 'date') display = Utils.timeAgo(value);
+        if (def.format === 'datetime') display = value ? Utils.timeAgo(value) : '—';
       }
 
       if (def.field === 'phantomUnits' && data.phantomUnits > 0) {
         sub = 'Units sold exceeding initial stock';
       }
-      if (def.field === 'undefinedSkuSales' && data.undefinedSkuSales > 0) {
+      if (def.field === 'undefinedSkuOrders' && data.undefinedSkuOrders > 0) {
         sub = 'Orders with no inventory record';
       }
+      if (def.field === 'remainingStock' && data.remainingStock < 0) {
+        sub = 'Negative — oversold';
+      }
       if (def.field === 'lastUploadDate' && value) {
-        sub = Utils.formatDate(value);
+        sub = Utils.formatDatetime(value);
       }
 
       return `
         <div class="kpi-card ${def.color}">
           <div class="kpi-label">${def.icon} ${Utils.escapeHtml(def.label)}</div>
-          <div class="kpi-value" id="${def.id}">${Utils.escapeHtml(display)}</div>
+          <div class="kpi-value" id="${def.id}">${Utils.escapeHtml(String(display))}</div>
           ${sub ? `<div class="kpi-sub">${Utils.escapeHtml(sub)}</div>` : ''}
         </div>`;
     }).join('');
   }
 
-  function _renderRecentActivity(data) {
+  function _renderRecentActivity(items) {
     const el = document.getElementById('recent-activity-list');
     if (!el) return;
 
-    const items = data.recentActivity || [];
-    if (!items.length) { el.innerHTML = Loading.empty('📋', 'No recent activity'); return; }
+    if (!items || !items.length) { el.innerHTML = Loading.empty('📋', 'No recent activity'); return; }
 
     el.innerHTML = items.map(item => `
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
@@ -74,9 +76,12 @@ const Dashboard = (() => {
   async function load() {
     _renderSkeletons();
     try {
-      const data = await API.getDashboardKPIs();
-      _renderKPIs(data);
-      _renderRecentActivity(data);
+      const [kpiData, activityData] = await Promise.all([
+        API.getDashboardKPIs(),
+        API.getActivity().catch(() => []),
+      ]);
+      _renderKPIs(kpiData);
+      _renderRecentActivity(activityData);
 
       const lastSyncEl = document.getElementById('last-sync-time');
       if (lastSyncEl) lastSyncEl.textContent = 'Updated ' + Utils.timeAgo(new Date().toISOString());
@@ -109,7 +114,6 @@ const Perf = (() => {
     } catch (err) {
       Notify.apiError(err);
     } finally {
-      const container = document.getElementById('perf-container');
       if (container) Loading.section(container, false);
     }
   }
@@ -120,8 +124,8 @@ const Perf = (() => {
 
     if (_weeklyChart) _weeklyChart.destroy();
 
-    const labels = weekly.map(w => w.week_label || w.week);
-    const sold   = weekly.map(w => w.units_sold || 0);
+    const labels = weekly.map(w => w.week_label || w.week_start || '');
+    const sold   = weekly.map(w => w.units_sold  || 0);
     const orders = weekly.map(w => w.order_count || 0);
 
     _weeklyChart = new Chart(canvas, {
@@ -171,6 +175,14 @@ const Perf = (() => {
 
     if (_platformChart) _platformChart.destroy();
 
+    if (!platforms.length) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const legendEl = document.getElementById('platform-legend');
+      if (legendEl) legendEl.innerHTML = `<div style="color:var(--txt-4);font-size:13px;padding:12px 0">No platform data</div>`;
+      return;
+    }
+
     const COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#64748b'];
 
     _platformChart = new Chart(canvas, {
@@ -194,7 +206,6 @@ const Perf = (() => {
       },
     });
 
-    /* Legend table */
     const legendEl = document.getElementById('platform-legend');
     if (legendEl) {
       legendEl.innerHTML = platforms.map((p, i) => `
@@ -218,7 +229,6 @@ const Perf = (() => {
         <span style="font-size:11px;font-weight:700;color:var(--txt-4);width:16px;text-align:right">${i + 1}</span>
         <div style="flex:1;min-width:0">
           <div style="font-size:12.5px;font-weight:600;color:var(--txt-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(s.sku)}</div>
-          <div style="font-size:11px;color:var(--txt-4)">${Utils.escapeHtml(s.platform || '')}</div>
         </div>
         <span style="font-size:13px;font-weight:700;color:var(--primary)">${Utils.formatNumber(s.units_sold)}</span>
       </div>`).join('');
@@ -234,7 +244,7 @@ const Perf = (() => {
         <td>${Utils.escapeHtml(m.month_label || m.month)}</td>
         <td class="num">${Utils.formatNumber(m.order_count)}</td>
         <td class="num">${Utils.formatNumber(m.units_sold)}</td>
-        <td class="num">${Utils.escapeHtml(m.top_platform || '—')}</td>
+        <td>${Utils.escapeHtml(m.top_platform || '—')}</td>
       </tr>`).join('');
   }
 

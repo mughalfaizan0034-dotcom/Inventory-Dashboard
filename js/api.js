@@ -257,6 +257,15 @@ const API = (() => {
     async getOrders(page=1, pageSize=CONFIG.PAGE_SIZE, filters={}) { return _crGet('/orders', { page, pageSize, ...filters }); },
     async getPlatforms()                                            { return _crGet('/orders/platforms'); },
     async deleteOrders(payload)                                     { return _crDelete('/orders/rows', payload); },
+    async updateOrder(rowId, updates)                               { return _crPatch(`/orders/${encodeURIComponent(rowId)}`, updates); },
+
+    /* Inventory */
+    async getInventoryAlternatives(sku)                                        { return _crGet('/inventory/alternatives', { sku }); },
+    async updateInventory(originalSku, updates)                                { return _crPatch(`/inventory/${encodeURIComponent(originalSku)}`, updates); },
+    async deleteInventoryRows(skus)                                            { return _crDelete('/inventory/rows', { skus }); },
+
+    /* Activity */
+    async getActivity(limit=10)                                                { return _crGet('/activity', { limit }); },
 
     /* Uploads — file is a File object (multipart) */
     async uploadInventory(file) { return _crMultipart('/uploads/inventory', file); },

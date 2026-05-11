@@ -16,7 +16,7 @@ var CONFIG = {
   MEMBERSHIPS_KEY:  'patman_memberships',
   TIMEOUT_MS:       30000,
   MAX_RETRIES:      2,
-  PAGE_SIZE:        50,
+  PAGE_SIZE:        20,
 };
 
 /* ── Utils ──────────────────────────────────────────────────── */
