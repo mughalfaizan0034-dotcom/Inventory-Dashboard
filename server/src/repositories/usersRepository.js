@@ -16,6 +16,19 @@ export function createUsersRepository({ bq, projectId }) {
     return rows[0] ?? null;
   }
 
+  async function findByUsernameGlobal(username) {
+    const query = `
+      SELECT user_id, organization_id, username, email, password_hash,
+             display_name, role, is_active
+      FROM ${table}
+      WHERE username = @username
+        AND is_active = TRUE
+      LIMIT 1
+    `;
+    const [rows] = await bq.query({ query, params: { username } });
+    return rows[0] ?? null;
+  }
+
   async function findById(userId) {
     const query = `
       SELECT user_id, organization_id, username, email, password_hash,
@@ -50,5 +63,5 @@ export function createUsersRepository({ bq, projectId }) {
     await bq.query({ query, params: { passwordHash, userId } });
   }
 
-  return { findByUsername, findById, findByEmail, updatePasswordHash };
+  return { findByUsername, findByUsernameGlobal, findById, findByEmail, updatePasswordHash };
 }

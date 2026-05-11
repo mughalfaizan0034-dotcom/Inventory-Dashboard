@@ -12,12 +12,17 @@ export async function authRoutes(fastify, { authService, usersRepo, tokenFactory
       });
     }
 
-    const { organization, username, password } = parsed.data;
+    const { username, password } = parsed.data;
 
     try {
-      const user = await authService.login(organization, username, password);
+      const user = await authService.login(username, password);
       const accessToken  = tokenFactory.signAccessToken(user);
       const refreshToken = tokenFactory.signRefreshToken(user);
+
+      request.log.info(
+        { event: 'login_success', user_id: user.user_id, organization_id: user.organization_id, role: user.role },
+        'User authenticated'
+      );
 
       return reply.send({
         success: true,
@@ -35,6 +40,10 @@ export async function authRoutes(fastify, { authService, usersRepo, tokenFactory
       });
     } catch (err) {
       if (err instanceof AppError) {
+        request.log.warn(
+          { event: 'login_failure', username, ip: request.ip },
+          'Authentication failed'
+        );
         return reply.code(err.statusCode).send({ success: false, error: err.message });
       }
       request.log.error({ err }, 'Login error');
@@ -56,10 +65,14 @@ export async function authRoutes(fastify, { authService, usersRepo, tokenFactory
 
       const user = await usersRepo.findById(payload.user_id);
       if (!user || !user.is_active) {
+        request.log.warn(
+          { event: 'refresh_failure', user_id: payload.user_id, reason: 'account_inactive' },
+          'Refresh rejected — account inactive or not found'
+        );
         return reply.code(401).send({ success: false, error: 'Account inactive or not found' });
       }
 
-      const accessToken  = tokenFactory.signAccessToken({
+      const accessToken     = tokenFactory.signAccessToken({
         user_id:         user.user_id,
         organization_id: user.organization_id,
         username:        user.username,
@@ -68,8 +81,14 @@ export async function authRoutes(fastify, { authService, usersRepo, tokenFactory
       });
       const newRefreshToken = tokenFactory.signRefreshToken(user);
 
+      request.log.info(
+        { event: 'token_refresh', user_id: user.user_id, organization_id: user.organization_id },
+        'Refresh token rotated'
+      );
+
       return reply.send({ success: true, data: { access_token: accessToken, refresh_token: newRefreshToken } });
     } catch {
+      request.log.warn({ event: 'refresh_failure', reason: 'invalid_token' }, 'Refresh token invalid or expired');
       return reply.code(401).send({ success: false, error: 'Refresh token invalid or expired' });
     }
   });

@@ -216,17 +216,21 @@ const API = (() => {
   /* ── Public API methods ─────────────────────────────────── */
   return {
 
-    /* Auth — raw transport: no 401 interception on auth endpoints */
-    async login(organization, username, password) {
+    /* Auth — Cloud Run only when configured; Apps Script fallback for dev only */
+    async login(username, password) {
       if (CONFIG.CLOUD_RUN_URL) {
-        const data = await _crPostRaw('/auth/login', { organization, username, password }, 0);
+        const data = await _crPostRaw('/auth/login', { username, password }, 0);
         return { token: data.access_token, refresh_token: data.refresh_token, user: data.user };
       }
+      // Apps Script legacy — development only, no org-aware auth
       return _get('login', { email: username, password }, 0);
     },
 
     async logout() {
-      try { await _get('logout', {}, 0); } catch { /* best-effort */ }
+      // JWT is stateless; Apps Script session invalidation is irrelevant when Cloud Run is active
+      if (!CONFIG.CLOUD_RUN_URL) {
+        try { await _get('logout', {}, 0); } catch { /* best-effort */ }
+      }
       sessionStorage.removeItem(CONFIG.SESSION_KEY);
       sessionStorage.removeItem(CONFIG.USER_KEY);
       sessionStorage.removeItem('patman_refresh_token');
@@ -238,6 +242,8 @@ const API = (() => {
 
     async verifySession() {
       if (CONFIG.CLOUD_RUN_URL) {
+        // JWT is stateless — session is valid if the token decodes and the user is in storage.
+        // Actual expiry is enforced by checkSession() via _tokenExpiresAt().
         const user = JSON.parse(sessionStorage.getItem(CONFIG.USER_KEY) || 'null');
         if (user) return { user };
         throw new Error('No session');

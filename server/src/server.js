@@ -94,7 +94,7 @@ export async function buildApp() {
     const inventoryRepo = createInventoryRepository(deps);
 
     const usernameService  = createUsernameService({ usersRepo });
-    const authService      = createAuthService({ orgsRepo, usersRepo });
+    const authService      = createAuthService({ usersRepo }); // orgsRepo available for Phase 3 org management routes
     const inventoryService = createInventoryService({ inventoryRepo });
 
     const tokenFactory = createTokenFactory(fastify);

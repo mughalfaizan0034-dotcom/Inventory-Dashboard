@@ -39,7 +39,7 @@ gcloud artifacts repositories create "$REPO" \
 
 # ── Secrets ──────────────────────────────────────────────────────────────────
 echo ""
-echo "==> Creating JWT secret in Secret Manager..."
+echo "==> Creating JWT_SECRET in Secret Manager..."
 echo "    Generate a 64-byte hex secret with:"
 echo "    node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\""
 echo ""
@@ -59,21 +59,6 @@ else
 fi
 echo "    patman-jwt-secret created/updated."
 
-echo ""
-echo "==> Creating REFRESH secret in Secret Manager..."
-printf "    Paste REFRESH_SECRET value (different from JWT_SECRET): "
-read -rs REFRESH_SECRET_VALUE
-echo ""
-
-if gcloud secrets describe patman-refresh-secret --project="$PROJECT_ID" &>/dev/null; then
-  echo -n "$REFRESH_SECRET_VALUE" | gcloud secrets versions add patman-refresh-secret \
-    --data-file=- --project="$PROJECT_ID"
-else
-  echo -n "$REFRESH_SECRET_VALUE" | gcloud secrets create patman-refresh-secret \
-    --data-file=- --project="$PROJECT_ID"
-fi
-echo "    patman-refresh-secret created/updated."
-
 # ── IAM: Cloud Build SA ──────────────────────────────────────────────────────
 echo ""
 echo "==> Granting Cloud Build SA permissions..."
@@ -88,12 +73,11 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --role="roles/iam.serviceAccountUser" \
   --condition=None --quiet
 
-for secret in patman-jwt-secret patman-refresh-secret; do
-  gcloud secrets add-iam-policy-binding "$secret" \
-    --member="serviceAccount:$CLOUDBUILD_SA" \
-    --role="roles/secretmanager.secretAccessor" \
-    --project="$PROJECT_ID"
-done
+gcloud secrets add-iam-policy-binding patman-jwt-secret \
+  --member="serviceAccount:$CLOUDBUILD_SA" \
+  --role="roles/secretmanager.secretAccessor" \
+  --project="$PROJECT_ID"
+
 echo "    Cloud Build SA grants applied."
 
 # ── IAM: Cloud Run service account ──────────────────────────────────────────
@@ -102,7 +86,7 @@ echo "==> Granting Cloud Run service account (default compute SA) permissions...
 
 # BigQuery: read-only at project level. Selective write access (hash upgrades)
 # should be granted at dataset level via BigQuery dataset ACLs, not project IAM.
-# See: bq update --set-label ... or Console → BigQuery → dataset → Sharing.
+# See: bq update or Console → BigQuery → dataset → Sharing.
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$COMPUTE_SA" \
   --role="roles/bigquery.dataViewer" \
@@ -113,20 +97,18 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --role="roles/bigquery.jobUser" \
   --condition=None --quiet
 
+gcloud secrets add-iam-policy-binding patman-jwt-secret \
+  --member="serviceAccount:$COMPUTE_SA" \
+  --role="roles/secretmanager.secretAccessor" \
+  --project="$PROJECT_ID"
+
+echo "    Cloud Run SA grants applied."
+
 echo ""
 echo "  NOTE: password hash upgrades require dataset-level dataEditor on"
 echo "  patman_inventory. Grant it after initial auth is verified:"
 echo "    bq update --format=none patman-inventory:patman_inventory \\"
-echo "      --table --add_access_group SERVICE_ACCOUNT_EMAIL dataEditor"
-
-for secret in patman-jwt-secret patman-refresh-secret; do
-  gcloud secrets add-iam-policy-binding "$secret" \
-    --member="serviceAccount:$COMPUTE_SA" \
-    --role="roles/secretmanager.secretAccessor" \
-    --project="$PROJECT_ID"
-done
-
-echo "    Cloud Run SA grants applied."
+echo "      --table --add_access_group $COMPUTE_SA dataEditor"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
@@ -143,4 +125,6 @@ echo "   gcloud run services describe $SERVICE \\"
 echo "     --region=$REGION \\"
 echo "     --format='value(status.url)' \\"
 echo "     --project=$PROJECT_ID"
+echo ""
+echo " Cut over frontend by setting CLOUD_RUN_URL in js/utilities.js"
 echo "============================================================"

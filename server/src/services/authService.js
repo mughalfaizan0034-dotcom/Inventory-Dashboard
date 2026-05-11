@@ -4,15 +4,15 @@ import { AppError } from '../utils/errors.js';
 
 const BCRYPT_ROUNDS = 12;
 
-export function createAuthService({ orgsRepo, usersRepo }) {
-  async function login(organizationSlug, username, password) {
-    const org = await orgsRepo.findBySlug(organizationSlug);
-    if (!org) {
-      throw new AppError(401, 'Invalid credentials');
-    }
+// Usernames are globally unique across the platform.
+// Organization is derived from the user record — never supplied by the caller.
+export function createAuthService({ usersRepo }) {
+  async function login(username, password) {
+    // Normalize before querying — usernames are stored lowercase
+    const normalized = username.toLowerCase().trim();
 
-    const user = await usersRepo.findByUsername(org.organization_id, username);
-    if (!user || !user.is_active) {
+    const user = await usersRepo.findByUsernameGlobal(normalized);
+    if (!user) {
       throw new AppError(401, 'Invalid credentials');
     }
 
@@ -29,7 +29,7 @@ export function createAuthService({ orgsRepo, usersRepo }) {
 
     return {
       user_id:         user.user_id,
-      organization_id: org.organization_id,
+      organization_id: user.organization_id,
       username:        user.username,
       display_name:    user.display_name,
       role:            user.role,

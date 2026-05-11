@@ -72,20 +72,18 @@ const Auth = (() => {
   }
 
   /* ── Login UI ─────────────────────────────────────────────── */
-  let _loginForm      = null;
-  let _loginError     = null;
-  let _loginBtn       = null;
-  let _orgInput       = null;
-  let _usernameInput  = null;
-  let _passwordInput  = null;
+  let _loginForm     = null;
+  let _loginError    = null;
+  let _loginBtn      = null;
+  let _usernameInput = null;
+  let _passwordInput = null;
 
   function _bindLoginUI() {
-    _loginForm      = document.getElementById('login-form');
-    _loginError     = document.getElementById('login-error');
-    _loginBtn       = document.getElementById('login-btn');
-    _orgInput       = document.getElementById('login-org');
-    _usernameInput  = document.getElementById('login-username');
-    _passwordInput  = document.getElementById('login-password');
+    _loginForm     = document.getElementById('login-form');
+    _loginError    = document.getElementById('login-error');
+    _loginBtn      = document.getElementById('login-btn');
+    _usernameInput = document.getElementById('login-username');
+    _passwordInput = document.getElementById('login-password');
 
     if (_loginForm) {
       _loginForm.addEventListener('submit', async e => {
@@ -107,21 +105,20 @@ const Auth = (() => {
   }
 
   async function _doLogin() {
-    const organization = _orgInput?.value.trim();
-    const username     = _usernameInput?.value.trim();
-    const password     = _passwordInput?.value;
+    const username = _usernameInput?.value.trim();
+    const password = _passwordInput?.value;
 
     _hideError();
 
-    if (!organization || !username || !password) {
-      _showError('Please enter your organization, username, and password.');
+    if (!username || !password) {
+      _showError('Please enter your username and password.');
       return;
     }
 
     Loading.btn(_loginBtn, true);
 
     try {
-      const result = await API.login(organization, username, password);
+      const result = await API.login(username, password);
       saveSession(result.token, result.user, result.refresh_token || null);
       _passwordInput.value = '';
       App.showApp();
