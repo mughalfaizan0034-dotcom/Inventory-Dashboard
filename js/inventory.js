@@ -3,84 +3,169 @@
    ============================================================ */
 
 const BoxLookup = (() => {
-  let _lastData = null;
+  let _lastData  = null;
   let _activeTab = 'instock';
 
   /* ── Status pill ─────────────────────────────────────────── */
-  function _statusPill(remaining) {
-    if (remaining > 0)
-      return `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:9999px;font-size:11.5px;font-weight:600;background:rgba(22,163,74,.1);color:#15803d">In Stock</span>`;
-    if (remaining === 0)
-      return `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:9999px;font-size:11.5px;font-weight:600;background:rgba(234,88,12,.1);color:#c2410c">OOS</span>`;
-    return `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:9999px;font-size:11.5px;font-weight:600;background:rgba(220,38,38,.1);color:#dc2626">Phantom</span>`;
+  function _statusPill(rem, large = false) {
+    const pad = large ? '4px 14px' : '2px 9px';
+    const fs  = large ? '12.5px'   : '11.5px';
+    if (rem > 0)
+      return `<span style="display:inline-flex;align-items:center;padding:${pad};border-radius:9999px;font-size:${fs};font-weight:600;background:rgba(22,163,74,.12);color:#15803d;white-space:nowrap">In Stock</span>`;
+    if (rem === 0)
+      return `<span style="display:inline-flex;align-items:center;padding:${pad};border-radius:9999px;font-size:${fs};font-weight:600;background:rgba(234,88,12,.1);color:#c2410c;white-space:nowrap">OOS</span>`;
+    return `<span style="display:inline-flex;align-items:center;padding:${pad};border-radius:9999px;font-size:${fs};font-weight:600;background:rgba(220,38,38,.1);color:#dc2626;white-space:nowrap">Phantom</span>`;
   }
 
-  /* ── Box row renderer ─────────────────────────────────────── */
+  /* ── Remaining colour ────────────────────────────────────── */
+  function _remColor(rem) {
+    return rem > 0 ? '#15803d' : rem === 0 ? 'var(--txt-4)' : '#dc2626';
+  }
+
+  /* ── UPC totals card ─────────────────────────────────────── */
+  function _upcSummaryCard(upc, totalInitial, totalSold, totalRemaining) {
+    const rem = Number(totalRemaining);
+    return `
+      <div style="margin-bottom:14px">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+          <span style="font-size:10.5px;font-weight:700;color:var(--txt-4);letter-spacing:.08em;text-transform:uppercase">UPC</span>
+          <span style="font-size:14px;font-weight:700;color:var(--txt-1);font-family:'Courier New',monospace;letter-spacing:.04em">${Utils.escapeHtml(upc || '—')}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          <div style="padding:12px 16px;border-right:1px solid var(--border)">
+            <div style="font-size:10.5px;font-weight:600;color:var(--txt-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Initial</div>
+            <div style="font-size:22px;font-weight:700;color:var(--txt-2);line-height:1">${Utils.formatNumber(totalInitial)}</div>
+          </div>
+          <div style="padding:12px 16px;border-right:1px solid var(--border)">
+            <div style="font-size:10.5px;font-weight:600;color:var(--txt-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Sold</div>
+            <div style="font-size:22px;font-weight:700;color:var(--txt-2);line-height:1">${Utils.formatNumber(totalSold)}</div>
+          </div>
+          <div style="padding:12px 16px;border-right:1px solid var(--border)">
+            <div style="font-size:10.5px;font-weight:600;color:var(--txt-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Remaining</div>
+            <div style="font-size:22px;font-weight:700;color:${_remColor(rem)};line-height:1">${Utils.formatNumber(rem)}</div>
+          </div>
+          <div style="padding:12px 16px;display:flex;align-items:center;justify-content:center;min-width:90px">
+            ${_statusPill(rem, true)}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  /* ── Box-level table row ─────────────────────────────────── */
   function _boxRow(box) {
-    const rem = Number(box.remaining_stock ?? 0);
-    const rowBg   = rem < 0 ? 'background:rgba(220,38,38,.04)' : rem === 0 ? 'background:rgba(180,180,180,.04)' : '';
-    const remColor = rem > 0 ? 'var(--success)' : rem === 0 ? 'var(--txt-4)' : 'var(--error)';
+    const rem      = Number(box.remaining_stock ?? 0);
+    const rowBg    = rem < 0 ? 'background:rgba(220,38,38,.035)' : rem === 0 ? 'background:rgba(0,0,0,.02)' : '';
     return `
       <tr style="${rowBg}">
         <td style="font-weight:600;color:var(--txt-1)">${Utils.escapeHtml(box.box_number || '—')}</td>
         <td class="num">${Utils.formatNumber(box.initial_stock)}</td>
         <td class="num">${Utils.formatNumber(box.units_sold)}</td>
-        <td class="num" style="font-weight:600;color:${remColor}">${Utils.formatNumber(rem)}</td>
+        <td class="num" style="font-weight:600;color:${_remColor(rem)}">${Utils.formatNumber(rem)}</td>
         <td>${_statusPill(rem)}</td>
       </tr>`;
   }
 
-  /* ── Render grouped result ────────────────────────────────── */
-  function _renderGroup(group, filterFn) {
-    const rows = [];
-    for (const section of group) {
-      const subSections = section.upcs || section.part_numbers || [];
-      for (const sub of subSections) {
-        const boxes = (sub.boxes || []).filter(filterFn);
-        if (!boxes.length) continue;
-        const subLabel   = sub.upc != null ? `UPC ${sub.upc}` : `Part # ${sub.part_number}`;
-        const groupLabel = section.part_number != null ? `Part Number: ${section.part_number}` : `UPC: ${section.upc}`;
-        rows.push(`
-          <div class="card" style="margin-bottom:12px;padding:0;overflow:hidden">
-            <div style="background:var(--surface-2);padding:8px 16px;font-size:12px;font-weight:700;color:var(--txt-3);letter-spacing:.04em;text-transform:uppercase">${Utils.escapeHtml(groupLabel)}</div>
-            <div style="padding:6px 16px 8px;font-size:12px;color:var(--txt-4)">${Utils.escapeHtml(subLabel)}</div>
-            <div class="table-wrap" style="border:none;margin:0">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Box #</th>
-                    <th class="num">Initial</th>
-                    <th class="num">Sold</th>
-                    <th class="num">Remaining</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${boxes.map(b => _boxRow(b)).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>`);
-      }
-    }
-    return rows.join('');
+  /* ── Deduplicate boxes by sku|upc|box_number ─────────────── */
+  function _dedup(boxes) {
+    const seen = new Set();
+    return (boxes || []).filter(b => {
+      const key = `${b.sku}|${b.upc}|${b.box_number}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
-  /* ── Render all groups ──────────────────────────────────────*/
+  /* ── Render one UPC block (summary card + box table) ─────── */
+  function _renderUpcBlock(upcLabel, totalInitial, totalSold, totalRemaining, visibleBoxes) {
+    return `
+      <div>
+        ${_upcSummaryCard(upcLabel, totalInitial, totalSold, totalRemaining)}
+        <div class="table-wrap" style="border:none;margin:0">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Box #</th>
+                <th class="num">Initial</th>
+                <th class="num">Sold</th>
+                <th class="num">Remaining</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>${visibleBoxes.map(b => _boxRow(b)).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  /* ── Build section HTML for one part-number or UPC group ─── */
+  function _renderGroup(group, tab) {
+    const isInstockTab = tab === 'instock';
+    const sectionHtml  = [];
+
+    for (const section of group) {
+      const subSections = section.upcs || section.part_numbers || [];
+
+      const headerLabel = section.part_number != null
+        ? section.part_number
+        : section.upc != null ? section.upc : '—';
+      const headerType = section.part_number != null ? 'Part Number' : 'UPC';
+
+      const upcBlocks = [];
+
+      for (const sub of subSections) {
+        const allBoxes       = _dedup(sub.boxes);
+        const totalInitial   = allBoxes.reduce((s, b) => s + Number(b.initial_stock   ?? 0), 0);
+        const totalSold      = allBoxes.reduce((s, b) => s + Number(b.units_sold       ?? 0), 0);
+        const totalRemaining = allBoxes.reduce((s, b) => s + Number(b.remaining_stock  ?? 0), 0);
+
+        // In Stock tab: skip UPCs with zero or negative total remaining
+        if (isInstockTab && totalRemaining <= 0) continue;
+
+        const visibleBoxes = isInstockTab
+          ? allBoxes.filter(b => Number(b.remaining_stock ?? 0) > 0)
+          : allBoxes;
+
+        if (!visibleBoxes.length) continue;
+
+        const upcLabel = sub.upc ?? sub.part_number ?? '—';
+        upcBlocks.push(_renderUpcBlock(upcLabel, totalInitial, totalSold, totalRemaining, visibleBoxes));
+      }
+
+      if (!upcBlocks.length) continue;
+
+      // Separate multiple UPC blocks with a subtle divider
+      const blocksHtml = upcBlocks.join(`
+        <div style="border-top:1px solid var(--border);margin:20px 0"></div>`);
+
+      sectionHtml.push(`
+        <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden">
+          <div style="background:var(--surface-2);padding:10px 20px;border-bottom:1px solid var(--border)">
+            <div style="font-size:10.5px;font-weight:700;color:var(--txt-4);letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px">${headerType}</div>
+            <div style="font-size:17px;font-weight:700;color:var(--txt-1);letter-spacing:.01em">${Utils.escapeHtml(headerLabel)}</div>
+          </div>
+          <div style="padding:18px 20px 20px">
+            ${blocksHtml}
+          </div>
+        </div>`);
+    }
+
+    return sectionHtml.join('');
+  }
+
+  /* ── Render results into a tab panel ─────────────────────── */
   function _renderResults(data, tab) {
-    const filterFn = tab === 'instock'
-      ? b => Number(b.remaining_stock ?? 0) > 0
-      : () => true;
-
     const group = data.byPartNumber?.length ? data.byPartNumber : data.byUpc || [];
-    const html  = _renderGroup(group, filterFn);
-
-    const el = tab === 'instock'
+    const html  = _renderGroup(group, tab);
+    const el    = tab === 'instock'
       ? document.getElementById('lookup-instock')
       : document.getElementById('lookup-all');
     if (!el) return;
-
-    el.innerHTML = html || Loading.empty('📦', tab === 'instock' ? 'No in-stock boxes found' : 'No boxes found', 'Try a different Part Number or UPC');
+    el.innerHTML = html || Loading.empty(
+      '📦',
+      tab === 'instock' ? 'No in-stock inventory found' : 'No inventory found',
+      'Try a different Part Number or UPC'
+    );
   }
 
   function _showResults(data) {
@@ -93,7 +178,6 @@ const BoxLookup = (() => {
     _renderResults(data, 'instock');
     _renderResults(data, 'all');
 
-    // Show/hide tabs based on active
     const inStockEl = document.getElementById('lookup-instock');
     const allEl     = document.getElementById('lookup-all');
     if (inStockEl) inStockEl.style.display = _activeTab === 'instock' ? '' : 'none';
@@ -105,30 +189,31 @@ const BoxLookup = (() => {
   function _updateTabUI() {
     document.querySelectorAll('.lookup-tab').forEach(btn => {
       const isActive = btn.dataset.tab === _activeTab;
-      btn.style.color       = isActive ? 'var(--primary)' : 'var(--txt-3)';
-      btn.style.fontWeight  = isActive ? '600' : '500';
+      btn.style.color        = isActive ? 'var(--primary)' : 'var(--txt-3)';
+      btn.style.fontWeight   = isActive ? '600' : '500';
       btn.style.borderBottom = isActive ? '2px solid var(--primary)' : '2px solid transparent';
     });
   }
 
   async function search(query) {
     query = (query || '').trim();
-    const clearBtn = document.getElementById('box-clear-btn');
+    const clearBtn  = document.getElementById('box-clear-btn');
+    const inStockEl = document.getElementById('lookup-instock');
+    const allEl     = document.getElementById('lookup-all');
+    const tabsEl    = document.getElementById('lookup-tabs');
+
     if (!query) {
-      document.getElementById('lookup-instock').innerHTML = '';
-      document.getElementById('lookup-all').innerHTML = '';
-      const tabsEl = document.getElementById('lookup-tabs');
-      if (tabsEl) tabsEl.style.display = 'none';
-      if (clearBtn) clearBtn.style.display = 'none';
+      if (inStockEl) inStockEl.innerHTML = '';
+      if (allEl)     allEl.innerHTML     = '';
+      if (tabsEl)    tabsEl.style.display = 'none';
+      if (clearBtn)  clearBtn.style.display = 'none';
       return;
     }
     if (clearBtn) clearBtn.style.display = '';
 
-    const inStockEl = document.getElementById('lookup-instock');
-    if (inStockEl) inStockEl.innerHTML = `<div style="display:flex;justify-content:center;padding:32px">${Loading.spinnerHtml()}</div>`;
-    document.getElementById('lookup-all').innerHTML = '';
-    const tabsEl = document.getElementById('lookup-tabs');
-    if (tabsEl) tabsEl.style.display = 'none';
+    if (inStockEl) inStockEl.innerHTML = `<div style="display:flex;justify-content:center;padding:40px">${Loading.spinnerHtml()}</div>`;
+    if (allEl)     allEl.innerHTML     = '';
+    if (tabsEl)    tabsEl.style.display = 'none';
 
     try {
       const data = await API.lookup(query);
@@ -165,8 +250,10 @@ const BoxLookup = (() => {
         if (!tab || tab === _activeTab) return;
         _activeTab = tab;
         _updateTabUI();
-        document.getElementById('lookup-instock').style.display = tab === 'instock' ? '' : 'none';
-        document.getElementById('lookup-all').style.display     = tab === 'all'     ? '' : 'none';
+        const is  = document.getElementById('lookup-instock');
+        const all = document.getElementById('lookup-all');
+        if (is)  is.style.display  = tab === 'instock' ? '' : 'none';
+        if (all) all.style.display = tab === 'all'     ? '' : 'none';
         if (_lastData) _renderResults(_lastData, tab);
       });
     }
