@@ -157,8 +157,23 @@
 
         <!-- ── Dashboard page ──────────────────────────────── -->
         <div id="page-dashboard" class="page active">
-          <div id="kpi-grid" class="kpi-grid"></div>
-          <div class="card" style="margin-top:8px">
+          <div id="kpi-sticky-bar" class="kpi-sticky-bar">
+            <div class="kpi-section">
+              <div class="kpi-section-header">
+                <span class="kpi-section-icon">📦</span>
+                <span class="kpi-section-title">Inventory Intelligence</span>
+              </div>
+              <div id="kpi-inventory-grid" class="kpi-grid kpi-grid-inv"></div>
+            </div>
+            <div class="kpi-section">
+              <div class="kpi-section-header">
+                <span class="kpi-section-icon">📈</span>
+                <span class="kpi-section-title">Sales Intelligence</span>
+              </div>
+              <div id="kpi-sales-grid" class="kpi-grid kpi-grid-sales"></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:20px">
             <div class="card-header">
               <div class="card-title">Recent Activity</div>
             </div>
@@ -168,17 +183,19 @@
 
         <!-- ── Performance page ────────────────────────────── -->
         <div id="page-performance" class="page">
-          <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:16px">
-            <select class="form-select" id="perf-platform-select" style="width:auto">
-              <option value="">All Platforms</option>
-            </select>
-            <select class="form-select" id="perf-weeks-select" style="width:auto">
-              <option value="4">Last 4 weeks</option>
-              <option value="8">Last 8 weeks</option>
-              <option value="12" selected>Last 12 weeks</option>
-              <option value="24">Last 24 weeks</option>
-              <option value="52">Last 52 weeks</option>
-            </select>
+          <div class="perf-filter-sticky">
+            <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">
+              <select class="form-select" id="perf-platform-select" style="width:auto">
+                <option value="">All Platforms</option>
+              </select>
+              <select class="form-select" id="perf-weeks-select" style="width:auto">
+                <option value="4">Last 4 weeks</option>
+                <option value="8">Last 8 weeks</option>
+                <option value="12" selected>Last 12 weeks</option>
+                <option value="24">Last 24 weeks</option>
+                <option value="52">Last 52 weeks</option>
+              </select>
+            </div>
           </div>
 
           <div id="perf-container" style="position:relative">
@@ -657,16 +674,16 @@
 
   <!-- App modules — order matters: utilities first, then API/auth, then features, app last -->
   <!-- v=3 — bump this number on every deploy to bust browser/CDN cache -->
-  <script src="js/utilities.js?v=10"></script>
-  <script src="js/notifications.js?v=10"></script>
-  <script src="js/loading.js?v=10"></script>
-  <script src="js/api.js?v=10"></script>
-  <script src="js/auth.js?v=10"></script>
-  <script src="js/dashboard.js?v=10"></script>
-  <script src="js/inventory.js?v=10"></script>
-  <script src="js/orders.js?v=10"></script>
-  <script src="js/uploads.js?v=10"></script>
-  <script src="js/app.js?v=10"></script>
+  <script src="js/utilities.js?v=11"></script>
+  <script src="js/notifications.js?v=11"></script>
+  <script src="js/loading.js?v=11"></script>
+  <script src="js/api.js?v=11"></script>
+  <script src="js/auth.js?v=11"></script>
+  <script src="js/dashboard.js?v=11"></script>
+  <script src="js/inventory.js?v=11"></script>
+  <script src="js/orders.js?v=11"></script>
+  <script src="js/uploads.js?v=11"></script>
+  <script src="js/app.js?v=11"></script>
 
 </body>
 </html>
