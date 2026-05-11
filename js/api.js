@@ -2,8 +2,9 @@
    api.js — Centralized fetch layer.
 
    When CLOUD_RUN_URL is set in CONFIG:
-     Auth (login/refresh/verify)  → POST  Cloud Run  (JSON body)
-     All other actions            → GET   Apps Script (query params)
+     Auth (login/refresh)         → _crPostRaw  Cloud Run  (no 401 interception)
+     Protected data endpoints     → _crGet       Cloud Run  (Bearer + 401 auto-refresh)
+     All other actions            → _get         Apps Script (query params)
 
    When CLOUD_RUN_URL is empty:
      Everything falls through to Apps Script GET transport.
@@ -18,8 +19,35 @@ const API = (() => {
     return sessionStorage.getItem(CONFIG.SESSION_KEY) || null;
   }
 
-  /* ── Cloud Run GET — query params, Bearer auth ──────────── */
-  async function _crGet(path, params = {}, retries = 0) {
+  /* ── 401 interceptor — auto-refresh + forced logout ──────── */
+  let _refreshPromise = null;
+
+  function _forceLogout() {
+    sessionStorage.removeItem(CONFIG.SESSION_KEY);
+    sessionStorage.removeItem(CONFIG.USER_KEY);
+    sessionStorage.removeItem('patman_refresh_token');
+    window.dispatchEvent(new CustomEvent('auth:logout'));
+  }
+
+  function _attemptRefresh() {
+    if (_refreshPromise) return _refreshPromise;
+    const storedRefresh = sessionStorage.getItem('patman_refresh_token');
+    if (!storedRefresh) {
+      _forceLogout();
+      return Promise.reject(new Error('Session expired'));
+    }
+    _refreshPromise = _crPostRaw('/auth/refresh', { refresh_token: storedRefresh }, 0)
+      .then(data => {
+        sessionStorage.setItem(CONFIG.SESSION_KEY, data.access_token);
+        if (data.refresh_token) sessionStorage.setItem('patman_refresh_token', data.refresh_token);
+      })
+      .catch(err => { _forceLogout(); throw err; })
+      .finally(() => { _refreshPromise = null; });
+    return _refreshPromise;
+  }
+
+  /* ── Cloud Run GET — raw, no 401 interception ───────────── */
+  async function _crGetRaw(path, params = {}, retries = 0) {
     const tok = getToken();
     const url = new URL(CONFIG.CLOUD_RUN_URL + path);
     for (const [key, value] of Object.entries(params)) {
@@ -38,15 +66,26 @@ const API = (() => {
         return await _parseResponse(res);
       } catch (err) {
         lastErr = err;
-        if (err.serverError) throw err;
+        if (err.serverError || err.status === 401) throw err;
         if (attempt < retries) await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
       }
     }
     throw lastErr;
   }
 
-  /* ── Cloud Run POST — JSON body, Bearer auth ────────────── */
-  async function _crPost(path, body, retries = 0) {
+  /* ── Cloud Run GET — with 401 auto-refresh ──────────────── */
+  async function _crGet(path, params = {}, retries = 0) {
+    try {
+      return await _crGetRaw(path, params, retries);
+    } catch (err) {
+      if (err.status !== 401) throw err;
+      await _attemptRefresh();
+      return _crGetRaw(path, params, retries);
+    }
+  }
+
+  /* ── Cloud Run POST — raw, no 401 interception ──────────── */
+  async function _crPostRaw(path, body, retries = 0) {
     const tok = getToken();
     const options = {
       method:  'POST',
@@ -64,11 +103,22 @@ const API = (() => {
         return await _parseResponse(res);
       } catch (err) {
         lastErr = err;
-        if (err.serverError) throw err;
+        if (err.serverError || err.status === 401) throw err;
         if (attempt < retries) await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
       }
     }
     throw lastErr;
+  }
+
+  /* ── Cloud Run POST — with 401 auto-refresh ─────────────── */
+  async function _crPost(path, body, retries = 0) {
+    try {
+      return await _crPostRaw(path, body, retries);
+    } catch (err) {
+      if (err.status !== 401) throw err;
+      await _attemptRefresh();
+      return _crPostRaw(path, body, retries);
+    }
   }
 
   /* ── Abort-controller timeout wrapper ────────────────────── */
@@ -88,20 +138,27 @@ const API = (() => {
 
   /* ── Shared response parser ──────────────────────────────── */
   async function _parseResponse(res) {
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const text = await res.text();
     let parsed;
-    try { parsed = JSON.parse(text); }
-    catch { throw new Error('Invalid response from server.'); }
-    if (parsed.success === false) {
+    try { parsed = JSON.parse(text); } catch { /* non-JSON — fall through to status check */ }
+
+    if (!res.ok) {
+      const message = parsed?.error || `HTTP ${res.status}: ${res.statusText}`;
+      const err = new Error(message);
+      err.status = res.status;
+      if (parsed?.success === false) err.serverError = true;
+      throw err;
+    }
+
+    if (parsed?.success === false) {
       const err = new Error(parsed.error || 'Server returned an error.');
       err.serverError = true;
       throw err;
     }
-    return parsed.data !== undefined ? parsed.data : parsed;
+    return parsed?.data !== undefined ? parsed.data : parsed;
   }
 
-  /* ── GET request — primary transport ─────────────────────── */
+  /* ── GET request — Apps Script primary transport ─────────── */
   async function _get(action, params = {}, retries = CONFIG.MAX_RETRIES) {
     const url = new URL(CONFIG.API_URL);
     url.searchParams.set('action', action);
@@ -159,14 +216,12 @@ const API = (() => {
   /* ── Public API methods ─────────────────────────────────── */
   return {
 
-    /* Auth — Cloud Run when available, Apps Script fallback */
+    /* Auth — raw transport: no 401 interception on auth endpoints */
     async login(organization, username, password) {
       if (CONFIG.CLOUD_RUN_URL) {
-        const data = await _crPost('/auth/login', { organization, username, password }, 0);
-        // Normalize Cloud Run response to shape Auth.saveSession() expects
+        const data = await _crPostRaw('/auth/login', { organization, username, password }, 0);
         return { token: data.access_token, refresh_token: data.refresh_token, user: data.user };
       }
-      // Apps Script fallback: temporary, org/username not supported there
       return _get('login', { email: username, password }, 0);
     },
 
@@ -178,13 +233,11 @@ const API = (() => {
     },
 
     async refreshToken(refreshToken) {
-      return _crPost('/auth/refresh', { refresh_token: refreshToken }, 0);
+      return _crPostRaw('/auth/refresh', { refresh_token: refreshToken }, 0);
     },
 
     async verifySession() {
       if (CONFIG.CLOUD_RUN_URL) {
-        // JWT is stateless — if the token parses, session is valid.
-        // Return the user from local storage rather than making a round-trip.
         const user = JSON.parse(sessionStorage.getItem(CONFIG.USER_KEY) || 'null');
         if (user) return { user };
         throw new Error('No session');

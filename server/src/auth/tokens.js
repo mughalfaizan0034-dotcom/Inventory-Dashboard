@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { env } from '../config/env.js';
 
 // Token factory — requires the fastify.jwt decoration (registered via @fastify/jwt).
@@ -18,8 +19,10 @@ export function createTokenFactory(fastify) {
     },
 
     signRefreshToken(user) {
+      // jti (JWT ID) uniquely identifies this refresh token.
+      // Persist jti in refreshTokensRepository to enable future revocation.
       return fastify.jwt.sign(
-        { user_id: user.user_id, type: 'refresh' },
+        { user_id: user.user_id, type: 'refresh', jti: randomUUID() },
         { expiresIn: env.JWT_REFRESH_EXPIRES }
       );
     },

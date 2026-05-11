@@ -328,6 +328,7 @@ const App = (() => {
 
     _bindSidebarUser();
     Auth.applyRoleVisibility();
+    Auth.startIdleWatch();
 
     const hash = window.location.hash.replace('#', '');
     navigate(PAGES[hash] ? hash : 'dashboard');

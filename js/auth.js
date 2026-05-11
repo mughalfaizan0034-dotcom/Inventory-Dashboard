@@ -7,7 +7,11 @@
 const Auth = (() => {
 
   /* ── Session helpers ──────────────────────────────────────── */
-  const REFRESH_KEY = 'patman_refresh_token';
+  const REFRESH_KEY      = 'patman_refresh_token';
+  const IDLE_TIMEOUT_MS  = 30 * 60 * 1000; // 30 minutes
+  const _channel         = typeof BroadcastChannel !== 'undefined'
+    ? new BroadcastChannel('patman_auth') : null;
+  let _idleTimer = null;
 
   function saveSession(token, user, refreshToken = null) {
     sessionStorage.setItem(CONFIG.SESSION_KEY, token);
@@ -33,6 +37,30 @@ const Auth = (() => {
 
   function isLoggedIn() {
     return !!getToken();
+  }
+
+  /* ── Idle timeout ─────────────────────────────────────────── */
+  function _resetIdleTimer() {
+    clearTimeout(_idleTimer);
+    _idleTimer = setTimeout(() => {
+      logout();
+      if (typeof Notify !== 'undefined') Notify.warning?.('Signed out due to inactivity.');
+    }, IDLE_TIMEOUT_MS);
+  }
+
+  function startIdleWatch() {
+    ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(
+      e => document.addEventListener(e, _resetIdleTimer, { passive: true })
+    );
+    _resetIdleTimer();
+  }
+
+  function stopIdleWatch() {
+    clearTimeout(_idleTimer);
+    _idleTimer = null;
+    ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(
+      e => document.removeEventListener(e, _resetIdleTimer)
+    );
   }
 
   const ROLE_LEVEL = { admin: 3, manager: 2, viewer: 1 };
@@ -106,6 +134,8 @@ const Auth = (() => {
 
   /* ── Logout ───────────────────────────────────────────────── */
   async function logout() {
+    stopIdleWatch();
+    _channel?.postMessage({ type: 'logout' });
     await API.logout();
     clearSession();
     App.showLogin();
@@ -182,6 +212,25 @@ const Auth = (() => {
     });
   }
 
+  /* ── Cross-tab logout sync ────────────────────────────────── */
+  if (_channel) {
+    _channel.onmessage = (e) => {
+      if (e.data?.type === 'logout' && isLoggedIn()) {
+        stopIdleWatch();
+        clearSession();
+        App.showLogin();
+      }
+    };
+  }
+
+  // api.js fires this when a refresh attempt fails (token fully expired)
+  window.addEventListener('auth:logout', () => {
+    stopIdleWatch();
+    _channel?.postMessage({ type: 'logout' });
+    clearSession();
+    App.showLogin();
+  });
+
   /* ── Public ───────────────────────────────────────────────── */
   return {
     init:               _bindLoginUI,
@@ -193,6 +242,8 @@ const Auth = (() => {
     hasRole,
     saveSession,
     clearSession,
+    startIdleWatch,
+    stopIdleWatch,
     applyRoleVisibility,
   };
 })();

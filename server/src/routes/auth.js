@@ -59,15 +59,16 @@ export async function authRoutes(fastify, { authService, usersRepo, tokenFactory
         return reply.code(401).send({ success: false, error: 'Account inactive or not found' });
       }
 
-      const accessToken = tokenFactory.signAccessToken({
+      const accessToken  = tokenFactory.signAccessToken({
         user_id:         user.user_id,
         organization_id: user.organization_id,
         username:        user.username,
         display_name:    user.display_name,
         role:            user.role,
       });
+      const newRefreshToken = tokenFactory.signRefreshToken(user);
 
-      return reply.send({ success: true, data: { access_token: accessToken } });
+      return reply.send({ success: true, data: { access_token: accessToken, refresh_token: newRefreshToken } });
     } catch {
       return reply.code(401).send({ success: false, error: 'Refresh token invalid or expired' });
     }
