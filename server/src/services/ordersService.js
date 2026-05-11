@@ -14,5 +14,17 @@ export function createOrdersService({ ordersRepo }) {
     return ordersRepo.getPlatforms(organizationId);
   }
 
-  return { list, getPlatforms };
+  async function deleteRows(organizationId, { rowIds, filters }) {
+    if (rowIds?.length) {
+      const deleted = await ordersRepo.deleteByRowIds(organizationId, rowIds);
+      return { deleted };
+    }
+    if (filters) {
+      const deleted = await ordersRepo.deleteByFilters(organizationId, filters);
+      return { deleted };
+    }
+    throw Object.assign(new Error('No selection criteria provided'), { code: 400 });
+  }
+
+  return { list, getPlatforms, deleteRows };
 }
