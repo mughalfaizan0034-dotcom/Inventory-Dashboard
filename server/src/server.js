@@ -129,6 +129,17 @@ export async function buildApp() {
     fastify.register(usersRoutes,         { prefix: '/users',         usersService });
     fastify.register(membershipsRoutes,   { prefix: '/memberships',   membershipsRepo });
     fastify.register(organizationsRoutes, { prefix: '/organizations', orgsRepo, membershipsRepo });
+
+    // Temporary debug endpoint — remove after deployment is verified.
+    // Enable with: DEBUG_ROUTES=true in Cloud Run env vars.
+    if (process.env.DEBUG_ROUTES === 'true') {
+      fastify.get('/debug/routes', async () => ({ routes: fastify.printRoutes({ commonPrefix: false }) }));
+    }
+  });
+
+  // Log all registered routes on startup — visible in Cloud Run logs.
+  fastify.addHook('onReady', async () => {
+    fastify.log.info({ event: 'routes_registered' }, '\n' + fastify.printRoutes({ commonPrefix: false }));
   });
 
   return fastify;
