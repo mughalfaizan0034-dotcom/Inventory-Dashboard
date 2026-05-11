@@ -212,14 +212,155 @@ const Settings = (() => {
   /* ── Profile tab ─────────────────────────────────────────── */
   function _initProfileTab() {
     const user = Auth.getUser();
+    const org  = Auth.getOrganization();
     if (!user) return;
 
-    Utils.setText('#profile-name',  user.display_name || user.username);
-    Utils.setText('#profile-email', user.email || user.username);
-    Utils.setText('#profile-role',  Utils.capitalize(user.role));
+    Utils.setText('#profile-name',     user.display_name || user.username);
+    Utils.setText('#profile-username', user.username ? `@${user.username}` : '—');
+    Utils.setText('#profile-org',      org?.display_name || '—');
+    Utils.setText('#profile-role',     Utils.capitalize(org?.role || '—'));
 
     const avatarEl = document.getElementById('profile-avatar');
-    if (avatarEl) avatarEl.textContent = (user.display_name || user.username || user.email || '?')[0].toUpperCase();
+    if (avatarEl) avatarEl.textContent = (user.display_name || user.username || '?')[0].toUpperCase();
+  }
+
+  /* ── Organizations tab ──────────────────────────────────── */
+  let _orgModal = null;
+  let _editingOrgId = null;
+
+  async function loadOrganizations() {
+    const tbody = document.getElementById('orgs-tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = Loading.tableRows(4, 4);
+
+    try {
+      const orgs = await API.getOrganizations();
+      if (!orgs.length) {
+        tbody.innerHTML = `<tr><td colspan="4">${Loading.empty('🏢', 'No organizations', 'Create the first organization to get started')}</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = orgs.map(o => `
+        <tr>
+          <td style="font-weight:600;color:var(--txt-1)">${Utils.escapeHtml(o.display_name)}</td>
+          <td style="font-size:12px;color:var(--txt-4);font-family:monospace">${Utils.escapeHtml(o.slug)}</td>
+          <td>${o.is_active !== false ? Utils.badgeHtml('success', 'Active') : Utils.badgeHtml('gray', 'Inactive')}</td>
+          <td>
+            <div style="display:flex;gap:4px">
+              <button class="btn btn-secondary btn-sm" onclick="Settings._editOrg('${Utils.escapeHtml(o.organization_id)}')">Edit</button>
+              ${o.is_active !== false
+                ? `<button class="btn btn-danger btn-sm" onclick="Settings._deactivateOrg('${Utils.escapeHtml(o.organization_id)}','${Utils.escapeHtml(o.display_name)}')">Deactivate</button>`
+                : ''}
+            </div>
+          </td>
+        </tr>`).join('');
+
+      Settings._orgsCache = orgs;
+    } catch (err) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="4">${Loading.error('Failed to load organizations')}</td></tr>`;
+      Notify.apiError(err);
+    }
+  }
+
+  function _openOrgModal(org = null) {
+    _editingOrgId = org?.organization_id || null;
+    const isEdit  = !!org;
+    const title   = isEdit ? 'Edit Organization' : 'New Organization';
+
+    if (!_orgModal) _orgModal = new Modal({ title, maxWidth: '440px' });
+    _orgModal.setTitle(title);
+    _orgModal.setBody(`
+      <form id="org-form" autocomplete="off">
+        <div class="form-group">
+          <label class="form-label">Display Name <span class="req">*</span></label>
+          <input class="form-input" id="o-name" placeholder="e.g. Patman Warehouse" value="${Utils.escapeHtml(org?.display_name || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Slug <span class="req">*</span></label>
+          <input class="form-input" id="o-slug" placeholder="e.g. patman-warehouse" value="${Utils.escapeHtml(org?.slug || '')}"
+            pattern="[a-z0-9-]+" title="Lowercase letters, numbers, hyphens only">
+          <div class="form-hint">Lowercase letters, numbers, hyphens only. Used in URLs and identifiers.</div>
+        </div>
+        ${isEdit ? `
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-select" id="o-active">
+            <option value="true"  ${org?.is_active !== false ? 'selected' : ''}>Active</option>
+            <option value="false" ${org?.is_active === false  ? 'selected' : ''}>Inactive</option>
+          </select>
+        </div>` : ''}
+        <div id="org-form-error" class="form-error" style="display:none"></div>
+      </form>`);
+    _orgModal.setFooter(`
+      <button class="btn btn-secondary btn-sm" id="o-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="o-save">${isEdit ? 'Save Changes' : 'Create Organization'}</button>`);
+    _orgModal.show();
+
+    document.getElementById('o-cancel')?.addEventListener('click', () => _orgModal.hide());
+    document.getElementById('o-save')?.addEventListener('click', () => _saveOrg(isEdit));
+    document.getElementById('org-form')?.addEventListener('submit', e => { e.preventDefault(); _saveOrg(isEdit); });
+
+    if (!isEdit) {
+      document.getElementById('o-name')?.addEventListener('input', e => {
+        const slug = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const slugEl = document.getElementById('o-slug');
+        if (slugEl && !slugEl.dataset.edited) slugEl.value = slug;
+      });
+      document.getElementById('o-slug')?.addEventListener('input', e => {
+        e.target.dataset.edited = '1';
+      });
+    }
+  }
+
+  async function _saveOrg(isEdit) {
+    const name   = document.getElementById('o-name')?.value.trim();
+    const slug   = document.getElementById('o-slug')?.value.trim();
+    const active = document.getElementById('o-active')?.value;
+    const errEl  = document.getElementById('org-form-error');
+    const saveBtn = document.getElementById('o-save');
+
+    const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+    if (!name) return showErr('Display name is required.');
+    if (!slug)  return showErr('Slug is required.');
+    if (!/^[a-z0-9-]+$/.test(slug)) return showErr('Slug must be lowercase letters, numbers, hyphens only.');
+
+    if (errEl) errEl.style.display = 'none';
+    Loading.btn(saveBtn, true);
+
+    try {
+      if (isEdit) {
+        const updates = { display_name: name, slug };
+        if (active !== undefined) updates.is_active = active === 'true';
+        await API.updateOrganization(_editingOrgId, updates);
+        Notify.success('Organization updated');
+      } else {
+        await API.createOrganization({ display_name: name, slug });
+        Notify.success('Organization created');
+      }
+      _orgModal.hide();
+      loadOrganizations();
+    } catch (err) {
+      showErr(err.message || 'Save failed.');
+    } finally {
+      Loading.btn(saveBtn, false);
+    }
+  }
+
+  async function _deactivateOrg(orgId, name) {
+    const confirmed = await Modal.confirm({
+      title:       'Deactivate Organization',
+      message:     `Deactivate "${name}"? Members will lose access. This can be reversed.`,
+      confirmText: 'Deactivate',
+      danger:      true,
+    });
+    if (!confirmed) return;
+    try {
+      await API.updateOrganization(orgId, { is_active: false });
+      Notify.success('Organization deactivated');
+      loadOrganizations();
+    } catch (err) {
+      Notify.apiError(err);
+    }
   }
 
   /* ── Tab switching ──────────────────────────────────────── */
@@ -234,25 +375,33 @@ const Settings = (() => {
 
       tabList.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      document.querySelectorAll('#settings-page .tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('#page-settings .tab-panel').forEach(p => p.classList.remove('active'));
       document.getElementById(`tab-${tab}`)?.classList.add('active');
 
-      if (tab === 'users')   loadUsers();
-      if (tab === 'system')  loadSystemStatus();
-      if (tab === 'logs')    loadLogs();
-      if (tab === 'profile') _initProfileTab();
+      if (tab === 'users')         loadUsers();
+      if (tab === 'system')        loadSystemStatus();
+      if (tab === 'logs')          loadLogs();
+      if (tab === 'profile')       _initProfileTab();
+      if (tab === 'organizations') loadOrganizations();
     });
 
     const addUserBtn = document.getElementById('add-user-btn');
     if (addUserBtn) addUserBtn.addEventListener('click', () => _openUserModal());
+
+    const addOrgBtn = document.getElementById('add-org-btn');
+    if (addOrgBtn) addOrgBtn.addEventListener('click', () => _openOrgModal());
   }
 
   return {
     init:    initTabs,
     loadUsers,
-    _edit:   (id) => { const u = Settings._usersCache?.find(x => x.user_id === id); _openUserModal(u); },
-    _delete: _deleteUser,
+    loadOrganizations,
+    _edit:        (id)       => { const u = Settings._usersCache?.find(x => (x.membership_id || x.user_id) === id); _openUserModal(u); },
+    _delete:      _deleteUser,
+    _editOrg:     (id)       => { const o = Settings._orgsCache?.find(x => x.organization_id === id); _openOrgModal(o); },
+    _deactivateOrg,
     _usersCache: [],
+    _orgsCache:  [],
   };
 })();
 

@@ -3,38 +3,26 @@ import { TABLES } from '../config/tables.js';
 export function createInventoryRepository({ bq, projectId }) {
   const table = `\`${projectId}.${TABLES.INVENTORY}\``;
 
-  // organizationId is mandatory — never omit it.
-  async function findAll({ organizationId, page, pageSize, search, platform, status, sortBy, sortDir }) {
+  async function findAll({ organizationId, page, pageSize, search, sortBy, sortDir }) {
     const offset = (page - 1) * pageSize;
 
     const conditions = ['organization_id = @organizationId'];
     const params     = { organizationId };
 
     if (search) {
-      conditions.push('(LOWER(sku) LIKE @search OR LOWER(name) LIKE @search)');
+      conditions.push('(LOWER(sku) LIKE @search OR LOWER(upc) LIKE @search OR LOWER(box_number) LIKE @search OR LOWER(part_number) LIKE @search)');
       params.search = `%${search.toLowerCase()}%`;
-    }
-    if (platform) {
-      conditions.push('platform = @platform');
-      params.platform = platform;
-    }
-    if (status !== 'all') {
-      conditions.push('is_active = @isActive');
-      params.isActive = status === 'active';
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
 
-    const allowedSort = ['sku', 'name', 'platform', 'stock', 'updated_at'];
-    const col = allowedSort.includes(sortBy) ? sortBy : 'updated_at';
+    const allowedSort = ['sku', 'upc', 'box_number', 'quantity', 'date_added'];
+    const col = allowedSort.includes(sortBy) ? sortBy : 'date_added';
     const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
     const dataQuery = `
       SELECT
-        sku, name, platform, is_active,
-        initial_stock, units_sold, units_returned,
-        (initial_stock - units_sold + units_returned) AS stock,
-        updated_at
+        sku, upc, part_number, box_number, quantity, date_added, notes
       FROM ${table}
       ${where}
       ORDER BY ${col} ${dir}

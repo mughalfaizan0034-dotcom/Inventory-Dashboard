@@ -26,8 +26,8 @@ export function createOrdersRepository({ bq, projectId }) {
 
     const dataQuery = `
       SELECT
-        order_id, platform, sku, quantity, revenue,
-        order_date, created_at
+        order_id, order_date, sku, upc, quantity_sold,
+        platform, source_file, shipped_from_box, created_at
       FROM ${table}
       ${where}
       ORDER BY order_date DESC, created_at DESC
@@ -58,12 +58,5 @@ export function createOrdersRepository({ bq, projectId }) {
     return rows.map(r => r.platform);
   }
 
-  async function insertRows(rows) {
-    if (!rows.length) return;
-    const dataset = bq.dataset('patman_inventory');
-    const bqTable = dataset.table('orders');
-    await bqTable.insert(rows);
-  }
-
-  return { findAll, getPlatforms, insertRows };
+  return { findAll, getPlatforms };
 }

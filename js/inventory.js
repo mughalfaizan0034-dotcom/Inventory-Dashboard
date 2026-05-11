@@ -21,9 +21,7 @@ const BoxLookup = (() => {
     }
 
     el.innerHTML = items.map(item => {
-      const remaining = Number(item.remaining_stock ?? item.quantity ?? 0);
-      const sold      = Number(item.units_sold ?? 0);
-      const phantom   = Number(item.phantom_units ?? 0);
+      const qty = Number(item.quantity ?? 0);
 
       return `
         <div class="card" style="margin-bottom:12px">
@@ -33,18 +31,14 @@ const BoxLookup = (() => {
               <div style="font-size:12px;color:var(--txt-4)">Box ${Utils.escapeHtml(item.box_number || '—')} · UPC ${Utils.escapeHtml(item.upc || '—')} · Part ${Utils.escapeHtml(item.part_number || '—')}</div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              ${phantom > 0  ? Utils.badgeHtml('error',   'Phantom: '   + Utils.formatNumber(phantom)) : ''}
-              ${remaining === 0 ? Utils.badgeHtml('error', 'Out of Stock') : ''}
-              ${remaining > 0 && remaining <= 10 ? Utils.badgeHtml('warning', 'Low Stock') : ''}
-              ${remaining > 10 ? Utils.badgeHtml('success', 'In Stock') : ''}
+              ${qty === 0 ? Utils.badgeHtml('error', 'Out of Stock') : ''}
+              ${qty > 0 && qty <= 10 ? Utils.badgeHtml('warning', 'Low Stock') : ''}
+              ${qty > 10 ? Utils.badgeHtml('success', 'In Stock') : ''}
             </div>
           </div>
 
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-top:16px">
-            ${_statBox('Initial Stock', Utils.formatNumber(item.initial_stock ?? item.quantity))}
-            ${_statBox('Units Sold',    Utils.formatNumber(sold))}
-            ${_statBox('Remaining',     Utils.formatNumber(remaining), remaining === 0 ? 'var(--error)' : remaining <= 10 ? 'var(--warning)' : 'var(--success)')}
-            ${phantom > 0 ? _statBox('Phantom Units', Utils.formatNumber(phantom), 'var(--error)') : ''}
+            ${_statBox('Quantity', Utils.formatNumber(qty), qty === 0 ? 'var(--error)' : qty <= 10 ? 'var(--warning)' : 'var(--success)')}
           </div>
 
           <div style="margin-top:12px;font-size:11.5px;color:var(--txt-4)">
@@ -105,7 +99,7 @@ const InventoryList = (() => {
   let _total   = 0;
   let _loading = false;
 
-  const COLS = ['SKU', 'Box #', 'Part #', 'UPC', 'Initial Stock', 'Units Sold', 'Remaining', 'Date Added'];
+  const COLS = ['SKU', 'Box #', 'Part #', 'UPC', 'Quantity', 'Date Added', 'Notes'];
 
   function _renderTable(items, total) {
     _total = total || 0;
@@ -120,17 +114,15 @@ const InventoryList = (() => {
     }
 
     tbody.innerHTML = items.map(item => {
-      const remaining = Number(item.remaining_stock ?? item.quantity ?? 0);
-      const phantom   = Number(item.phantom_units ?? 0);
-      return `<tr class="${phantom > 0 ? 'row-error' : ''}">
+      const qty = Number(item.quantity ?? 0);
+      return `<tr>
         <td style="font-weight:600;color:var(--txt-1)">${Utils.escapeHtml(item.sku || '—')}</td>
         <td>${Utils.escapeHtml(item.box_number || '—')}</td>
         <td>${Utils.escapeHtml(item.part_number || '—')}</td>
         <td>${Utils.escapeHtml(item.upc || '—')}</td>
-        <td class="num">${Utils.formatNumber(item.initial_stock ?? item.quantity)}</td>
-        <td class="num">${Utils.formatNumber(item.units_sold)}</td>
-        <td class="num">${Utils.stockBadge(remaining)}</td>
+        <td class="num">${Utils.stockBadge ? Utils.stockBadge(qty) : Utils.formatNumber(qty)}</td>
         <td>${Utils.formatDate(item.date_added)}</td>
+        <td style="font-size:12px;color:var(--txt-4)">${Utils.escapeHtml(item.notes || '—')}</td>
       </tr>`;
     }).join('');
 

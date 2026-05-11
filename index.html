@@ -258,7 +258,7 @@
           <div class="section-header">
             <div>
               <div class="section-title">Inventory List</div>
-              <div class="section-sub">All inventory records with live stock calculations</div>
+              <div class="section-sub">All uploaded inventory records by organization</div>
             </div>
           </div>
           <div class="card card-table" style="padding:0">
@@ -277,10 +277,9 @@
                     <th>Box #</th>
                     <th>Part #</th>
                     <th>UPC</th>
-                    <th class="num">Initial Stock</th>
-                    <th class="num">Units Sold</th>
-                    <th class="num">Remaining</th>
+                    <th class="num">Quantity</th>
                     <th>Date Added</th>
+                    <th>Notes</th>
                   </tr>
                 </thead>
                 <tbody id="inventory-tbody"></tbody>
@@ -456,6 +455,7 @@
 
           <div id="settings-tab-list" class="tab-list">
             <button class="tab-btn active" data-tab="users">Users</button>
+            <button class="tab-btn" data-tab="organizations">Organizations</button>
             <button class="tab-btn" data-tab="profile">My Profile</button>
             <button class="tab-btn" data-tab="system">System Status</button>
             <button class="tab-btn" data-tab="logs">Logs</button>
@@ -473,7 +473,7 @@
                   <thead>
                     <tr>
                       <th>Name</th>
-                      <th>Email</th>
+                      <th>Username</th>
                       <th>Role</th>
                       <th>Status</th>
                       <th>Actions</th>
@@ -485,20 +485,46 @@
             </div>
           </div>
 
+          <!-- Organizations tab -->
+          <div id="tab-organizations" class="tab-panel">
+            <div class="card card-table" style="padding:0">
+              <div class="filter-bar">
+                <div class="card-title" style="flex:1">Organizations</div>
+                <button class="btn btn-primary btn-sm" id="add-org-btn">+ New Organization</button>
+              </div>
+              <div class="table-wrap" style="border:none;border-radius:0">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Slug</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="orgs-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
           <!-- Profile tab -->
           <div id="tab-profile" class="tab-panel">
             <div class="card" style="max-width:440px">
               <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
                 <div id="profile-avatar" style="width:56px;height:56px;border-radius:50%;background:var(--primary-100);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:var(--primary-text)">?</div>
                 <div>
-                  <div id="profile-name"  style="font-size:17px;font-weight:700;color:var(--txt-1)">—</div>
-                  <div id="profile-email" style="font-size:13px;color:var(--txt-3)">—</div>
-                  <div id="profile-role"  style="font-size:12px;color:var(--txt-4);margin-top:2px">—</div>
+                  <div id="profile-name"     style="font-size:17px;font-weight:700;color:var(--txt-1)">—</div>
+                  <div id="profile-username" style="font-size:13px;color:var(--txt-3)">—</div>
+                  <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+                    <span id="profile-org"  style="font-size:12px;color:var(--txt-4)">—</span>
+                    <span id="profile-role" style="font-size:11px;font-weight:600;color:var(--txt-4)">—</span>
+                  </div>
                 </div>
               </div>
               <div class="info-banner">
                 <span class="info-banner-icon">ℹ</span>
-                <span>To change your password or email, contact an administrator.</span>
+                <span>To change your password, contact an administrator. Use the org switcher in the top bar to change organizations.</span>
               </div>
             </div>
           </div>
@@ -539,16 +565,16 @@
 
   <!-- App modules — order matters: utilities first, then API/auth, then features, app last -->
   <!-- v=3 — bump this number on every deploy to bust browser/CDN cache -->
-  <script src="js/utilities.js?v=8"></script>
-  <script src="js/notifications.js?v=8"></script>
-  <script src="js/loading.js?v=8"></script>
-  <script src="js/api.js?v=8"></script>
-  <script src="js/auth.js?v=8"></script>
-  <script src="js/dashboard.js?v=8"></script>
-  <script src="js/inventory.js?v=8"></script>
-  <script src="js/orders.js?v=8"></script>
-  <script src="js/uploads.js?v=8"></script>
-  <script src="js/app.js?v=8"></script>
+  <script src="js/utilities.js?v=9"></script>
+  <script src="js/notifications.js?v=9"></script>
+  <script src="js/loading.js?v=9"></script>
+  <script src="js/api.js?v=9"></script>
+  <script src="js/auth.js?v=9"></script>
+  <script src="js/dashboard.js?v=9"></script>
+  <script src="js/inventory.js?v=9"></script>
+  <script src="js/orders.js?v=9"></script>
+  <script src="js/uploads.js?v=9"></script>
+  <script src="js/app.js?v=9"></script>
 
 </body>
 </html>
