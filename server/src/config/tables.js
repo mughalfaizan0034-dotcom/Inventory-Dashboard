@@ -16,6 +16,7 @@ export const TABLES = {
 
   VALIDATION_ERRORS: `${DATASETS.LOGS}.validation_errors`,
   DEBUG_LOGS:        `${DATASETS.LOGS}.debug_logs`,
+  ACTIVITY_LOG:      `${DATASETS.LOGS}.activity_log`,
 
   INVENTORY_UPLOADS: `${DATASETS.STAGING}.inventory_uploads`,
   ORDER_UPLOADS:     `${DATASETS.STAGING}.order_uploads`,

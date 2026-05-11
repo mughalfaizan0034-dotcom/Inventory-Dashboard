@@ -27,7 +27,14 @@ const deleteBodySchema = z.object({
   { message: 'Provide row_ids or at least one filter criterion' }
 );
 
-export async function ordersRoutes(fastify, { ordersService }) {
+const patchSchema = z.object({
+  order_date:       z.string().min(1),
+  quantity_sold:    z.coerce.number().int().positive(),
+  platform:         z.string().min(1),
+  shipped_from_box: z.string().optional().default(''),
+});
+
+export async function ordersRoutes(fastify, { ordersService, activityService }) {
   fastify.get('/', { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = ordersQuerySchema.safeParse(request.query);
     if (!parsed.success) {
@@ -60,6 +67,32 @@ export async function ordersRoutes(fastify, { ordersService }) {
     }
   });
 
+  fastify.patch('/:rowId', { preHandler: [authenticate] }, async (request, reply) => {
+    const rowId  = request.params.rowId;
+    const parsed = patchSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: 'Invalid body', details: parsed.error.flatten() });
+    }
+    const updates = {
+      ...parsed.data,
+      shipped_from_box: parsed.data.shipped_from_box || null,
+    };
+    try {
+      await ordersService.updateRow(request.user.organization_id, rowId, updates);
+      activityService?.log({
+        organizationId: request.user.organization_id,
+        userId:         request.user.user_id,
+        actionType:     'edit_order',
+        entityType:     'orders',
+        description:    `Updated order (SKU ${updates.order_date})`,
+      }).catch(() => {});
+      return reply.send({ success: true });
+    } catch (err) {
+      request.log.error({ err }, 'Order update error');
+      return reply.code(500).send({ success: false, error: 'Internal server error' });
+    }
+  });
+
   fastify.delete('/rows', { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = deleteBodySchema.safeParse(request.body);
     if (!parsed.success) {
@@ -78,6 +111,13 @@ export async function ordersRoutes(fastify, { ordersService }) {
           search:    filters.search     || null,
         } : null,
       });
+      activityService?.log({
+        organizationId: request.user.organization_id,
+        userId:         request.user.user_id,
+        actionType:     'delete_orders',
+        entityType:     'orders',
+        description:    `Deleted ${data.deleted} order${data.deleted !== 1 ? 's' : ''}`,
+      }).catch(() => {});
       return reply.send({ success: true, data });
     } catch (err) {
       if (err.code === 400) return reply.code(400).send({ success: false, error: err.message });

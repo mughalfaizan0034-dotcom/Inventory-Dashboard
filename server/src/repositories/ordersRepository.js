@@ -103,5 +103,29 @@ export function createOrdersRepository({ bq, projectId }) {
     return total;
   }
 
-  return { findAll, getPlatforms, deleteByRowIds, deleteByFilters };
+  async function updateRow(organizationId, rowId, updates) {
+    const query = `
+      UPDATE ${table}
+      SET
+        order_date       = @orderDate,
+        quantity_sold    = @quantitySold,
+        platform         = @platform,
+        shipped_from_box = @shippedFromBox
+      WHERE order_row_id = @rowId AND organization_id = @organizationId
+    `;
+    await bq.query({
+      query,
+      params: {
+        organizationId,
+        rowId,
+        orderDate:      updates.order_date,
+        quantitySold:   updates.quantity_sold,
+        platform:       updates.platform,
+        shippedFromBox: updates.shipped_from_box ?? null,
+      },
+      types: { shippedFromBox: 'STRING' },
+    });
+  }
+
+  return { findAll, getPlatforms, deleteByRowIds, deleteByFilters, updateRow };
 }

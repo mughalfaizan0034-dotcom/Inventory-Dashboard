@@ -26,5 +26,9 @@ export function createOrdersService({ ordersRepo }) {
     throw Object.assign(new Error('No selection criteria provided'), { code: 400 });
   }
 
-  return { list, getPlatforms, deleteRows };
+  async function updateRow(organizationId, rowId, updates) {
+    await ordersRepo.updateRow(organizationId, rowId, updates);
+  }
+
+  return { list, getPlatforms, deleteRows, updateRow };
 }
