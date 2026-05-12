@@ -31,7 +31,6 @@ const Dashboard = (() => {
         { id: 'dm-units-sold',    label: 'Units Sold',          field: 'unitsSold',              navigate: 'orders' },
         { id: 'dm-actual-sold',   label: 'Actual Units Sold',   field: 'actualUnitsSold',        accent: 'teal', sub: 'Total sold minus phantom demand' },
         { id: 'dm-phantom-u-s',   label: 'Phantom Units',       field: 'phantomUnits',           warnIfPositive: true },
-        { id: 'dm-ignored-ord',   label: 'Ignored Orders',      field: 'ignoredOrders' },
       ],
     },
     {
