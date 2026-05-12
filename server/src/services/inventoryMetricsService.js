@@ -73,7 +73,6 @@ export function createInventoryMetricsService({ bq, projectId }) {
       SELECT
         COUNT(*)                    AS total_skus,
         SUM(ps.initial_qty)         AS total_inventory_units,
-        SUM(ps.fulfilled)           AS actual_units_sold,
         SUM(ps.remaining)           AS physical_remaining_units,
         SUM(ps.phantom)             AS phantom_units,
         COUNTIF(ps.remaining > 0)   AS in_stock_skus,
@@ -124,7 +123,9 @@ export function createInventoryMetricsService({ bq, projectId }) {
         bq.query({ query: ordersQuery,  params: p }).then(r => r[0][0] ?? {}),
       ]);
 
-      const actualUnitsSold        = Number(invRow.actual_units_sold       ?? 0);
+      const unitsSoldRaw           = Number(ordRow.units_sold_raw          ?? 0);
+      const phantomUnits           = Number(invRow.phantom_units           ?? 0);
+      const actualUnitsSold        = unitsSoldRaw - phantomUnits;
       const physicalRemainingUnits = Number(invRow.physical_remaining_units ?? 0);
 
       return {
@@ -133,13 +134,13 @@ export function createInventoryMetricsService({ bq, projectId }) {
         totalUnits:             Number(invRow.total_inventory_units   ?? 0),
         actualUnitsSold,
         physicalRemainingUnits,
-        phantomUnits:           Number(invRow.phantom_units           ?? 0),
+        phantomUnits,
         inStockSkus:            Number(invRow.in_stock_skus           ?? 0),
         oosSkus:                Number(invRow.oos_skus                ?? 0),
         phantomSkus:            Number(invRow.phantom_skus            ?? 0),
         undefinedSkus:          Number(invRow.undefined_inventory_rows ?? 0),
         // Sales KPIs
-        unitsSold:              Number(ordRow.units_sold_raw          ?? 0),
+        unitsSold:              unitsSoldRaw,
         totalOrders:            Number(ordRow.total_orders            ?? 0),
         activePlatforms:        Number(ordRow.active_platforms        ?? 0),
         ignoredOrders:          Number(ordRow.ignored_orders          ?? 0),
@@ -198,31 +199,6 @@ export function createInventoryMetricsService({ bq, projectId }) {
       ORDER BY count DESC
     `;
 
-    const topBoxesQuery = `
-      WITH ${_ordersAggCTE()},
-      inv_agg AS (
-        SELECT sku, box_number, SUM(quantity) AS quantity
-        FROM ${invTable}
-        WHERE organization_id = @organizationId
-          AND box_number IS NOT NULL AND TRIM(CAST(box_number AS STRING)) != ''
-        GROUP BY sku, box_number
-      ),
-      box_remaining AS (
-        SELECT
-          i.box_number,
-          SUM(GREATEST(i.quantity - COALESCE(o.ordered, 0), 0)) AS remaining_units,
-          COUNT(DISTINCT i.sku) AS sku_count
-        FROM inv_agg i
-        LEFT JOIN orders_agg o ON i.sku = o.effective_sku
-        GROUP BY i.box_number
-      )
-      SELECT box_number, remaining_units, sku_count
-      FROM box_remaining
-      WHERE remaining_units > 0
-      ORDER BY remaining_units DESC
-      LIMIT 10
-    `;
-
     const healthByMonthQuery = `
       WITH ${_ordersAggCTE()},
       inv_agg AS (
@@ -257,51 +233,6 @@ export function createInventoryMetricsService({ bq, projectId }) {
       LIMIT 24
     `;
 
-    const oversoldSkusQuery = `
-      WITH ${_ordersAggCTE()},
-      inv_agg AS (
-        SELECT sku, SUM(quantity) AS quantity
-        FROM ${invTable}
-        WHERE organization_id = @organizationId
-        GROUP BY sku
-      )
-      SELECT
-        i.sku,
-        i.quantity                                                AS original_qty,
-        COALESCE(o.ordered, 0)                                    AS units_sold,
-        GREATEST(COALESCE(o.ordered, 0) - i.quantity, 0)         AS remaining,
-        GREATEST(COALESCE(o.ordered, 0) - i.quantity, 0)         AS phantom_demand
-      FROM inv_agg i
-      LEFT JOIN orders_agg o ON i.sku = o.effective_sku
-      WHERE COALESCE(o.ordered, 0) > i.quantity
-      ORDER BY phantom_demand DESC
-      LIMIT 10
-    `;
-
-    const boxUtilizationQuery = `
-      WITH ${_ordersAggCTE()},
-      inv_agg AS (
-        SELECT sku, box_number, SUM(quantity) AS quantity
-        FROM ${invTable}
-        WHERE organization_id = @organizationId
-          AND box_number IS NOT NULL AND TRIM(CAST(box_number AS STRING)) != ''
-        GROUP BY sku, box_number
-      ),
-      box_stats AS (
-        SELECT
-          i.box_number,
-          COUNT(DISTINCT i.sku) AS total_skus,
-          COUNT(DISTINCT CASE WHEN GREATEST(i.quantity - COALESCE(o.ordered, 0), 0) > 0 THEN i.sku END) AS active_skus
-        FROM inv_agg i
-        LEFT JOIN orders_agg o ON i.sku = o.effective_sku
-        GROUP BY i.box_number
-      )
-      SELECT box_number, total_skus, active_skus
-      FROM box_stats
-      ORDER BY total_skus DESC
-      LIMIT 10
-    `;
-
     const run = (query, label) =>
       bq.query({ query, params: p })
         .then(r => r[0])
@@ -310,15 +241,12 @@ export function createInventoryMetricsService({ bq, projectId }) {
           return [];
         });
 
-    const [stockStatus, topBoxes, healthByMonth, mostOversoldSkus, boxUtilization] = await Promise.all([
-      run(stockStatusQuery,    'stockStatus'),
-      run(topBoxesQuery,       'topBoxes'),
-      run(healthByMonthQuery,  'healthByMonth'),
-      run(oversoldSkusQuery,   'oversoldSkus'),
-      run(boxUtilizationQuery, 'boxUtilization'),
+    const [stockStatus, healthByMonth] = await Promise.all([
+      run(stockStatusQuery,   'stockStatus'),
+      run(healthByMonthQuery, 'healthByMonth'),
     ]);
 
-    return { stockStatus, topBoxes, healthByMonth, mostOversoldSkus, boxUtilization };
+    return { stockStatus, healthByMonth };
   }
 
   return { computeSummary, getStockAnalytics };
