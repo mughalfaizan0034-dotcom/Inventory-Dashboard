@@ -274,21 +274,43 @@
 }
 .settings-sticky .section-header { margin-bottom: 14px; }
 
+/* Body is a flex column — tab panels fill it and scroll themselves */
 .settings-body {
   flex: 1;
-  overflow-y: auto;
-  padding: 20px 24px 24px;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px 24px;
+}
+
+/* Every active settings tab panel fills remaining height and scrolls */
+#page-settings .tab-panel.active {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Logs tab: panel itself does NOT scroll — only the content area inside does */
+#page-settings #tab-logs.tab-panel.active {
+  overflow: hidden;
 }
 
 .settings-logs-card {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
+
+/* Logs content: fills remaining card space and scrolls */
 .settings-logs-content {
+  flex: 1;
   overflow-y: auto;
-  max-height: calc(100vh - 295px);
+  min-height: 0;
 }
+#logs-pagination { flex-shrink: 0; }
 
 /* ── Box Lookup dedicated page ──────────────────────────────── */
 #page-box-lookup { overflow: hidden; }
