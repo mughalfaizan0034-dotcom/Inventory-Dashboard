@@ -258,9 +258,36 @@
   animation: fadeIn .18s var(--ease);
 }
 /* Standard pages scroll with padding — excludes pages with custom internal layout */
-.page.active:not(#page-dashboard):not(#page-box-lookup):not(#page-uploads) {
+.page.active:not(#page-dashboard):not(#page-box-lookup):not(#page-uploads):not(#page-settings) {
   padding: 24px;
   overflow-y: auto;
+}
+
+/* ── Settings page layout ───────────────────────────────────── */
+#page-settings { overflow: hidden; }
+
+.settings-sticky {
+  flex-shrink: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 24px 0;
+}
+.settings-sticky .section-header { margin-bottom: 14px; }
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 24px;
+  min-height: 0;
+}
+
+.settings-logs-card {
+  display: flex;
+  flex-direction: column;
+}
+.settings-logs-content {
+  overflow-y: auto;
+  max-height: calc(100vh - 295px);
 }
 
 /* ── Box Lookup dedicated page ──────────────────────────────── */
