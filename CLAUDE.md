@@ -1,178 +1,278 @@
-# Patman Inventory Dashboard — Claude Implementation Guide
+# Core Architecture & Inventory Logic Guide
 
-## Stack
-- **Frontend**: GitHub Pages static site (vanilla JS, no bundler)
-- **Backend**: Fastify on Cloud Run (Node.js 22 LTS)
-- **Database**: BigQuery (multi-tenant, `organization_id` scopes every query)
-- **Auth**: JWT — 15-min access tokens + 7-day refresh tokens; `membership_id` in every JWT
+## Core System Direction
 
-## Critical Rules (never violate)
-- No SQL inside route handlers — repositories only
-- No business logic in repositories — services only
-- No frontend inventory calculations — BigQuery is authoritative
-- No synthetic SKU generation
-- No silent failures
-- Phantom unit / undefined SKU / negative inventory logic is backend-only
-- Every query must filter by `organization_id`
+This system must follow a single centralized inventory calculation architecture.
 
----
+Do NOT calculate inventory independently on different pages/components.
 
-## Operational Inventory Model
+Instead:
 
-This is the most important business logic in the system.
+1. Load inventory + orders once after login/upload
+2. Run all calculations through one centralized inventory engine/service
+3. Store computed metrics in shared normalized state/data models
+4. Every page must consume the same computed dataset
 
-### Two Distinct Concepts
+This is critical to prevent KPI mismatches and inconsistent inventory values across:
 
-#### 1. Physical Inventory (warehouse reality)
-Actual sellable stock. When marketplace orders exceed stock, **excess orders are cancelled/refunded and never shipped**. Phantom orders do NOT consume physical stock.
+* Dashboard
+* Orders
+* Inventory List
+* Box Lookup
+* Analytics
+* Exports
 
-```
-physical_remaining = MAX(initial_quantity - fulfilled_quantity, 0)
-```
+Consistency and data accuracy are the highest priorities.
 
-Physical stock can never go negative. A warehouse box cannot have −5 units.
+It is acceptable to show:
 
-#### 2. Phantom Demand (operational exception)
-Orders received beyond available stock. These are not fulfilled — they are eventually cancelled. Track separately as a warning metric, not as inventory depletion.
+* loading state
+* processing indicator
+* syncing overlay
 
-```
-phantom_units = ABS(MIN(initial_quantity - total_ordered, 0))
-```
+while centralized calculations complete.
 
-### Example
-
-| Fact | Value |
-|------|-------|
-| Initial stock | 10 units |
-| Orders received | 15 units |
-| **Physical fulfilled** | **10 units** |
-| **Physical remaining** | **0 units** |
-| **Phantom demand** | **5 units** |
-
-The system must NOT show `remaining = -5`. That is operationally false.
-
-### Formula Summary
-
-| KPI | Formula |
-|-----|---------|
-| Total Units | `SUM(initial_quantity)` |
-| Fulfilled Units Sold | `MIN(available_inventory, ordered_quantity)` per SKU |
-| Phantom Units | Ordered quantity exceeding available inventory |
-| Physical Remaining | `Total Units - Fulfilled Units Sold` (never negative) |
-
-### Current vs Correct
-
-| Calculation | Current (wrong) | Correct |
-|-------------|-----------------|---------|
-| Remaining | `initial - total_ordered` | `MAX(initial - total_ordered, 0)` |
-| Phantom | ABS of negative remaining | Orders that couldn't be fulfilled |
-| Physical stock | Can go negative | Floored at 0 |
-
-### Canonical Column Structure (enforced across all pages)
-
-Every surface that displays inventory stock data uses the same four derived fields — never raw `units_sold` or uncapped `remaining_stock`:
-
-| Field | Source / Formula | Display label |
-|-------|-----------------|---------------|
-| `initial_stock` / `quantity` | Raw from BigQuery | **Initial** |
-| `fulfilled_units` | `LEAST(units_sold, quantity)` | **Actual Sold** |
-| `phantom_units` | `GREATEST(units_sold - quantity, 0)` | **Phantom** |
-| `remaining_stock` | `GREATEST(quantity - fulfilled_units, 0)` | **Remaining** |
-
-These four fields are computed in BigQuery CTEs and returned by every relevant repository method. Frontend code must never calculate them independently from raw `units_sold` alone — except as a fallback when the old backend (pre-redeploy) returns neither `fulfilled_units` nor `phantom_units`, in which case the frontend derives them identically to the formulas above.
-
-### Impact Across Pages
-
-**Dashboard KPIs**
-- "Actual Remaining" = physical stock only, never negative (`remaining_stock`)
-- "Phantom Units" = unfulfillable demand, not depleted inventory (`phantom_units`)
-- "Actual Sold" = fulfilled units only, capped at available stock per SKU (`fulfilled_units`)
-
-**Inventory List** — confirmed canonical column order:
-`[ checkbox | SKU | Box # | Part # | UPC | Initial Qty | Actual Sold | Phantom | Remaining | Date Added | Notes | edit ]`
-- `Phantom` column in red when `> 0`, muted (`var(--txt-4)`) when `0`
-- `Remaining` column in green when `> 0`, muted when `0` — never negative, never red
-- Row gets `.row-phantom` class when `phantom_units > 0`
-
-**Box Lookup** — confirmed canonical column order:
-*UPC summary card:* `[ Initial | Actual Sold | Phantom | Remaining | Status pill ]`
-*Box table:* `[ Box # | Initial | Actual Sold | Phantom | Remaining | Status ]`
-- Status pill: **Phantom** (red) when `phantom > 0`, **In Stock** (green) when `remaining > 0`, **OOS** (orange) otherwise
-- Row gets `.row-phantom` class when `phantom_units > 0`
-- Box 164 with 7 units and 0 orders = 7 remaining, always
-
-**Performance / Analytics**
-- "Units Sold" chart = fulfilled units (demand capped at stock)
-- Phantom demand tracked as separate exception metric
-- Do not subtract phantom from physical inventory in any chart
-
-**Exports**
-- CSV columns: `SKU, Box #, Part #, UPC, Initial Qty, Actual Sold, Phantom Units, Actual Remaining, Date Added, Notes`
-- All exports use `fulfilled_units` / `phantom_units`, not raw order totals
+Never prioritize instant rendering over accuracy.
 
 ---
 
-## Upload / Template Workflow
+# Upload Architecture
 
-```
-DOWNLOAD:  inventory_template.csv / orders_template.csv  (.csv)
-EDIT IN:   Excel / Google Sheets / Numbers
-SAVE AS:   UTF-8 tab-delimited .txt
-UPLOAD:    .txt only (server validates extension and parses tab-delimited)
-```
+Users will:
 
-**Do NOT** convert template downloads to `.txt`. Do NOT accept `.csv` uploads. These are intentionally different.
+* download CSV templates
+* edit inventory/orders in spreadsheet software
+* upload files back in `.txt` format
 
----
+Reason:
+`.txt` tab-delimited uploads support easier bulk processing and more stable parsing for large datasets.
 
-## Upload Architecture
-- TXT-only: UTF-8 tab-delimited `.txt` files
-- Multipart via `@fastify/multipart`, streaming readline parser, 500-row batch inserts
-- Max 10 MB / 100,000 rows
-- Inventory uploads: full replacement (DELETE + chunked insert)
-- Orders uploads: append (chunked insert)
+System requirements:
+
+* support large uploads efficiently
+* normalize uploaded data before calculations
+* validate required columns before import
+* reject malformed uploads safely
 
 ---
 
-## Multi-Tenant Auth
-- `users`: global identity
-- `organizations`: org_id, slug, display_name
-- `memberships`: user_id + organization_id + role — source of truth for access
-- Single-org login → direct tokens; multi-org login → pending_token + org selector UI
-- `/auth/select-org`: pending_token + membership_id → scoped access token
-- `/auth/switch-org`: in-app org switching with valid access token
+# Inventory Logic
+
+## Physical Inventory Rules
+
+Only actual fulfilled inventory-backed sales reduce stock.
+
+The following should NEVER reduce physical inventory:
+
+* phantom units
+* phantom orders
+* unknown SKU orders
+* undefined SKUs
+
+Remaining stock must NEVER go below 0 due to phantom demand.
 
 ---
 
-## Table Schemas
-**Inventory:** `sku, upc, part_number, box_number, quantity (INT), date_added, notes`
-**Orders:** `order_id, order_date, sku, upc, quantity_sold (INT), platform, source_file, shipped_from_box`
+# Phantom Logic
+
+Phantom units are analytics/warning indicators only.
+
+They exist to show:
+
+* oversold demand
+* attempted fulfillment beyond stock
+
+Phantom units should:
+
+* appear in analytics
+* appear in box lookup
+* appear in dashboard summaries
+
+But phantom units must NOT:
+
+* reduce physical inventory
+* make remaining inventory negative
+* affect SKU stock availability
+
+Example:
+
+Initial stock = 1
+Units sold = 2
+Phantom = 1
+
+Correct behavior:
+
+Actual units sold = 1
+Remaining stock = 0
+Phantom units = 1
+
+Incorrect behavior:
+Remaining = -1
+
+Never allow negative remaining inventory caused by phantom sales.
 
 ---
 
-## ARA SKU Pattern
-SKUs matching `^ARA[0-9]+-.+$` use `shipped_from_box` overrides. When `shipped_from_box` is set, the effective SKU for order matching becomes:
-```
-CONCAT('ARA', shipped_from_box, REGEXP_EXTRACT(sku, '^ARA[0-9]+(.+)$'))
-```
-This is applied in every orders aggregation CTE.
+# Dashboard KPI Logic
+
+Use centralized calculations only.
+
+Correct KPI behavior:
+
+Total Units
+= total uploaded inventory
+
+Units Sold
+= all order quantities
+
+Actual Units Sold
+= Units Sold - Phantom Units
+
+Remaining Stock
+= Total Units - Actual Units Sold
+
+Phantom Units
+= warning metric only
+
+Undefined SKU Orders
+= orders with no valid inventory match
+
+Undefined/unknown orders must not reduce inventory.
 
 ---
 
-## Box Lookup Aggregation
-Boxes may have multiple rows with different SKU strings (different upload batches). The correct approach is 4-CTE SQL:
-1. `inv_grouped` — SUM quantity by (box_number, part_number, upc)
-2. `inv_skus` — DISTINCT all SKU strings per (box_number, part_number, upc)
-3. `ord_summary` — aggregate orders with ARA override
-4. `box_orders` — JOIN every SKU variant against ord_summary, SUM per box
-5. Final JOIN on (box_number, part_number, upc) only — never on SKU alone
+# Box Lookup Logic
+
+Users search by:
+
+* part number
+* SKU
+* UPC
+
+Results must show:
+
+* Initial
+* Actual Sold
+* Phantom
+* Remaining
+
+Grouped by:
+
+* box/SKU allocation
+
+Remaining stock in box lookup must reflect actual physical inventory only.
+
+Phantom values should be informational only.
+
+Never allow phantom calculations to reduce remaining below zero.
 
 ---
 
-## Phantom Row Styling
-Shared CSS class `.row-phantom` in `tables.css`:
-- Background: `rgba(220, 38, 38, 0.05)` soft pink
-- Hover: `rgba(220, 38, 38, 0.09)`
-- No PHANTOM badge/label on rows — background alone signals the exception
-- Applied identically across Inventory List, Box Lookup, and Orders pages
-- **Trigger:** `phantom_units > 0` (NOT `remaining < 0` — remaining is always floored at 0)
+# Orders Page Logic
+
+Orders page is fulfillment management, not analytics.
+
+Do NOT manage phantom orders at row level.
+
+No phantom tagging/filtering logic per order row.
+
+---
+
+# Shipped SKU Reassignment
+
+Users can change fulfillment SKU from the Orders page.
+
+Example:
+
+Original ordered SKU:
+ARA1-123-321
+
+Same part exists in other boxes:
+
+* ARA2-123-321
+* ARA3-123-321
+
+The dropdown should:
+
+* show only IN-STOCK compatible SKUs
+* show full SKU values
+* exclude out-of-stock alternatives
+
+When reassigned:
+
+Original order SKU remains in order history.
+
+But inventory deduction must occur from the reassigned shipped SKU only.
+
+Example:
+
+Original ordered SKU:
+ARA1-123-321
+
+Shipped SKU changed to:
+ARA2-123-321
+
+Correct behavior:
+
+* deduct inventory from ARA2-123-321
+* do NOT deduct inventory from ARA1-123-321
+
+This reassignment must update:
+
+* dashboard KPIs
+* inventory list
+* box lookup
+* exports
+* analytics
+
+All through centralized calculations only.
+
+---
+
+# Critical Engineering Requirement
+
+Before building UI pages:
+
+1. Build centralized inventory calculation engine first
+2. Normalize all inventory/order relationships
+3. Generate shared computed metrics
+4. Feed all pages from the same source-of-truth dataset
+
+Never duplicate calculation logic across pages.
+
+Future fixes should happen in ONE centralized calculation layer, not page-by-page.
+
+---
+
+# UI/UX Direction
+
+System should behave like a professional ERP/inventory management platform.
+
+Priorities:
+
+* consistency
+* compact layouts
+* responsive sizing
+* operational clarity
+* enterprise-style dashboards
+
+Avoid:
+
+* duplicated calculations
+* inconsistent KPIs
+* oversized UI elements
+* spreadsheet-like layouts pretending to be dashboards
+
+---
+
+# Final Requirement
+
+After every change:
+
+* validate dashboard values
+* validate inventory list values
+* validate orders page values
+* validate box lookup values
+* validate exports
+
+All numbers must match the centralized inventory engine exactly.
