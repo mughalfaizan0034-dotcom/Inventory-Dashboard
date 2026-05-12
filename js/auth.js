@@ -386,7 +386,7 @@ const Auth = (() => {
     const level = ROLE_LEVEL[org.role] || 0;
 
     document.querySelectorAll('[data-min-role]').forEach(el => {
-      const required = LEVEL[el.dataset.minRole] || 0;
+      const required = ROLE_LEVEL[el.dataset.minRole] || 0;
       el.style.display = level >= required ? '' : 'none';
     });
 

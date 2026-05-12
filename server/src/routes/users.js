@@ -9,12 +9,30 @@ const createUserSchema = z.object({
   role:         z.enum(['admin', 'manager', 'staff', 'viewer']).optional().default('viewer'),
 });
 
-const updateMembershipSchema = z.object({
-  role:      z.enum(['admin', 'manager', 'staff', 'viewer']).optional(),
-  is_active: z.boolean().optional(),
+const updateUserSchema = z.object({
+  role:         z.enum(['admin', 'manager', 'staff', 'viewer']).optional(),
+  is_active:    z.boolean().optional(),
+  display_name: z.string().min(1).max(100).optional(),
+  password:     z.string().min(8).optional(),
 });
 
 export async function usersRoutes(fastify, { usersService }) {
+
+  // Find global user by username — for assigning existing users to the current org.
+  fastify.get('/search', { preHandler: [authenticate, requireRole('admin')] }, async (request, reply) => {
+    const username = String(request.query.username || '').trim().toLowerCase();
+    if (!username) {
+      return reply.code(400).send({ success: false, error: 'username query parameter required' });
+    }
+    try {
+      const user = await usersService.findByUsername(username);
+      if (!user) return reply.code(404).send({ success: false, error: 'User not found' });
+      return reply.send({ success: true, data: user });
+    } catch (err) {
+      request.log.error({ err }, 'User search error');
+      return reply.code(500).send({ success: false, error: 'Internal server error' });
+    }
+  });
 
   // List members of the current org (via memberships).
   fastify.get('/', { preHandler: [authenticate, requireRole('manager')] }, async (request, reply) => {
@@ -46,15 +64,15 @@ export async function usersRoutes(fastify, { usersService }) {
     }
   });
 
-  // Update membership role or active status.
+  // Update membership role/status and optionally user profile (display_name, password).
   fastify.patch('/:id', { preHandler: [authenticate, requireRole('admin')] }, async (request, reply) => {
-    const parsed = updateMembershipSchema.safeParse(request.body);
+    const parsed = updateUserSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: 'Invalid request body' });
     }
     try {
-      await usersService.updateMembership(request.params.id, request.user.organization_id, parsed.data);
-      request.log.info({ event: 'membership_updated', target_id: request.params.id, by: request.user.user_id }, 'Membership updated');
+      await usersService.updateUser(request.params.id, request.user.organization_id, parsed.data);
+      request.log.info({ event: 'user_updated', target_id: request.params.id, by: request.user.user_id }, 'User updated');
       return reply.send({ success: true });
     } catch (err) {
       if (err instanceof AppError) {

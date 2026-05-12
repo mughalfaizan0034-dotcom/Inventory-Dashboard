@@ -6,91 +6,454 @@
 /* ── Settings page ──────────────────────────────────────────── */
 const Settings = (() => {
 
-  /* ── Users tab ──────────────────────────────────────────── */
-  let _userModal = null;
-  let _editingUserId = null;
+  let _usersCache = [];
+  let _orgsCache  = [];
 
-  function _openUserModal(user = null) {
-    _editingUserId = user?.membership_id || user?.user_id || null;
-    const isEdit   = !!user;
-    const title    = isEdit ? 'Edit Member' : 'Add User';
+  const ROLE_COLOR = { admin: 'error', manager: 'warning', staff: 'info', viewer: 'gray' };
+  const ROLE_LABEL = { admin: 'Admin — full access', manager: 'Manager — uploads & reports', staff: 'User — full operations', viewer: 'Viewer — view & download only' };
 
-    if (!_userModal) {
-      _userModal = new Modal({ title, maxWidth: '440px' });
+  function _roleOptions(selected = 'viewer') {
+    return Object.entries(ROLE_LABEL).map(([v, l]) =>
+      `<option value="${v}"${v === selected ? ' selected' : ''}>${Utils.escapeHtml(l)}</option>`
+    ).join('');
+  }
+
+  /* ── Users: load ────────────────────────────────────────── */
+  async function loadUsers() {
+    const tbody = document.getElementById('users-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = Loading.tableRows(5, 5);
+    try {
+      const users  = await API.getUsers();
+      _usersCache  = users;
+      if (!users.length) {
+        tbody.innerHTML = `<tr><td colspan="5">${Loading.empty('users', 'No users in this organization', 'Add a new user or assign an existing one')}</td></tr>`;
+        return;
+      }
+      const myMembershipId = Auth.getOrganization()?.membership_id;
+      tbody.innerHTML = users.map(u => {
+        const mid   = Utils.escapeHtml(u.membership_id || '');
+        const dname = Utils.escapeHtml(u.display_name || u.username || '?');
+        const isSelf = u.membership_id === myMembershipId;
+        return `<tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="user-avatar-sm">${(u.display_name || u.username || '?')[0].toUpperCase()}</div>
+              <span style="font-weight:500">${dname}</span>
+            </div>
+          </td>
+          <td><span style="font-size:12px;color:var(--txt-3);font-family:monospace">@${Utils.escapeHtml(u.username || '—')}</span></td>
+          <td>${Utils.badgeHtml(ROLE_COLOR[u.role] || 'gray', Utils.capitalize(u.role || ''))}</td>
+          <td>${u.is_active !== false ? Utils.badgeHtml('success', 'Active') : Utils.badgeHtml('gray', 'Inactive')}</td>
+          <td>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" data-action="edit-user" data-id="${mid}">Edit</button>
+              <button class="btn btn-ghost btn-sm" data-action="change-pwd" data-id="${mid}" title="Change password">Pwd</button>
+              ${!isSelf ? `<button class="btn btn-danger btn-sm" data-action="remove-user" data-id="${mid}" data-name="${dname}">Remove</button>` : ''}
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5">${Loading.error('Failed to load users')}</td></tr>`;
+      Notify.apiError(err);
     }
-    _userModal.setTitle(title);
-    _userModal.setBody(`
+  }
+
+  /* ── Users: add new ─────────────────────────────────────── */
+  function _openAddNewUserModal() {
+    const m = new Modal({ title: 'Add New User', maxWidth: '440px' });
+    m.setBody(`
       <form id="user-form" autocomplete="off">
         <div class="form-group">
           <label class="form-label">Display Name <span class="req">*</span></label>
-          <input class="form-input" id="u-name" placeholder="Full name" value="${Utils.escapeHtml(user?.display_name || '')}">
+          <input class="form-input" id="u-display" placeholder="Full name" autocomplete="off">
         </div>
-        ${!isEdit ? `
         <div class="form-group">
-          <label class="form-label">Username</label>
-          <input class="form-input" id="u-username" placeholder="auto-generated if blank" autocomplete="off">
+          <label class="form-label">Username <span class="req">*</span></label>
+          <input class="form-input" id="u-username" placeholder="login handle (e.g. john_doe)" autocomplete="off">
+          <div class="form-hint">Unique across the platform. Used for login and tracking.</div>
         </div>
         <div class="form-group">
           <label class="form-label">Password <span class="req">*</span></label>
-          <input class="form-input" id="u-password" type="password" placeholder="Minimum 8 characters">
-        </div>` : ''}
+          <input class="form-input" id="u-password" type="password" placeholder="Minimum 8 characters" autocomplete="new-password">
+        </div>
         <div class="form-group">
           <label class="form-label">Role</label>
-          <select class="form-select" id="u-role">
-            <option value="viewer"  ${user?.role === 'viewer'  ? 'selected' : ''}>Viewer</option>
-            <option value="staff"   ${user?.role === 'staff'   ? 'selected' : ''}>Staff</option>
-            <option value="manager" ${user?.role === 'manager' ? 'selected' : ''}>Manager</option>
-            <option value="admin"   ${user?.role === 'admin'   ? 'selected' : ''}>Admin</option>
+          <select class="form-select" id="u-role">${_roleOptions('viewer')}</select>
+        </div>
+        <div id="user-form-error" class="form-error" style="display:none"></div>
+      </form>`);
+    m.setFooter(`
+      <button class="btn btn-secondary btn-sm" id="u-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="u-save">Create User</button>`);
+    m.show();
+
+    const _save = () => _doCreateUser(m);
+    document.getElementById('u-cancel')?.addEventListener('click', () => m.hide());
+    document.getElementById('u-save')?.addEventListener('click', _save);
+    document.getElementById('user-form')?.addEventListener('submit', e => { e.preventDefault(); _save(); });
+  }
+
+  async function _doCreateUser(m) {
+    const display  = document.getElementById('u-display')?.value.trim();
+    const username = document.getElementById('u-username')?.value.trim();
+    const password = document.getElementById('u-password')?.value;
+    const role     = document.getElementById('u-role')?.value;
+    const errEl    = document.getElementById('user-form-error');
+    const saveBtn  = document.getElementById('u-save');
+    const showErr  = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+
+    if (!display)  return showErr('Display name is required.');
+    if (!username) return showErr('Username is required.');
+    if (!password || password.length < 8) return showErr('Password must be at least 8 characters.');
+    errEl.style.display = 'none';
+    Loading.btn(saveBtn, true);
+    try {
+      await API.createUser({ display_name: display, username, password, role });
+      Notify.success('User created', `${display} has been added to this organization.`);
+      m.hide();
+      loadUsers();
+    } catch (err) {
+      showErr(err.message || 'Failed to create user.');
+    } finally {
+      Loading.btn(saveBtn, false);
+    }
+  }
+
+  /* ── Users: add existing ────────────────────────────────── */
+  function _openAddExistingModal() {
+    const m = new Modal({ title: 'Assign Existing User to Org', maxWidth: '440px' });
+    m.setBody(`
+      <p style="font-size:13px;color:var(--txt-3);margin-bottom:14px">
+        Search for a user already in the system and assign them to this organization.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Username <span class="req">*</span></label>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" id="ae-username" placeholder="Exact username" style="flex:1" autocomplete="off">
+          <button class="btn btn-secondary btn-sm" id="ae-search-btn">Find</button>
+        </div>
+      </div>
+      <div id="ae-found" style="display:none;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:10px">
+        <div style="font-weight:600;font-size:13px;color:var(--txt-1)" id="ae-found-name"></div>
+        <div style="font-size:12px;color:var(--txt-3)" id="ae-found-username"></div>
+      </div>
+      <div id="ae-role-wrap" class="form-group" style="display:none">
+        <label class="form-label">Role in this organization</label>
+        <select class="form-select" id="ae-role">${_roleOptions('viewer')}</select>
+      </div>
+      <div id="ae-error" class="form-error" style="display:none"></div>`);
+    m.setFooter(`
+      <button class="btn btn-secondary btn-sm" id="ae-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="ae-add-btn" disabled>Assign to Org</button>`);
+    m.show();
+
+    let _foundUserId = null;
+    const errEl  = () => document.getElementById('ae-error');
+    const showErr = msg => { const e = errEl(); if (e) { e.textContent = msg; e.style.display = 'block'; } };
+    const hideErr = ()  => { const e = errEl(); if (e) e.style.display = 'none'; };
+
+    document.getElementById('ae-cancel')?.addEventListener('click', () => m.hide());
+
+    const addBtn = document.getElementById('ae-add-btn');
+
+    async function _doSearch() {
+      const username = document.getElementById('ae-username')?.value.trim().toLowerCase();
+      if (!username) return showErr('Enter a username to search.');
+      hideErr();
+      const searchBtn = document.getElementById('ae-search-btn');
+      Loading.btn(searchBtn, true);
+      _foundUserId = null;
+      if (addBtn) addBtn.disabled = true;
+      document.getElementById('ae-found').style.display     = 'none';
+      document.getElementById('ae-role-wrap').style.display = 'none';
+      try {
+        const user = await API.searchUser(username);
+        _foundUserId = user.user_id;
+        document.getElementById('ae-found-name').textContent     = user.display_name || user.username;
+        document.getElementById('ae-found-username').textContent = '@' + user.username;
+        document.getElementById('ae-found').style.display        = 'block';
+        document.getElementById('ae-role-wrap').style.display    = 'block';
+        if (addBtn) addBtn.disabled = false;
+      } catch (err) {
+        showErr(err.status === 404 ? `No user found with username "${username}".` : (err.message || 'Search failed.'));
+      } finally {
+        Loading.btn(searchBtn, false);
+      }
+    }
+
+    document.getElementById('ae-search-btn')?.addEventListener('click', _doSearch);
+    document.getElementById('ae-username')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); _doSearch(); }
+    });
+
+    addBtn?.addEventListener('click', async () => {
+      if (!_foundUserId) return;
+      const role = document.getElementById('ae-role')?.value;
+      hideErr();
+      Loading.btn(addBtn, true);
+      try {
+        await API.addMembership(_foundUserId, role);
+        Notify.success('User assigned', 'User has been added to this organization.');
+        m.hide();
+        loadUsers();
+      } catch (err) {
+        showErr(err.message || 'Failed to assign user.');
+        Loading.btn(addBtn, false);
+      }
+    });
+  }
+
+  /* ── Users: edit ────────────────────────────────────────── */
+  function _openEditUserModal(membershipId) {
+    const user = _usersCache.find(u => u.membership_id === membershipId);
+    if (!user) return;
+    const m = new Modal({ title: 'Edit User', maxWidth: '440px' });
+    m.setBody(`
+      <form id="edit-user-form" autocomplete="off">
+        <div class="form-group">
+          <label class="form-label">Display Name <span class="req">*</span></label>
+          <input class="form-input" id="eu-display" value="${Utils.escapeHtml(user.display_name || '')}" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <div style="padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;color:var(--txt-3);font-family:monospace">
+            @${Utils.escapeHtml(user.username || '')}
+          </div>
+          <div class="form-hint">Username is fixed and used for login tracking.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <select class="form-select" id="eu-role">${_roleOptions(user.role)}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-select" id="eu-status">
+            <option value="true"  ${user.is_active !== false ? 'selected' : ''}>Active</option>
+            <option value="false" ${user.is_active === false  ? 'selected' : ''}>Inactive</option>
           </select>
+        </div>
+        <div id="edit-user-error" class="form-error" style="display:none"></div>
+      </form>`);
+    m.setFooter(`
+      <button class="btn btn-secondary btn-sm" id="eu-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="eu-save">Save Changes</button>`);
+    m.show();
+
+    const _save = () => _doEditUser(m, membershipId);
+    document.getElementById('eu-cancel')?.addEventListener('click', () => m.hide());
+    document.getElementById('eu-save')?.addEventListener('click', _save);
+    document.getElementById('edit-user-form')?.addEventListener('submit', e => { e.preventDefault(); _save(); });
+  }
+
+  async function _doEditUser(m, membershipId) {
+    const display  = document.getElementById('eu-display')?.value.trim();
+    const role     = document.getElementById('eu-role')?.value;
+    const isActive = document.getElementById('eu-status')?.value === 'true';
+    const errEl    = document.getElementById('edit-user-error');
+    const saveBtn  = document.getElementById('eu-save');
+    const showErr  = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+
+    if (!display) return showErr('Display name is required.');
+    errEl.style.display = 'none';
+    Loading.btn(saveBtn, true);
+    try {
+      await API.updateUser(membershipId, { display_name: display, role, is_active: isActive });
+      Notify.success('User updated');
+      m.hide();
+      loadUsers();
+    } catch (err) {
+      showErr(err.message || 'Failed to save.');
+    } finally {
+      Loading.btn(saveBtn, false);
+    }
+  }
+
+  /* ── Users: change password ─────────────────────────────── */
+  function _openChangePwdModal(membershipId) {
+    const user = _usersCache.find(u => u.membership_id === membershipId);
+    const name = Utils.escapeHtml(user?.display_name || user?.username || 'this user');
+    const m    = new Modal({ title: 'Change Password', maxWidth: '400px' });
+    m.setBody(`
+      <p style="font-size:13px;color:var(--txt-3);margin-bottom:16px">
+        Set a new password for <strong>${name}</strong>.
+      </p>
+      <form id="pwd-form" autocomplete="off">
+        <div class="form-group">
+          <label class="form-label">New Password <span class="req">*</span></label>
+          <input class="form-input" id="pwd-new" type="password" placeholder="Minimum 8 characters" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password <span class="req">*</span></label>
+          <input class="form-input" id="pwd-confirm" type="password" placeholder="Re-enter password" autocomplete="new-password">
+        </div>
+        <div id="pwd-error" class="form-error" style="display:none"></div>
+      </form>`);
+    m.setFooter(`
+      <button class="btn btn-secondary btn-sm" id="pwd-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pwd-save">Set Password</button>`);
+    m.show();
+
+    const _save = () => _doChangePwd(m, membershipId);
+    document.getElementById('pwd-cancel')?.addEventListener('click', () => m.hide());
+    document.getElementById('pwd-save')?.addEventListener('click', _save);
+    document.getElementById('pwd-form')?.addEventListener('submit', e => { e.preventDefault(); _save(); });
+  }
+
+  async function _doChangePwd(m, membershipId) {
+    const newPwd  = document.getElementById('pwd-new')?.value;
+    const confirm = document.getElementById('pwd-confirm')?.value;
+    const errEl   = document.getElementById('pwd-error');
+    const saveBtn = document.getElementById('pwd-save');
+    const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+
+    if (!newPwd || newPwd.length < 8) return showErr('Password must be at least 8 characters.');
+    if (newPwd !== confirm) return showErr('Passwords do not match.');
+    errEl.style.display = 'none';
+    Loading.btn(saveBtn, true);
+    try {
+      await API.updateUser(membershipId, { password: newPwd });
+      Notify.success('Password changed', "The user's password has been updated.");
+      m.hide();
+    } catch (err) {
+      showErr(err.message || 'Failed to change password.');
+    } finally {
+      Loading.btn(saveBtn, false);
+    }
+  }
+
+  /* ── Users: remove ──────────────────────────────────────── */
+  async function _removeUser(membershipId, name) {
+    const confirmed = await Modal.confirm({
+      title:       'Remove User',
+      message:     `Remove "${name}" from this organization? They will lose access. You can restore access by editing their status.`,
+      confirmText: 'Remove',
+      danger:      true,
+    });
+    if (!confirmed) return;
+    try {
+      await API.deleteUser(membershipId);
+      Notify.success('User removed');
+      loadUsers();
+    } catch (err) {
+      Notify.apiError(err);
+    }
+  }
+
+  /* ── Organizations: load ────────────────────────────────── */
+  async function loadOrganizations() {
+    const tbody = document.getElementById('orgs-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = Loading.tableRows(4, 4);
+    try {
+      const orgs = await API.getOrganizations();
+      _orgsCache  = orgs;
+      if (!orgs.length) {
+        tbody.innerHTML = `<tr><td colspan="4">${Loading.empty('building-2', 'No organizations', 'Create the first organization to get started')}</td></tr>`;
+        return;
+      }
+      const currentOrgId = Auth.getOrganization()?.organization_id;
+      tbody.innerHTML = orgs.map(o => {
+        const oid    = Utils.escapeHtml(o.organization_id);
+        const oname  = Utils.escapeHtml(o.display_name);
+        const isHere = o.organization_id === currentOrgId;
+        return `<tr ${isHere ? 'style="background:var(--surface-2)"' : ''}>
+          <td>
+            <span style="font-weight:600">${oname}</span>
+            ${isHere ? '<span style="font-size:11px;color:var(--primary);margin-left:6px;font-weight:600">● current</span>' : ''}
+          </td>
+          <td style="font-size:12px;color:var(--txt-4);font-family:monospace">${Utils.escapeHtml(o.slug)}</td>
+          <td>${o.is_active !== false ? Utils.badgeHtml('success', 'Active') : Utils.badgeHtml('gray', 'Inactive')}</td>
+          <td>
+            <div style="display:flex;gap:4px">
+              <button class="btn btn-secondary btn-sm" data-action="edit-org" data-id="${oid}">Edit</button>
+              ${o.is_active !== false
+                ? `<button class="btn btn-danger btn-sm" data-action="toggle-org" data-id="${oid}" data-name="${oname}" data-activate="false">Deactivate</button>`
+                : `<button class="btn btn-secondary btn-sm" data-action="toggle-org" data-id="${oid}" data-name="${oname}" data-activate="true">Activate</button>`}
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="4">${Loading.error('Failed to load organizations')}</td></tr>`;
+      Notify.apiError(err);
+    }
+  }
+
+  /* ── Organizations: modal ───────────────────────────────── */
+  function _openOrgModal(orgId = null) {
+    const org    = orgId ? _orgsCache.find(o => o.organization_id === orgId) : null;
+    const isEdit = !!org;
+    const m      = new Modal({ title: isEdit ? 'Edit Organization' : 'New Organization', maxWidth: '440px' });
+    m.setBody(`
+      <form id="org-form" autocomplete="off">
+        <div class="form-group">
+          <label class="form-label">Display Name <span class="req">*</span></label>
+          <input class="form-input" id="o-name" placeholder="e.g. Patman Warehouse" value="${Utils.escapeHtml(org?.display_name || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Slug <span class="req">*</span></label>
+          <input class="form-input" id="o-slug" placeholder="e.g. patman-warehouse"
+            value="${Utils.escapeHtml(org?.slug || '')}"
+            ${isEdit ? 'readonly style="background:var(--surface-2);color:var(--txt-3);cursor:default"' : 'pattern="[a-z0-9-]+"'}>
+          <div class="form-hint">${isEdit ? 'Slug is fixed after creation.' : 'Lowercase letters, numbers, hyphens only.'}</div>
         </div>
         ${isEdit ? `
         <div class="form-group">
           <label class="form-label">Status</label>
-          <select class="form-select" id="u-active">
-            <option value="true"  ${user?.is_active !== false ? 'selected' : ''}>Active</option>
-            <option value="false" ${user?.is_active === false  ? 'selected' : ''}>Inactive</option>
+          <select class="form-select" id="o-active">
+            <option value="true"  ${org?.is_active !== false ? 'selected' : ''}>Active</option>
+            <option value="false" ${org?.is_active === false  ? 'selected' : ''}>Inactive</option>
           </select>
         </div>` : ''}
-        <div id="user-form-error" class="form-error" style="display:none"></div>
+        <div id="org-form-error" class="form-error" style="display:none"></div>
       </form>`);
-    _userModal.setFooter(`
-      <button class="btn btn-secondary btn-sm" id="u-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="u-save">${isEdit ? 'Save Changes' : 'Create User'}</button>`);
-    _userModal.show();
+    m.setFooter(`
+      <button class="btn btn-secondary btn-sm" id="o-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="o-save">${isEdit ? 'Save Changes' : 'Create Organization'}</button>`);
+    m.show();
 
-    document.getElementById('u-cancel')?.addEventListener('click', () => _userModal.hide());
-    document.getElementById('u-save')?.addEventListener('click', () => _saveUser(isEdit));
-    document.getElementById('user-form')?.addEventListener('submit', e => { e.preventDefault(); _saveUser(isEdit); });
+    const _save = () => _doSaveOrg(m, isEdit, orgId);
+    document.getElementById('o-cancel')?.addEventListener('click', () => m.hide());
+    document.getElementById('o-save')?.addEventListener('click', _save);
+    document.getElementById('org-form')?.addEventListener('submit', e => { e.preventDefault(); _save(); });
+
+    if (!isEdit) {
+      document.getElementById('o-name')?.addEventListener('input', e => {
+        const slug  = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const slugEl = document.getElementById('o-slug');
+        if (slugEl && !slugEl.dataset.edited) slugEl.value = slug;
+      });
+      document.getElementById('o-slug')?.addEventListener('input', e => { e.target.dataset.edited = '1'; });
+    }
   }
 
-  async function _saveUser(isEdit) {
-    const name     = document.getElementById('u-name')?.value.trim();
-    const username = document.getElementById('u-username')?.value.trim();
-    const password = document.getElementById('u-password')?.value;
-    const role     = document.getElementById('u-role')?.value;
-    const active   = document.getElementById('u-active')?.value;
-    const errEl    = document.getElementById('user-form-error');
-    const saveBtn  = document.getElementById('u-save');
-
+  async function _doSaveOrg(m, isEdit, orgId) {
+    const name    = document.getElementById('o-name')?.value.trim();
+    const slug    = document.getElementById('o-slug')?.value.trim();
+    const active  = document.getElementById('o-active')?.value;
+    const errEl   = document.getElementById('org-form-error');
+    const saveBtn = document.getElementById('o-save');
     const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
 
     if (!name) return showErr('Display name is required.');
-    if (!isEdit && (!password || password.length < 8)) return showErr('Password must be at least 8 characters.');
-
-    if (errEl) errEl.style.display = 'none';
+    if (!isEdit && !slug) return showErr('Slug is required.');
+    if (!isEdit && !/^[a-z0-9-]+$/.test(slug)) return showErr('Slug must be lowercase letters, numbers, hyphens only.');
+    errEl.style.display = 'none';
     Loading.btn(saveBtn, true);
-
     try {
       if (isEdit) {
-        const updates = { role, is_active: active === 'true' };
-        await API.updateUser(_editingUserId, updates);
-        Notify.success('Member updated');
+        const updates = { display_name: name };
+        if (active !== undefined) updates.is_active = active === 'true';
+        await API.updateOrganization(orgId, updates);
+        Notify.success('Organization updated');
       } else {
-        await API.createUser({ display_name: name, username: username || undefined, password, role });
-        Notify.success('User created');
+        await API.createOrganization({ display_name: name, slug });
+        Notify.success('Organization created', 'Switch to it via the org switcher to manage its members.');
       }
-      _userModal.hide();
-      loadUsers();
+      m.hide();
+      loadOrganizations();
     } catch (err) {
       showErr(err.message || 'Save failed.');
     } finally {
@@ -98,72 +461,44 @@ const Settings = (() => {
     }
   }
 
-  async function loadUsers() {
-    const tbody = document.getElementById('users-tbody');
-    if (!tbody) return;
-
-    tbody.innerHTML = Loading.tableRows(5, 4);
-
+  async function _toggleOrg(orgId, name, activate) {
+    const label = activate ? 'Activate' : 'Deactivate';
+    const confirmed = await Modal.confirm({
+      title:       `${label} Organization`,
+      message:     activate
+        ? `Activate "${name}"? Members will regain access.`
+        : `Deactivate "${name}"? All members will lose access. This can be reversed.`,
+      confirmText: label,
+      danger:      !activate,
+    });
+    if (!confirmed) return;
     try {
-      const users = await API.getUsers();
-      if (!users.length) {
-        tbody.innerHTML = `<tr><td colspan="5">${Loading.empty('user', 'No users found')}</td></tr>`;
-        return;
-      }
-
-      const currentUser = Auth.getUser();
-      tbody.innerHTML = users.map(u => `
-        <tr>
-          <td>
-            <div style="display:flex;align-items:center;gap:8px">
-              <div style="width:28px;height:28px;border-radius:50%;background:var(--primary-100);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--primary-text);flex-shrink:0">
-                ${Utils.escapeHtml((u.display_name || u.username || u.email || '?')[0].toUpperCase())}
-              </div>
-              <span style="font-weight:500">${Utils.escapeHtml(u.display_name || '—')}</span>
-            </div>
-          </td>
-          <td>${Utils.escapeHtml(u.username || '—')}</td>
-          <td>${Utils.badgeHtml(u.role === 'admin' ? 'error' : u.role === 'manager' ? 'warning' : 'gray', Utils.capitalize(u.role))}</td>
-          <td>${u.is_active !== false ? Utils.badgeHtml('success', 'Active') : Utils.badgeHtml('gray', 'Inactive')}</td>
-          <td>
-            <div style="display:flex;gap:4px">
-              <button class="btn btn-secondary btn-sm" onclick="Settings._edit('${Utils.escapeHtml(u.membership_id || u.user_id)}')">Edit</button>
-              ${u.membership_id !== Auth.getOrganization()?.membership_id ? `<button class="btn btn-danger btn-sm" onclick="Settings._delete('${Utils.escapeHtml(u.membership_id || u.user_id)}', '${Utils.escapeHtml(u.display_name || u.username)}')">Remove</button>` : ''}
-            </div>
-          </td>
-        </tr>`).join('');
-
-      Settings._usersCache = users;
+      await API.updateOrganization(orgId, { is_active: activate });
+      Notify.success(`Organization ${activate ? 'activated' : 'deactivated'}`);
+      loadOrganizations();
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="5">${Loading.error('Failed to load users')}</td></tr>`;
       Notify.apiError(err);
     }
   }
 
-  async function _deleteUser(userId, name) {
-    const confirmed = await Modal.confirm({
-      title:       'Delete User',
-      message:     `Delete "${name}"? This cannot be undone.`,
-      confirmText: 'Delete',
-      danger:      true,
-    });
-    if (!confirmed) return;
-    try {
-      await API.deleteUser(userId);
-      Notify.success('User deleted');
-      loadUsers();
-    } catch (err) {
-      Notify.apiError(err);
-    }
+  /* ── Profile tab ─────────────────────────────────────────── */
+  function _initProfileTab() {
+    const user = Auth.getUser();
+    const org  = Auth.getOrganization();
+    if (!user) return;
+    Utils.setText('#profile-name',     user.display_name || user.username);
+    Utils.setText('#profile-username', user.username ? `@${user.username}` : '—');
+    Utils.setText('#profile-org',      org?.display_name || '—');
+    Utils.setText('#profile-role',     Utils.capitalize(org?.role || '—'));
+    const avatarEl = document.getElementById('profile-avatar');
+    if (avatarEl) avatarEl.textContent = (user.display_name || user.username || '?')[0].toUpperCase();
   }
 
   /* ── System tab ─────────────────────────────────────────── */
   async function loadSystemStatus() {
     const el = document.getElementById('system-status-content');
     if (!el) return;
-
     el.innerHTML = `<div style="display:flex;justify-content:center;padding:24px">${Loading.spinnerHtml()}</div>`;
-
     try {
       const status = await API.getSystemStatus();
       el.innerHTML = `
@@ -179,7 +514,6 @@ const Settings = (() => {
   }
 
   function _statusRow(label, status, message) {
-    const variant = status === 'ok' ? 'success' : status === 'info' ? 'info' : 'error';
     const iconName  = status === 'ok' ? 'check-circle' : status === 'info' ? 'info' : 'x-circle';
     const iconColor = status === 'ok' ? 'var(--success)' : status === 'info' ? 'var(--primary)' : 'var(--error)';
     return `
@@ -192,9 +526,10 @@ const Settings = (() => {
       </div>`;
   }
 
+  /* ── Logs tab ─────────────────────────────────────────────── */
   let _logsItems   = [];
   let _logsPage    = 1;
-  const _logsPerPage = 20;
+  const _LOGS_PER  = 20;
 
   function _renderLogsPage() {
     const el    = document.getElementById('logs-content');
@@ -207,23 +542,25 @@ const Settings = (() => {
       return;
     }
 
-    const total = _logsItems.length;
-    const totalPages = Math.ceil(total / _logsPerPage);
-    const start = (_logsPage - 1) * _logsPerPage;
-    const slice = _logsItems.slice(start, start + _logsPerPage);
+    const total      = _logsItems.length;
+    const totalPages = Math.ceil(total / _LOGS_PER);
+    const start      = (_logsPage - 1) * _LOGS_PER;
+    const slice      = _logsItems.slice(start, start + _LOGS_PER);
 
     el.innerHTML = slice.map(item => `
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-        <span style="color:var(--txt-4);display:flex;align-items:center"><i data-lucide="clock" class="icon" style="width:16px;height:16px" aria-hidden="true"></i></span>
+        <span style="color:var(--txt-4);display:flex;align-items:center">
+          <i data-lucide="clock" class="icon" style="width:16px;height:16px" aria-hidden="true"></i>
+        </span>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500;color:var(--txt-1)">${Utils.escapeHtml(item.title)}</div>
-          <div style="font-size:11.5px;color:var(--txt-4)">${Utils.timeAgo(item.date)}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--txt-1)">${Utils.escapeHtml(item.title || item.description || '')}</div>
+          <div style="font-size:11.5px;color:var(--txt-4)">${Utils.timeAgo(item.date || item.created_at || item.timestamp)}</div>
         </div>
       </div>`).join('');
     Icons.refresh();
 
     if (pagEl) {
-      const showing = `<span class="pagination-info">Showing ${start + 1}–${Math.min(start + _logsPerPage, total)} of ${total}</span>`;
+      const showing = `<span class="pagination-info">Showing ${start + 1}–${Math.min(start + _LOGS_PER, total)} of ${total}</span>`;
       const prev    = `<button class="btn btn-ghost btn-sm" onclick="Settings._goLogsPage(${_logsPage - 1})"${_logsPage === 1 ? ' disabled' : ''}>&#8592; Prev</button>`;
       const next    = `<button class="btn btn-ghost btn-sm" onclick="Settings._goLogsPage(${_logsPage + 1})"${_logsPage >= totalPages ? ' disabled' : ''}>Next &#8594;</button>`;
       pagEl.innerHTML = `${showing}<div style="display:flex;gap:6px">${prev}${next}</div>`;
@@ -240,204 +577,62 @@ const Settings = (() => {
       _renderLogsPage();
     } catch (err) {
       el.innerHTML = Loading.error('Failed to load activity logs');
-      Notify.apiError(err);
     }
   }
 
-  /* ── Profile tab ─────────────────────────────────────────── */
-  function _initProfileTab() {
-    const user = Auth.getUser();
-    const org  = Auth.getOrganization();
-    if (!user) return;
-
-    Utils.setText('#profile-name',     user.display_name || user.username);
-    Utils.setText('#profile-username', user.username ? `@${user.username}` : '—');
-    Utils.setText('#profile-org',      org?.display_name || '—');
-    Utils.setText('#profile-role',     Utils.capitalize(org?.role || '—'));
-
-    const avatarEl = document.getElementById('profile-avatar');
-    if (avatarEl) avatarEl.textContent = (user.display_name || user.username || '?')[0].toUpperCase();
-  }
-
-  /* ── Organizations tab ──────────────────────────────────── */
-  let _orgModal = null;
-  let _editingOrgId = null;
-
-  async function loadOrganizations() {
-    const tbody = document.getElementById('orgs-tbody');
-    if (!tbody) return;
-
-    tbody.innerHTML = Loading.tableRows(4, 4);
-
-    try {
-      const orgs = await API.getOrganizations();
-      if (!orgs.length) {
-        tbody.innerHTML = `<tr><td colspan="4">${Loading.empty('building-2', 'No organizations', 'Create the first organization to get started')}</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = orgs.map(o => `
-        <tr>
-          <td style="font-weight:600;color:var(--txt-1)">${Utils.escapeHtml(o.display_name)}</td>
-          <td style="font-size:12px;color:var(--txt-4);font-family:monospace">${Utils.escapeHtml(o.slug)}</td>
-          <td>${o.is_active !== false ? Utils.badgeHtml('success', 'Active') : Utils.badgeHtml('gray', 'Inactive')}</td>
-          <td>
-            <div style="display:flex;gap:4px">
-              <button class="btn btn-secondary btn-sm" onclick="Settings._editOrg('${Utils.escapeHtml(o.organization_id)}')">Edit</button>
-              ${o.is_active !== false
-                ? `<button class="btn btn-danger btn-sm" onclick="Settings._deactivateOrg('${Utils.escapeHtml(o.organization_id)}','${Utils.escapeHtml(o.display_name)}')">Deactivate</button>`
-                : ''}
-            </div>
-          </td>
-        </tr>`).join('');
-
-      Settings._orgsCache = orgs;
-    } catch (err) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="4">${Loading.error('Failed to load organizations')}</td></tr>`;
-      Notify.apiError(err);
-    }
-  }
-
-  function _openOrgModal(org = null) {
-    _editingOrgId = org?.organization_id || null;
-    const isEdit  = !!org;
-    const title   = isEdit ? 'Edit Organization' : 'New Organization';
-
-    if (!_orgModal) _orgModal = new Modal({ title, maxWidth: '440px' });
-    _orgModal.setTitle(title);
-    _orgModal.setBody(`
-      <form id="org-form" autocomplete="off">
-        <div class="form-group">
-          <label class="form-label">Display Name <span class="req">*</span></label>
-          <input class="form-input" id="o-name" placeholder="e.g. Patman Warehouse" value="${Utils.escapeHtml(org?.display_name || '')}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Slug <span class="req">*</span></label>
-          <input class="form-input" id="o-slug" placeholder="e.g. patman-warehouse" value="${Utils.escapeHtml(org?.slug || '')}"
-            pattern="[a-z0-9-]+" title="Lowercase letters, numbers, hyphens only">
-          <div class="form-hint">Lowercase letters, numbers, hyphens only. Used in URLs and identifiers.</div>
-        </div>
-        ${isEdit ? `
-        <div class="form-group">
-          <label class="form-label">Status</label>
-          <select class="form-select" id="o-active">
-            <option value="true"  ${org?.is_active !== false ? 'selected' : ''}>Active</option>
-            <option value="false" ${org?.is_active === false  ? 'selected' : ''}>Inactive</option>
-          </select>
-        </div>` : ''}
-        <div id="org-form-error" class="form-error" style="display:none"></div>
-      </form>`);
-    _orgModal.setFooter(`
-      <button class="btn btn-secondary btn-sm" id="o-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="o-save">${isEdit ? 'Save Changes' : 'Create Organization'}</button>`);
-    _orgModal.show();
-
-    document.getElementById('o-cancel')?.addEventListener('click', () => _orgModal.hide());
-    document.getElementById('o-save')?.addEventListener('click', () => _saveOrg(isEdit));
-    document.getElementById('org-form')?.addEventListener('submit', e => { e.preventDefault(); _saveOrg(isEdit); });
-
-    if (!isEdit) {
-      document.getElementById('o-name')?.addEventListener('input', e => {
-        const slug = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        const slugEl = document.getElementById('o-slug');
-        if (slugEl && !slugEl.dataset.edited) slugEl.value = slug;
-      });
-      document.getElementById('o-slug')?.addEventListener('input', e => {
-        e.target.dataset.edited = '1';
-      });
-    }
-  }
-
-  async function _saveOrg(isEdit) {
-    const name   = document.getElementById('o-name')?.value.trim();
-    const slug   = document.getElementById('o-slug')?.value.trim();
-    const active = document.getElementById('o-active')?.value;
-    const errEl  = document.getElementById('org-form-error');
-    const saveBtn = document.getElementById('o-save');
-
-    const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
-    if (!name) return showErr('Display name is required.');
-    if (!slug)  return showErr('Slug is required.');
-    if (!/^[a-z0-9-]+$/.test(slug)) return showErr('Slug must be lowercase letters, numbers, hyphens only.');
-
-    if (errEl) errEl.style.display = 'none';
-    Loading.btn(saveBtn, true);
-
-    try {
-      if (isEdit) {
-        const updates = { display_name: name, slug };
-        if (active !== undefined) updates.is_active = active === 'true';
-        await API.updateOrganization(_editingOrgId, updates);
-        Notify.success('Organization updated');
-      } else {
-        await API.createOrganization({ display_name: name, slug });
-        Notify.success('Organization created');
-      }
-      _orgModal.hide();
-      loadOrganizations();
-    } catch (err) {
-      showErr(err.message || 'Save failed.');
-    } finally {
-      Loading.btn(saveBtn, false);
-    }
-  }
-
-  async function _deactivateOrg(orgId, name) {
-    const confirmed = await Modal.confirm({
-      title:       'Deactivate Organization',
-      message:     `Deactivate "${name}"? Members will lose access. This can be reversed.`,
-      confirmText: 'Deactivate',
-      danger:      true,
-    });
-    if (!confirmed) return;
-    try {
-      await API.updateOrganization(orgId, { is_active: false });
-      Notify.success('Organization deactivated');
-      loadOrganizations();
-    } catch (err) {
-      Notify.apiError(err);
-    }
-  }
-
-  /* ── Tab switching ──────────────────────────────────────── */
+  /* ── Tab init + event delegation ────────────────────────── */
   function initTabs() {
     const tabList = document.getElementById('settings-tab-list');
-    if (!tabList) return;
+    if (tabList) {
+      tabList.addEventListener('click', e => {
+        const btn = e.target.closest('.tab-btn');
+        if (!btn) return;
+        const tab = btn.dataset.tab;
+        tabList.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('#page-settings .tab-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById(`tab-${tab}`)?.classList.add('active');
+        if (tab === 'users')              loadUsers();
+        else if (tab === 'organizations') loadOrganizations();
+        else if (tab === 'system')        loadSystemStatus();
+        else if (tab === 'logs')          loadLogs();
+        else if (tab === 'profile')       _initProfileTab();
+      });
+    }
 
-    tabList.addEventListener('click', e => {
-      const btn = e.target.closest('.tab-btn');
+    document.getElementById('add-user-btn')?.addEventListener('click', _openAddNewUserModal);
+    document.getElementById('add-existing-user-btn')?.addEventListener('click', _openAddExistingModal);
+    document.getElementById('add-org-btn')?.addEventListener('click', () => _openOrgModal());
+
+    // Users table — event delegation
+    document.getElementById('users-tbody')?.addEventListener('click', e => {
+      const btn    = e.target.closest('[data-action]');
       if (!btn) return;
-      const tab = btn.dataset.tab;
-
-      tabList.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('#page-settings .tab-panel').forEach(p => p.classList.remove('active'));
-      document.getElementById(`tab-${tab}`)?.classList.add('active');
-
-      if (tab === 'users')         loadUsers();
-      if (tab === 'system')        loadSystemStatus();
-      if (tab === 'logs')          loadLogs();
-      if (tab === 'profile')       _initProfileTab();
-      if (tab === 'organizations') loadOrganizations();
+      const action = btn.dataset.action;
+      const id     = btn.dataset.id;
+      if (action === 'edit-user')    _openEditUserModal(id);
+      else if (action === 'change-pwd')   _openChangePwdModal(id);
+      else if (action === 'remove-user')  _removeUser(id, btn.dataset.name || id);
     });
 
-    const addUserBtn = document.getElementById('add-user-btn');
-    if (addUserBtn) addUserBtn.addEventListener('click', () => _openUserModal());
-
-    const addOrgBtn = document.getElementById('add-org-btn');
-    if (addOrgBtn) addOrgBtn.addEventListener('click', () => _openOrgModal());
+    // Orgs table — event delegation
+    document.getElementById('orgs-tbody')?.addEventListener('click', e => {
+      const btn    = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action   = btn.dataset.action;
+      const id       = btn.dataset.id;
+      const name     = btn.dataset.name || id;
+      const activate = btn.dataset.activate === 'true';
+      if (action === 'edit-org')    _openOrgModal(id);
+      else if (action === 'toggle-org') _toggleOrg(id, name, activate);
+    });
   }
 
   return {
-    init:    initTabs,
+    init:         initTabs,
     loadUsers,
     loadOrganizations,
-    _edit:        (id)       => { const u = Settings._usersCache?.find(x => (x.membership_id || x.user_id) === id); _openUserModal(u); },
-    _delete:      _deleteUser,
-    _editOrg:     (id)       => { const o = Settings._orgsCache?.find(x => x.organization_id === id); _openOrgModal(o); },
-    _deactivateOrg,
-    _goLogsPage:  (p)        => { _logsPage = p; _renderLogsPage(); },
-    _usersCache: [],
-    _orgsCache:  [],
+    _goLogsPage:  p => { _logsPage = p; _renderLogsPage(); },
   };
 })();
 

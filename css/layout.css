@@ -193,7 +193,8 @@
   margin-bottom: 4px;
 }
 
-.sidebar-avatar {
+.sidebar-avatar,
+.user-avatar-sm {
   width: 30px; height: 30px;
   background: var(--primary-100);
   border-radius: 50%;
