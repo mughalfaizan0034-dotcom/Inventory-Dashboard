@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Inventory Dashboard</title>
 
-  <!-- CSS â€” v=25: bump on every deploy to bust browser/CDN cache -->
-  <link rel="stylesheet" href="css/main.css?v=25">
-  <link rel="stylesheet" href="css/layout.css?v=25">
-  <link rel="stylesheet" href="css/components.css?v=25">
-  <link rel="stylesheet" href="css/tables.css?v=25">
-  <link rel="stylesheet" href="css/forms.css?v=25">
-  <link rel="stylesheet" href="css/animations.css?v=25">
+  <!-- CSS â€” v=26: bump on every deploy to bust browser/CDN cache -->
+  <link rel="stylesheet" href="css/main.css?v=26">
+  <link rel="stylesheet" href="css/layout.css?v=26">
+  <link rel="stylesheet" href="css/components.css?v=26">
+  <link rel="stylesheet" href="css/tables.css?v=26">
+  <link rel="stylesheet" href="css/forms.css?v=26">
+  <link rel="stylesheet" href="css/animations.css?v=26">
 
   <!-- Favicon: Lucide "package" icon in brand blue -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
@@ -440,7 +440,7 @@
                       <span class="step-badge">2</span>
                       <div>Fill in your data using <strong>Excel or Google Sheets</strong></div>
                     </div>
-                    <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 8px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);border-radius:5px">
+                    <div style="display:flex;align-items:flex-start;gap:8px">
                       <span class="step-badge">3</span>
                       <div><strong>Format SKU / UPC / Order ID as Text</strong> in Excel &mdash; prevents leading-zero loss</div>
                     </div>
@@ -498,20 +498,26 @@
 
         <!-- â”€â”€ Settings page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div id="page-settings" class="page" data-min-role="admin">
-          <div class="section-header">
-            <div>
-              <div class="section-title">Settings</div>
-              <div class="section-sub">Users, system status, and account</div>
+
+          <!-- Sticky header + tab bar -->
+          <div class="settings-sticky">
+            <div class="section-header">
+              <div>
+                <div class="section-title">Settings</div>
+                <div class="section-sub">Users, system status, and account</div>
+              </div>
+            </div>
+            <div id="settings-tab-list" class="tab-list">
+              <button class="tab-btn active" data-tab="users">Users</button>
+              <button class="tab-btn" data-tab="organizations">Organizations</button>
+              <button class="tab-btn" data-tab="profile">My Profile</button>
+              <button class="tab-btn" data-tab="system">System Status</button>
+              <button class="tab-btn" data-tab="logs">Logs</button>
             </div>
           </div>
 
-          <div id="settings-tab-list" class="tab-list">
-            <button class="tab-btn active" data-tab="users">Users</button>
-            <button class="tab-btn" data-tab="organizations">Organizations</button>
-            <button class="tab-btn" data-tab="profile">My Profile</button>
-            <button class="tab-btn" data-tab="system">System Status</button>
-            <button class="tab-btn" data-tab="logs">Logs</button>
-          </div>
+          <!-- Scrollable tab content -->
+          <div class="settings-body">
 
           <!-- Users tab -->
           <div id="tab-users" class="tab-panel active">
@@ -595,13 +601,16 @@
 
           <!-- Logs tab -->
           <div id="tab-logs" class="tab-panel">
-            <div class="card">
+            <div class="card settings-logs-card">
               <div class="card-header"><div class="card-title">Activity Logs</div></div>
-              <div id="logs-content">
+              <div id="logs-content" class="settings-logs-content">
                 <div style="display:flex;justify-content:center;padding:24px"><div class="spin"></div></div>
               </div>
+              <div class="pagination" id="logs-pagination"></div>
             </div>
           </div>
+
+          </div><!-- /.settings-body -->
         </div>
 
       </main>
@@ -617,19 +626,19 @@
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 
   <!-- App modules â€” order matters: utilities first, then API/auth, then features, app last -->
-  <!-- v=25 â€” bump this number on every deploy to bust browser/CDN cache -->
-  <script src="js/utilities.js?v=25"></script>
-  <script src="js/icons.js?v=25"></script>
-  <script src="js/notifications.js?v=25"></script>
-  <script src="js/loading.js?v=25"></script>
-  <script src="js/api.js?v=25"></script>
-  <script src="js/metricsEngine.js?v=25"></script>
-  <script src="js/auth.js?v=25"></script>
-  <script src="js/dashboard.js?v=25"></script>
-  <script src="js/inventory.js?v=25"></script>
-  <script src="js/orders.js?v=25"></script>
-  <script src="js/uploads.js?v=25"></script>
-  <script src="js/app.js?v=25"></script>
+  <!-- v=26 â€” bump this number on every deploy to bust browser/CDN cache -->
+  <script src="js/utilities.js?v=26"></script>
+  <script src="js/icons.js?v=26"></script>
+  <script src="js/notifications.js?v=26"></script>
+  <script src="js/loading.js?v=26"></script>
+  <script src="js/api.js?v=26"></script>
+  <script src="js/metricsEngine.js?v=26"></script>
+  <script src="js/auth.js?v=26"></script>
+  <script src="js/dashboard.js?v=26"></script>
+  <script src="js/inventory.js?v=26"></script>
+  <script src="js/orders.js?v=26"></script>
+  <script src="js/uploads.js?v=26"></script>
+  <script src="js/app.js?v=26"></script>
 
 </body>
 </html>

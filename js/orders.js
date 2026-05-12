@@ -460,6 +460,7 @@ const Orders = (() => {
     if (statusSel) statusSel.value = 'all';
     _filters = {};
     _page = 1;
+    App.syncFilterHighlights?.();
     load();
   }
 

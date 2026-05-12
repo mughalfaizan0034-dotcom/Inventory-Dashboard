@@ -192,21 +192,52 @@ const Settings = (() => {
       </div>`;
   }
 
+  let _logsItems   = [];
+  let _logsPage    = 1;
+  const _logsPerPage = 20;
+
+  function _renderLogsPage() {
+    const el    = document.getElementById('logs-content');
+    const pagEl = document.getElementById('logs-pagination');
+    if (!el) return;
+
+    if (!_logsItems.length) {
+      el.innerHTML = Loading.empty('clipboard-list', 'No activity found');
+      if (pagEl) pagEl.innerHTML = '';
+      return;
+    }
+
+    const total = _logsItems.length;
+    const totalPages = Math.ceil(total / _logsPerPage);
+    const start = (_logsPage - 1) * _logsPerPage;
+    const slice = _logsItems.slice(start, start + _logsPerPage);
+
+    el.innerHTML = slice.map(item => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--txt-4);display:flex;align-items:center"><i data-lucide="clock" class="icon" style="width:16px;height:16px" aria-hidden="true"></i></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;color:var(--txt-1)">${Utils.escapeHtml(item.title)}</div>
+          <div style="font-size:11.5px;color:var(--txt-4)">${Utils.timeAgo(item.date)}</div>
+        </div>
+      </div>`).join('');
+    Icons.process(el);
+
+    if (pagEl) {
+      const showing = `<span class="pagination-info">Showing ${start + 1}–${Math.min(start + _logsPerPage, total)} of ${total}</span>`;
+      const prev    = `<button class="btn btn-ghost btn-sm" onclick="Settings._goLogsPage(${_logsPage - 1})"${_logsPage === 1 ? ' disabled' : ''}>&#8592; Prev</button>`;
+      const next    = `<button class="btn btn-ghost btn-sm" onclick="Settings._goLogsPage(${_logsPage + 1})"${_logsPage >= totalPages ? ' disabled' : ''}>Next &#8594;</button>`;
+      pagEl.innerHTML = `${showing}<div style="display:flex;gap:6px">${prev}${next}</div>`;
+    }
+  }
+
   async function loadLogs() {
     const el = document.getElementById('logs-content');
     if (!el) return;
     el.innerHTML = `<div style="display:flex;justify-content:center;padding:24px">${Loading.spinnerHtml()}</div>`;
     try {
-      const items = await API.getActivity(20);
-      if (!items.length) { el.innerHTML = Loading.empty('clipboard-list', 'No activity found'); return; }
-      el.innerHTML = items.map(item => `
-        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-          <span style="color:var(--txt-4);display:flex;align-items:center"><i data-lucide="clock" class="icon" style="width:16px;height:16px" aria-hidden="true"></i></span>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:500;color:var(--txt-1)">${Utils.escapeHtml(item.title)}</div>
-            <div style="font-size:11.5px;color:var(--txt-4)">${Utils.timeAgo(item.date)}</div>
-          </div>
-        </div>`).join('');
+      _logsItems = await API.getActivity(200);
+      _logsPage  = 1;
+      _renderLogsPage();
     } catch (err) {
       el.innerHTML = Loading.error('Failed to load activity logs');
       Notify.apiError(err);
@@ -404,6 +435,7 @@ const Settings = (() => {
     _delete:      _deleteUser,
     _editOrg:     (id)       => { const o = Settings._orgsCache?.find(x => x.organization_id === id); _openOrgModal(o); },
     _deactivateOrg,
+    _goLogsPage:  (p)        => { _logsPage = p; _renderLogsPage(); },
     _usersCache: [],
     _orgsCache:  [],
   };
@@ -548,6 +580,31 @@ const App = (() => {
     if (login) login.style.display = 'flex';
   }
 
+  function _bindFilterHighlights() {
+    // Event delegation: highlight any filter-bar select/date-input when non-default
+    document.addEventListener('change', e => {
+      const el = e.target;
+      if (!el.closest('.filter-bar')) return;
+      if (el.tagName === 'SELECT') {
+        const def = el.options[0]?.value ?? '';
+        el.classList.toggle('filter-active', el.value !== def);
+      } else if (el.type === 'date') {
+        el.classList.toggle('filter-active', el.value !== '');
+      }
+    });
+  }
+
+  // Clears filter-active state on all filter-bar elements (call after programmatic resets)
+  function syncFilterHighlights() {
+    document.querySelectorAll('.filter-bar .form-select').forEach(sel => {
+      const def = sel.options[0]?.value ?? '';
+      sel.classList.toggle('filter-active', sel.value !== def);
+    });
+    document.querySelectorAll('.filter-bar input[type="date"]').forEach(inp => {
+      inp.classList.toggle('filter-active', inp.value !== '');
+    });
+  }
+
   async function boot() {
     const loading = document.getElementById('loading-screen');
     if (loading) loading.style.display = 'flex';
@@ -562,6 +619,7 @@ const App = (() => {
     Uploads.init();
     Settings.init();
     _bindNav();
+    _bindFilterHighlights();
 
     const ok = await Auth.checkSession();
     if (ok) {
@@ -573,7 +631,7 @@ const App = (() => {
     }
   }
 
-  return { navigate, showApp, showLogin, boot };
+  return { navigate, showApp, showLogin, boot, syncFilterHighlights };
 })();
 
 /* ── Entry point ────────────────────────────────────────────── */
