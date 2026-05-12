@@ -1,58 +1,83 @@
-# Core Architecture & Inventory Logic Guide
+# Patman Inventory System — Master Architecture & Operational Guide
 
-## Core System Direction
+# Core System Philosophy
 
-This system must follow a single centralized inventory calculation architecture.
+Patman must operate as a centralized enterprise inventory and fulfillment platform with strict data consistency across all modules.
 
-Do NOT calculate inventory independently on different pages/components.
+Primary priorities:
+
+* inventory accuracy
+* centralized calculations
+* organization isolation
+* secure session handling
+* role-based permissions
+* operational consistency
+* maintainable architecture
+* clean scalable codebase
+
+The system should behave like a professional ERP/inventory platform, not a collection of disconnected pages.
+
+---
+
+# Centralized Inventory Calculation Engine
+
+This is the MOST important architectural rule.
+
+Never calculate inventory separately on different pages.
 
 Instead:
 
-1. Load inventory + orders once after login/upload
-2. Run all calculations through one centralized inventory engine/service
-3. Store computed metrics in shared normalized state/data models
-4. Every page must consume the same computed dataset
+1. Load inventory + orders data
+2. Normalize data
+3. Run all calculations through ONE centralized inventory engine/service
+4. Store computed results in shared canonical state
+5. Every page consumes the same processed dataset
 
-This is critical to prevent KPI mismatches and inconsistent inventory values across:
+Pages that MUST use the same source-of-truth:
 
 * Dashboard
-* Orders
 * Inventory List
+* Orders
 * Box Lookup
 * Analytics
 * Exports
+* Reports
 
-Consistency and data accuracy are the highest priorities.
+Future fixes should happen in ONE calculation layer only.
 
-It is acceptable to show:
+Never duplicate business logic across pages/components.
 
-* loading state
-* processing indicator
-* syncing overlay
+Accuracy is more important than instant rendering.
 
-while centralized calculations complete.
+It is acceptable to:
 
-Never prioritize instant rendering over accuracy.
+* show loading overlays
+* show syncing states
+* process calculations before rendering
 
 ---
 
 # Upload Architecture
 
-Users will:
+Users:
 
 * download CSV templates
-* edit inventory/orders in spreadsheet software
-* upload files back in `.txt` format
+* edit data in spreadsheet software
+* upload back as `.txt` tab-delimited files
 
 Reason:
-`.txt` tab-delimited uploads support easier bulk processing and more stable parsing for large datasets.
+`.txt` uploads support:
+
+* better bulk ingestion
+* simpler parsing
+* stable large-file processing
 
 System requirements:
 
-* support large uploads efficiently
-* normalize uploaded data before calculations
-* validate required columns before import
+* validate required fields
+* normalize uploads before calculations
 * reject malformed uploads safely
+* support large batch processing
 
 ---
 
@@ -62,37 +87,37 @@ System requirements:
 
 Only actual fulfilled inventory-backed sales reduce stock.
 
-The following should NEVER reduce physical inventory:
+The following MUST NOT reduce physical inventory:
 
 * phantom units
 * phantom orders
+* undefined SKU orders
 * unknown SKU orders
-* undefined SKUs
 
-Remaining stock must NEVER go below 0 due to phantom demand.
+Remaining stock must NEVER go below zero because of phantom demand.
 
 ---
 
 # Phantom Logic
 
-Phantom units are analytics/warning indicators only.
+Phantom units are informational analytics/warnings only.
 
-They exist to show:
+Purpose:
 
-* oversold demand
-* attempted fulfillment beyond stock
+* show oversold demand
+* highlight attempted fulfillment beyond stock
 
-Phantom units should:
+Phantom units:
 
-* appear in analytics
+* appear in dashboard analytics
 * appear in box lookup
-* appear in dashboard summaries
+* appear in inventory analytics
 
-But phantom units must NOT:
+Phantom units MUST NOT:
 
-* reduce physical inventory
-* make remaining inventory negative
-* affect SKU stock availability
+* reduce physical stock
+* create negative remaining inventory
+* affect available inventory counts
 
 Example:
 
@@ -100,27 +125,28 @@ Initial stock = 1
 Units sold = 2
 Phantom = 1
 
-Correct behavior:
+Correct:
 
-Actual units sold = 1
-Remaining stock = 0
-Phantom units = 1
+* Actual Sold = 1
+* Remaining = 0
+* Phantom = 1
 
-Incorrect behavior:
-Remaining = -1
+Incorrect:
 
-Never allow negative remaining inventory caused by phantom sales.
+* Remaining = -1
+
+Never allow negative remaining caused by phantom sales.
 
 ---
 
 # Dashboard KPI Logic
 
-Use centralized calculations only.
+All KPIs must come from centralized calculations only.
 
-Correct KPI behavior:
+Correct KPI formulas:
 
 Total Units
-= total uploaded inventory
+= uploaded inventory quantity
 
 Units Sold
 = all order quantities
@@ -132,12 +158,12 @@ Remaining Stock
 = Total Units - Actual Units Sold
 
 Phantom Units
-= warning metric only
+= informational warning metric only
 
 Undefined SKU Orders
-= orders with no valid inventory match
+= orders without valid inventory match
 
-Undefined/unknown orders must not reduce inventory.
+Undefined orders must not reduce stock.
 
 ---
 
@@ -149,7 +175,7 @@ Users search by:
 * SKU
 * UPC
 
-Results must show:
+Results show:
 
 * Initial
 * Actual Sold
@@ -158,121 +184,372 @@ Results must show:
 
 Grouped by:
 
-* box/SKU allocation
+* SKU
+* box allocation
 
-Remaining stock in box lookup must reflect actual physical inventory only.
+Remaining stock reflects REAL physical inventory only.
 
-Phantom values should be informational only.
+Phantom values are informational only.
 
-Never allow phantom calculations to reduce remaining below zero.
+Never reduce remaining below zero.
 
 ---
 
 # Orders Page Logic
 
-Orders page is fulfillment management, not analytics.
+Orders page is a fulfillment management module.
 
-Do NOT manage phantom orders at row level.
+It is NOT a phantom management page.
 
-No phantom tagging/filtering logic per order row.
+Do NOT:
+
+* mark phantom orders at row level
+* filter phantom rows
+* assign phantom state to specific orders
+
+Reason:
+System cannot reliably determine WHICH oversold order became phantom.
+
+Phantom logic exists ONLY at aggregated inventory analytics level.
 
 ---
 
-# Shipped SKU Reassignment
+# Shipped SKU Reassignment Logic
 
-Users can change fulfillment SKU from the Orders page.
+Users can reassign fulfillment SKU from Orders page.
 
 Example:
 
 Original ordered SKU:
 ARA1-123-321
 
-Same part exists in other boxes:
+Alternative in-stock compatible SKUs:
 
 * ARA2-123-321
 * ARA3-123-321
 
-The dropdown should:
+Dropdown rules:
 
-* show only IN-STOCK compatible SKUs
+* show only compatible SKUs
+* show only IN-STOCK SKUs
 * show full SKU values
-* exclude out-of-stock alternatives
+* exclude unavailable SKUs
 
-When reassigned:
+Behavior:
 
-Original order SKU remains in order history.
+Original order history remains unchanged.
 
-But inventory deduction must occur from the reassigned shipped SKU only.
+Inventory deduction happens ONLY from reassigned shipped SKU.
 
 Example:
 
-Original ordered SKU:
+Ordered:
 ARA1-123-321
 
-Shipped SKU changed to:
+Reassigned shipped SKU:
 ARA2-123-321
 
 Correct behavior:
 
-* deduct inventory from ARA2-123-321
-* do NOT deduct inventory from ARA1-123-321
+* deduct from ARA2-123-321
+* do NOT deduct from ARA1-123-321
 
-This reassignment must update:
+All related pages must instantly reflect this:
 
-* dashboard KPIs
+* dashboard
 * inventory list
 * box lookup
 * exports
 * analytics
 
-All through centralized calculations only.
+Through centralized calculations only.
 
 ---
 
-# Critical Engineering Requirement
+# Multi-User & Organization Management
 
-Before building UI pages:
+The system supports:
 
-1. Build centralized inventory calculation engine first
-2. Normalize all inventory/order relationships
-3. Generate shared computed metrics
-4. Feed all pages from the same source-of-truth dataset
+* multiple organizations
+* multiple users
+* role-based permissions
+* organization-level isolation
 
-Never duplicate calculation logic across pages.
-
-Future fixes should happen in ONE centralized calculation layer, not page-by-page.
+This architecture must be strict and secure.
 
 ---
 
-# UI/UX Direction
+# User Roles
 
-System should behave like a professional ERP/inventory management platform.
+## 1. Admin
+
+Admins can:
+
+* create organizations
+* update organizations
+* remove organizations
+* create users
+* update users
+* remove users
+* assign organizations
+* assign user roles
+* reset/change passwords
+* manage uploads
+* manage shipped SKU reassignment
+* access all analytics
+* access all reports
+* manage system settings
+
+Admins have full platform access.
+
+---
+
+## 2. Standard Users
+
+Users can:
+
+* access assigned organizations only
+* upload inventory/orders
+* manage shipped SKU reassignment
+* use operational tools
+* download reports
+* access analytics
+
+Users CANNOT:
+
+* manage users
+* manage organizations
+* assign permissions
+* change platform security settings
+
+---
+
+## 3. Viewers
+
+Viewers are read-only users.
+
+Viewers can:
+
+* view dashboards
+* view reports
+* view analytics
+* download reports
+
+Viewers CANNOT:
+
+* upload files
+* edit shipped SKU
+* modify inventory
+* modify orders
+* manage users
+* manage organizations
+
+---
+
+# Organization Isolation & Security
+
+Critical requirement:
+
+Users must NEVER:
+
+* access organizations not assigned to them
+* inherit another user session
+* view another organization's data
+* cross-access protected records
+
+Session handling must be strict.
+
+Implement:
+
+* proper auth isolation
+* organization-scoped queries
+* organization-level middleware validation
+* role validation on every protected route
+* secure session invalidation
+* token validation
+* organization permission checks
+
+This is mandatory for every backend endpoint and frontend state load.
+
+---
+
+# Password & Access Management
+
+If users need:
+
+* password changes
+* new organization access
+* role changes
+
+They must contact an admin.
+
+Display clear notices inside profile/settings pages.
+
+Only admins can:
+
+* change passwords
+* assign organizations
+* update permissions
+
+---
+
+# UI & Dashboard Direction
+
+System should resemble a professional ERP platform.
 
 Priorities:
 
-* consistency
 * compact layouts
 * responsive sizing
 * operational clarity
-* enterprise-style dashboards
+* clean analytics
+* enterprise styling
 
 Avoid:
 
-* duplicated calculations
-* inconsistent KPIs
-* oversized UI elements
-* spreadsheet-like layouts pretending to be dashboards
+* oversized cards
+* spreadsheet-like dashboards
+* duplicated KPI sections
+* inconsistent spacing
+* excessive scrolling
 
 ---
 
-# Final Requirement
+# Dashboard Layout Direction
 
-After every change:
+Dashboard is the centralized control center.
 
-* validate dashboard values
-* validate inventory list values
-* validate orders page values
-* validate box lookup values
-* validate exports
+Contains:
 
-All numbers must match the centralized inventory engine exactly.
+* KPI cards
+* analytics
+* reporting
+* operational insights
+
+Use:
+
+* responsive KPI cards
+* chart grids
+* compact enterprise layout
+
+Avoid:
+
+* table-strip KPI rows
+* fake cards
+* oversized whitespace
+
+Desktop should minimize scrolling.
+
+---
+
+# Performance & Responsiveness
+
+Use:
+
+* CSS grid
+* minmax()
+* flex layouts
+* viewport-aware sizing
+* internal scroll regions
+
+Avoid:
+
+* giant fixed heights
+* excessive page scroll
+* overflowing layouts
+
+---
+
+# Uploads Page
+
+Upload controls should:
+
+* remain sticky
+* stay compact
+* support fast operational workflows
+
+Guide panel:
+
+* displayed beside uploads
+* compact
+* scroll internally if needed
+
+---
+
+# Box Lookup Page
+
+Dedicated operational page.
+
+Requirements:
+
+* sticky search
+* empty state illustration
+* proper no-results state
+* responsive result layout
+
+---
+
+# Engineering & Maintenance Standards
+
+Continuously audit:
+
+* backend structure
+* BigQuery schema
+* API consistency
+* legacy code
+* unused CSS
+* dead routes
+* obsolete calculations
+
+Clean old architecture aggressively after refactors.
+
+Never allow:
+
+* duplicate calculation paths
+* outdated KPI logic
+* legacy UI wrappers
+* abandoned routes/components
+
+---
+
+# BigQuery & Backend Maintenance
+
+Regularly validate:
+
+* schema integrity
+* organization isolation
+* inventory consistency
+* auth/session behavior
+* permissions
+* query performance
+
+Ensure:
+
+* migrations remain clean
+* no stale columns
+* no orphaned data structures
+* no conflicting inventory logic
+
+---
+
+# Deployment & QA Rules
+
+After every major change:
+
+1. validate KPI consistency
+2. validate inventory accuracy
+3. validate organization isolation
+4. validate role permissions
+5. validate shipped SKU reassignment
+6. validate uploads
+7. validate exports
+8. validate responsive layouts
+
+Then:
+
+* clean legacy code
+* push changes to git
+* redeploy backend/frontend if required
+* verify production behavior
+
+Accuracy, consistency, and maintainability are the highest priorities.
