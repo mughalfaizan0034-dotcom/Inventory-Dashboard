@@ -453,7 +453,15 @@ const App = (() => {
     });
 
     const logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) logoutBtn.addEventListener('click', () => Auth.logout());
+    if (logoutBtn) logoutBtn.addEventListener('click', async () => {
+      const confirmed = await Modal.confirm({
+        title:       'Sign out',
+        message:     'Are you sure you want to sign out?',
+        confirmText: 'Sign out',
+        danger:      false,
+      });
+      if (confirmed) Auth.logout();
+    });
 
     const refreshBtn = document.getElementById('topbar-refresh-btn');
     if (refreshBtn) refreshBtn.addEventListener('click', () => { if (_currentPage) PAGES[_currentPage]?.init?.(); });

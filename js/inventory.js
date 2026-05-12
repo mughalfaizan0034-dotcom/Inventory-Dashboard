@@ -575,12 +575,11 @@ const InventoryList = (() => {
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Exporting…'; }
     const isFiltered = _search || _statusFilter !== 'all';
     try {
-      const filters = {
-        sort_by:  _sortBy  || undefined,
-        sort_dir: _sortDir || undefined,
-        status:   _statusFilter !== 'all' ? _statusFilter : undefined,
-      };
-      if (_search) filters.search = _search;
+      const filters = {};
+      if (_sortBy)                        filters.sort_by  = _sortBy;
+      if (_sortDir)                       filters.sort_dir = _sortDir;
+      if (_search)                        filters.search   = _search;
+      if (_statusFilter && _statusFilter !== 'all') filters.status = _statusFilter;
       const blob = await API.exportInventory(filters);
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
