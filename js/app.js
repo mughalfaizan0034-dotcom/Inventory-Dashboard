@@ -220,7 +220,7 @@ const Settings = (() => {
           <div style="font-size:11.5px;color:var(--txt-4)">${Utils.timeAgo(item.date)}</div>
         </div>
       </div>`).join('');
-    Icons.process(el);
+    Icons.refresh();
 
     if (pagEl) {
       const showing = `<span class="pagination-info">Showing ${start + 1}–${Math.min(start + _logsPerPage, total)} of ${total}</span>`;
