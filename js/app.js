@@ -413,6 +413,7 @@ const Settings = (() => {
 const App = (() => {
   const PAGES = {
     dashboard:  { label: 'Dashboard',       init: () => Dashboard.load() },
+    'box-lookup':{ label: 'Box Lookup',     init: () => {} },
     performance:{ label: 'Performance',     init: () => Perf.load() },
     inventory:  { label: 'Inventory List',  init: () => InventoryList.load() },
     orders:     { label: 'Orders',          init: () => Orders.load() },

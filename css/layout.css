@@ -257,10 +257,60 @@
   overflow: hidden;
   animation: fadeIn .18s var(--ease);
 }
-/* All pages except dashboard scroll normally with standard padding */
-.page.active:not(#page-dashboard) {
+/* Standard pages scroll with padding — excludes pages with custom internal layout */
+.page.active:not(#page-dashboard):not(#page-box-lookup):not(#page-uploads) {
   padding: 24px;
   overflow-y: auto;
+}
+
+/* ── Box Lookup dedicated page ──────────────────────────────── */
+#page-box-lookup { overflow: hidden; }
+
+.blookup-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.04);
+}
+
+.blookup-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.blookup-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  gap: 16px;
+  text-align: center;
+  color: var(--txt-4);
+}
+.blookup-empty-icon { opacity: .35; margin-bottom: 4px; }
+.blookup-empty-title { font-size: 15px; font-weight: 600; color: var(--txt-3); }
+.blookup-empty-sub { font-size: 13px; color: var(--txt-4); max-width: 320px; }
+
+/* ── Uploads page ───────────────────────────────────────────── */
+#page-uploads { overflow: hidden; }
+
+.uploads-top {
+  flex-shrink: 0;
+  padding: 18px 24px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.uploads-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px 24px;
 }
 
 /* ── Section header ─────────────────────────────────────────── */

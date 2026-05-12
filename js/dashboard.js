@@ -4,6 +4,7 @@
 
 /* ── Dashboard (Overview page) ──────────────────────────────── */
 const Dashboard = (() => {
+  let _dashMiniChart = null;
 
   /* Inventory row: Total SKUs | In Stock (bar) | OOS (bar) | Total Units | Remaining (bar) | Undefined SKUs */
   const INVENTORY_METRICS = [
@@ -87,11 +88,88 @@ const Dashboard = (() => {
     }
   }
 
+  /* ── Mini analytics helpers ─────────────────────────────── */
+  function _renderMiniWeekly(weekly) {
+    const canvas = document.getElementById('chart-dash-weekly');
+    if (!canvas) return;
+    if (_dashMiniChart) { _dashMiniChart.destroy(); _dashMiniChart = null; }
+
+    const recent = weekly.slice(-8);
+    _dashMiniChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: recent.map(w => w.week_label || ''),
+        datasets: [{
+          data: recent.map(w => w.units_sold || 0),
+          backgroundColor: 'rgba(37,99,235,0.12)',
+          borderColor: '#2563eb',
+          borderWidth: 1.5,
+          borderRadius: 3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${Utils.formatNumber(ctx.parsed.y)} units` } },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 9.5 }, color: '#94a3b8', maxRotation: 0 } },
+          y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,.04)' }, ticks: { font: { size: 9.5 }, color: '#94a3b8' } },
+        },
+      },
+    });
+  }
+
+  function _renderPlatformList(platforms) {
+    const el = document.getElementById('dash-platform-list');
+    if (!el) return;
+
+    if (!platforms.length) {
+      el.innerHTML = '<div style="color:var(--txt-4);font-size:12px;padding:20px 0;text-align:center">No platform data</div>';
+      return;
+    }
+
+    const total  = platforms.reduce((s, p) => s + (p.units_sold || 0), 0);
+    const COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2'];
+
+    el.innerHTML = platforms.slice(0, 7).map((p, i) => {
+      const pct   = total > 0 ? Math.round(p.units_sold / total * 100) : 0;
+      const color = COLORS[i % COLORS.length];
+      return `
+        <div style="margin-bottom:9px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">
+            <span style="font-size:12px;font-weight:500;color:var(--txt-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${Utils.escapeHtml(p.platform)}</span>
+            <span style="font-size:11px;color:var(--txt-4);flex-shrink:0">${Utils.formatNumber(p.units_sold)}</span>
+          </div>
+          <div style="height:4px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width .6s var(--ease)"></div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  async function _loadAnalytics() {
+    try {
+      const data = await API.getPerformanceData(8, '');
+      _renderMiniWeekly(data.weekly    || []);
+      _renderPlatformList(data.platforms || []);
+    } catch (_) { /* analytics are bonus — fail silently */ }
+  }
+
   async function load() {
     _renderPanel('panel-inventory-intel', INVENTORY_METRICS, null);
     _renderPanel('panel-sales-intel',     SALES_METRICS,     null);
+
+    const platEl = document.getElementById('dash-platform-list');
+    if (platEl) platEl.innerHTML = '<div style="display:flex;justify-content:center;padding:20px"><div class="spin spin-sm"></div></div>';
+
     try {
-      const kpiData = await MetricsEngine.load();
+      const [kpiData] = await Promise.all([
+        MetricsEngine.load(),
+        _loadAnalytics(),
+      ]);
       _renderPanel('panel-inventory-intel', INVENTORY_METRICS, kpiData);
       _renderPanel('panel-sales-intel',     SALES_METRICS,     kpiData);
 

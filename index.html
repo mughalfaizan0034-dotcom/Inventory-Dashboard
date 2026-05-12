@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Inventory Dashboard</title>
 
-  <!-- CSS — v=22: bump on every deploy to bust browser/CDN cache -->
-  <link rel="stylesheet" href="css/main.css?v=22">
-  <link rel="stylesheet" href="css/layout.css?v=22">
-  <link rel="stylesheet" href="css/components.css?v=22">
-  <link rel="stylesheet" href="css/tables.css?v=22">
-  <link rel="stylesheet" href="css/forms.css?v=22">
-  <link rel="stylesheet" href="css/animations.css?v=22">
+  <!-- CSS — v=23: bump on every deploy to bust browser/CDN cache -->
+  <link rel="stylesheet" href="css/main.css?v=23">
+  <link rel="stylesheet" href="css/layout.css?v=23">
+  <link rel="stylesheet" href="css/components.css?v=23">
+  <link rel="stylesheet" href="css/tables.css?v=23">
+  <link rel="stylesheet" href="css/forms.css?v=23">
+  <link rel="stylesheet" href="css/animations.css?v=23">
 
   <!-- Favicon: Lucide "package" icon in brand blue -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
@@ -91,6 +91,10 @@
           <span class="nav-icon"><i data-lucide="layout-dashboard" class="icon" style="width:18px;height:18px"></i></span>
           <span>Dashboard</span>
         </div>
+        <div class="nav-item" data-page="box-lookup">
+          <span class="nav-icon"><i data-lucide="search" class="icon" style="width:18px;height:18px"></i></span>
+          <span>Box Lookup</span>
+        </div>
         <div class="nav-item" data-page="performance">
           <span class="nav-icon"><i data-lucide="trending-up" class="icon" style="width:18px;height:18px"></i></span>
           <span>Performance</span>
@@ -156,7 +160,7 @@
         <!-- ── Dashboard page ───────────────────────────────────────── -->
         <div id="page-dashboard" class="page active">
 
-          <!-- Compact KPI strip -->
+          <!-- Compact KPI strip: two rows — Inventory and Sales -->
           <div class="dash-kpi-bar">
             <div class="dash-kpi-row">
               <div class="dash-kpi-row-label">
@@ -174,36 +178,69 @@
             </div>
           </div>
 
-          <!-- Box Lookup primary workspace -->
-          <div class="dash-lookup-area">
-            <div class="dash-lookup-header">
-              <span class="dash-lookup-header-icon"><i data-lucide="search" class="icon" style="width:14px;height:14px"></i></span>
-              <span class="dash-lookup-header-title">Box Lookup</span>
-            </div>
-            <div class="dash-lookup-search">
-              <div style="position:relative;flex:1;min-width:240px">
-                <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt-4);pointer-events:none;display:flex;align-items:center">
-                  <i data-lucide="search" class="icon" style="width:14px;height:14px"></i>
-                </span>
-                <input class="form-input search-input" id="box-search-input"
-                  placeholder="Search part number or UPC&hellip;" autocomplete="off" style="padding-left:34px">
+          <!-- Compact analytics: mini weekly trend + platform split -->
+          <div class="dash-analytics-strip">
+            <div class="card dash-analytics-card">
+              <div class="dash-analytics-header">
+                <span class="dash-analytics-title">Weekly Sales Trend</span>
+                <span class="dash-analytics-sub">Last 8 weeks</span>
               </div>
-              <button class="btn btn-ghost btn-sm" id="box-clear-btn" style="display:none">
-                <i data-lucide="x" class="icon" style="width:13px;height:13px"></i> Clear
-              </button>
+              <div class="dash-chart-inner">
+                <canvas id="chart-dash-weekly"></canvas>
+              </div>
             </div>
-            <div class="dash-lookup-results">
-              <div id="lookup-result-area">
-                <div id="lookup-tabs" style="display:none;margin-bottom:12px">
-                  <div style="display:flex;gap:0;border-bottom:2px solid var(--border)">
-                    <button class="lookup-tab active" data-tab="instock" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);border-bottom:2px solid var(--primary);margin-bottom:-2px">In Stock</button>
-                    <button class="lookup-tab" data-tab="all" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:var(--txt-3)">All Boxes</button>
-                  </div>
+            <div class="card dash-analytics-card">
+              <div class="dash-analytics-header">
+                <span class="dash-analytics-title">Platform Split</span>
+                <span class="dash-analytics-sub">Units sold</span>
+              </div>
+              <div class="dash-platform-inner" id="dash-platform-list">
+                <div style="display:flex;justify-content:center;padding:20px"><div class="spin spin-sm"></div></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ── Box Lookup page ──────────────────────────────────────── -->
+        <div id="page-box-lookup" class="page">
+
+          <!-- Sticky search bar -->
+          <div class="blookup-search">
+            <div style="position:relative;flex:1;min-width:200px;max-width:480px">
+              <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt-4);pointer-events:none;display:flex;align-items:center">
+                <i data-lucide="search" class="icon" style="width:14px;height:14px"></i>
+              </span>
+              <input class="form-input search-input" id="box-search-input"
+                placeholder="Search by Part #, UPC, or SKU&hellip;" autocomplete="off" style="padding-left:34px">
+            </div>
+            <button class="btn btn-ghost btn-sm" id="box-clear-btn" style="display:none">
+              <i data-lucide="x" class="icon" style="width:13px;height:13px"></i> Clear
+            </button>
+          </div>
+
+          <!-- Tabs + results area -->
+          <div class="blookup-body">
+            <!-- Tabs — shown only when there are results -->
+            <div id="lookup-tabs" style="display:none;margin-bottom:14px">
+              <div style="display:flex;gap:0;border-bottom:2px solid var(--border)">
+                <button class="lookup-tab active" data-tab="instock" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);border-bottom:2px solid var(--primary);margin-bottom:-2px">In Stock</button>
+                <button class="lookup-tab" data-tab="all" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:var(--txt-3)">All Boxes</button>
+              </div>
+            </div>
+
+            <!-- Results panels -->
+            <div id="lookup-instock">
+              <!-- Empty state before first search -->
+              <div class="blookup-empty">
+                <div class="blookup-empty-icon">
+                  <i data-lucide="search" class="icon" style="width:48px;height:48px"></i>
                 </div>
-                <div id="lookup-instock"></div>
-                <div id="lookup-all" style="display:none"></div>
+                <div class="blookup-empty-title">Search your inventory</div>
+                <div class="blookup-empty-sub">Enter a Part Number, UPC, or SKU above to view inventory allocation across boxes</div>
               </div>
             </div>
+            <div id="lookup-all" style="display:none"></div>
           </div>
 
         </div>
@@ -233,37 +270,41 @@
               <div class="chart-wrap"><canvas id="chart-weekly"></canvas></div>
             </div>
 
-            <!-- Sales by Platform — full width, no duplicate legend -->
-            <div class="card" style="margin-bottom:16px">
-              <div class="card-header"><div class="card-title">Sales by Platform</div></div>
-              <div style="display:flex;align-items:center;gap:40px;padding:8px 4px 16px">
-                <div style="flex:0 0 230px;height:230px">
-                  <canvas id="chart-platform"></canvas>
+            <!-- Platform chart + Monthly summary — responsive 2-col grid -->
+            <div class="perf-charts-row">
+
+              <!-- Sales by Platform -->
+              <div class="card">
+                <div class="card-header"><div class="card-title">Sales by Platform</div></div>
+                <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:0 4px 8px">
+                  <div style="width:200px;height:200px;flex-shrink:0">
+                    <canvas id="chart-platform"></canvas>
+                  </div>
+                  <div id="platform-legend" style="width:100%"></div>
                 </div>
-                <div id="platform-legend" style="flex:1;min-width:0"></div>
               </div>
-            </div>
 
-            <!-- Monthly Summary — full width -->
-            <div class="card card-table" style="margin-bottom:32px">
-              <div class="card-header" style="padding:16px 20px 0">
-                <div class="card-title">Monthly Summary</div>
+              <!-- Monthly Summary -->
+              <div class="card card-table" style="padding:0">
+                <div class="card-header" style="padding:16px 20px 0">
+                  <div class="card-title">Monthly Summary</div>
+                </div>
+                <div class="table-wrap" style="border:none;margin-top:12px">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Month</th>
+                        <th class="num">Orders</th>
+                        <th class="num">Units Sold</th>
+                        <th>Top Platform</th>
+                      </tr>
+                    </thead>
+                    <tbody id="monthly-tbody"></tbody>
+                  </table>
+                </div>
               </div>
-              <div class="table-wrap" style="border:none;margin-top:12px">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Month</th>
-                      <th class="num">Orders</th>
-                      <th class="num">Units Sold</th>
-                      <th>Top Platform</th>
-                    </tr>
-                  </thead>
-                  <tbody id="monthly-tbody"></tbody>
-                </table>
-              </div>
-            </div>
 
+            </div>
           </div>
         </div>
 
@@ -384,132 +425,136 @@
         <!-- ── Uploads page ─────────────────────────────────────────── -->
         <div id="page-uploads" class="page" data-min-role="manager">
 
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;margin-bottom:24px">
+          <!-- Sticky top section: 3-col grid (Inventory | Orders | Guide) -->
+          <div class="uploads-top">
+            <div style="display:grid;grid-template-columns:1fr 1fr 300px;gap:14px;align-items:start">
 
-            <!-- Upload instructions -->
-            <div id="upload-guide-wrapper" style="grid-column:1/-1">
-              <div id="upload-guide-header" class="guide-pulse"
-                style="display:flex;align-items:center;justify-content:space-between;background:var(--primary);color:#fff;padding:11px 16px;border-radius:var(--r-sm);cursor:pointer;box-shadow:0 2px 8px rgba(37,99,235,.25)"
-                onclick="(function(){var b=document.getElementById('upload-guide-body');var open=b.style.display!=='none';b.style.display=open?'none':'block';document.getElementById('guide-toggle-text').textContent=open?'Show Guide':'Hide Guide';document.getElementById('guide-chevron').dataset.lucide=open?'chevron-down':'chevron-up';lucide.createIcons();document.getElementById('upload-guide-header').style.borderRadius=open?'var(--r-sm)':'var(--r-sm) var(--r-sm) 0 0'})()">
-                <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;pointer-events:none">
-                  <i data-lucide="book-open" class="icon" style="width:15px;height:15px"></i>
-                  <span>Upload Preparation Guide</span>
+              <!-- Inventory upload card -->
+              <div class="upload-card">
+                <div class="upload-card-header">
+                  <div class="upload-card-title">
+                    <i data-lucide="package" class="icon" style="width:15px;height:15px"></i> Inventory Data
+                  </div>
+                  <a href="#" class="btn btn-ghost btn-sm" data-download-template="inventory" style="font-size:11.5px">Download CSV Template</a>
                 </div>
-                <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:rgba(255,255,255,.88);pointer-events:none">
-                  <span id="guide-toggle-text">Show Guide</span>
-                  <i data-lucide="chevron-down" class="icon" id="guide-chevron" style="width:13px;height:13px"></i>
+                <div class="upload-card-desc">
+                  <strong>action</strong>: <code>Add</code> / <code>Update</code> / <code>Remove</code> &nbsp;&middot;&nbsp; Add requires: sku, upc, quantity, part_number, box_number, date_added
                 </div>
-              </div>
-              <div id="upload-guide-body" style="display:none;background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r-sm) var(--r-sm);padding:16px 18px">
-                <div style="display:grid;gap:7px;margin-bottom:12px">
-                  <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;background:var(--surface-2);border-radius:6px;font-size:12.5px;color:var(--txt-2)">
-                    <span class="step-badge">1</span><div>Download the <strong>CSV template</strong> below for the data type you want to upload</div>
-                  </div>
-                  <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;background:var(--surface-2);border-radius:6px;font-size:12.5px;color:var(--txt-2)">
-                    <span class="step-badge">2</span><div>Fill in your data using <strong>Excel or Google Sheets</strong></div>
-                  </div>
-                  <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;background:rgba(251,146,60,.07);border:1px solid rgba(251,146,60,.28);border-radius:6px;font-size:12.5px;color:var(--txt-2)">
-                    <span class="step-badge">3</span><div><strong>Format SKU / UPC / Order ID columns as Text</strong> in Excel before entering values &mdash; otherwise Excel removes leading zeros and corrupts barcodes</div>
-                  </div>
-                  <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;background:var(--surface-2);border-radius:6px;font-size:12.5px;color:var(--txt-2)">
-                    <span class="step-badge">4</span><div><strong>File &rarr; Save As &rarr; Tab delimited Text (.txt)</strong> with UTF-8 encoding</div>
-                  </div>
-                  <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;background:var(--surface-2);border-radius:6px;font-size:12.5px;color:var(--txt-2)">
-                    <span class="step-badge">5</span><div>Upload the <strong>.txt file</strong> using the form below</div>
-                  </div>
+                <div class="drop-zone" id="drop-zone-inventory">
+                  <input type="file" id="file-input-inventory" accept=".txt">
+                  <div class="drop-icon"><i data-lucide="package" class="icon" style="width:26px;height:26px"></i></div>
+                  <div class="drop-text">Drop .txt file here or click to browse</div>
+                  <div class="drop-sub">Tab-delimited TXT &middot; Max 10 MB / 100,000 rows</div>
+                  <div class="drop-file" style="display:none"></div>
                 </div>
-                <div style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;background:rgba(220,38,38,.05);border:1px solid rgba(220,38,38,.18);border-radius:6px;font-size:12px;color:var(--txt-2)">
-                  <i data-lucide="alert-triangle" class="icon" style="width:15px;height:15px;color:#dc2626;flex-shrink:0;margin-top:1px"></i>
-                  <div><strong>Excel / XLSX uploads are not supported.</strong> Export as UTF-8 tab-delimited TXT (.txt) only. <strong>quantity</strong> and <strong>quantity_sold</strong> must be whole numbers. <strong>date_added</strong> / <strong>order_date</strong> must be a valid date format.</div>
+                <div class="progress-wrap" id="progress-inventory" style="display:none">
+                  <div class="progress-bar"></div>
+                </div>
+                <div id="upload-status-inventory"></div>
+                <div class="upload-actions">
+                  <button class="btn btn-secondary btn-sm" id="clear-btn-inventory">Clear</button>
+                  <button class="btn btn-primary btn-sm" id="upload-btn-inventory" disabled>Upload</button>
                 </div>
               </div>
+
+              <!-- Orders upload card -->
+              <div class="upload-card">
+                <div class="upload-card-header">
+                  <div class="upload-card-title">
+                    <i data-lucide="shopping-cart" class="icon" style="width:15px;height:15px"></i> Order Data
+                  </div>
+                  <a href="#" class="btn btn-ghost btn-sm" data-download-template="orders" style="font-size:11.5px">Download CSV Template</a>
+                </div>
+                <div class="upload-card-desc">
+                  <strong>action</strong>: <code>Add</code> / <code>Update</code> / <code>Remove</code> &nbsp;&middot;&nbsp; Add requires: order_date, sku, quantity_sold, platform
+                </div>
+                <div class="drop-zone" id="drop-zone-orders">
+                  <input type="file" id="file-input-orders" accept=".txt">
+                  <div class="drop-icon"><i data-lucide="clipboard-list" class="icon" style="width:26px;height:26px"></i></div>
+                  <div class="drop-text">Drop .txt file here or click to browse</div>
+                  <div class="drop-sub">Tab-delimited TXT &middot; Max 10 MB / 100,000 rows</div>
+                  <div class="drop-file" style="display:none"></div>
+                </div>
+                <div class="progress-wrap" id="progress-orders" style="display:none">
+                  <div class="progress-bar"></div>
+                </div>
+                <div id="upload-status-orders"></div>
+                <div class="upload-actions">
+                  <button class="btn btn-secondary btn-sm" id="clear-btn-orders">Clear</button>
+                  <button class="btn btn-primary btn-sm" id="upload-btn-orders" disabled>Upload</button>
+                </div>
+              </div>
+
+              <!-- Upload Guide side panel -->
+              <div class="upload-guide-panel">
+                <div class="upload-guide-panel-header">
+                  <i data-lucide="book-open" class="icon" style="width:13px;height:13px"></i>
+                  Upload Guide
+                </div>
+                <div class="upload-guide-panel-body">
+                  <div style="display:grid;gap:6px;margin-bottom:10px">
+                    <div style="display:flex;align-items:flex-start;gap:8px">
+                      <span class="step-badge">1</span>
+                      <div>Download the <strong>CSV template</strong> for the data type you want to upload</div>
+                    </div>
+                    <div style="display:flex;align-items:flex-start;gap:8px">
+                      <span class="step-badge">2</span>
+                      <div>Fill in your data using <strong>Excel or Google Sheets</strong></div>
+                    </div>
+                    <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 8px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);border-radius:5px">
+                      <span class="step-badge">3</span>
+                      <div><strong>Format SKU / UPC / Order ID as Text</strong> in Excel &mdash; prevents leading-zero loss</div>
+                    </div>
+                    <div style="display:flex;align-items:flex-start;gap:8px">
+                      <span class="step-badge">4</span>
+                      <div><strong>File &rarr; Save As &rarr; Tab delimited Text (.txt)</strong></div>
+                    </div>
+                    <div style="display:flex;align-items:flex-start;gap:8px">
+                      <span class="step-badge">5</span>
+                      <div>Upload the <strong>.txt file</strong> using the form</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:flex-start;gap:7px;padding:8px 10px;background:rgba(220,38,38,.05);border:1px solid rgba(220,38,38,.15);border-radius:5px">
+                    <i data-lucide="alert-triangle" class="icon" style="width:13px;height:13px;color:#dc2626;flex-shrink:0;margin-top:1px"></i>
+                    <div style="font-size:11px;color:var(--txt-3)"><strong>Excel / XLSX not supported.</strong> UTF-8 tab-delimited TXT only. Quantities must be whole numbers. Dates must be valid format.</div>
+                  </div>
+                </div>
+              </div>
+
             </div>
+          </div>
 
-            <!-- Inventory upload -->
-            <div class="upload-card">
-              <div class="upload-card-header">
-                <div class="upload-card-title" style="display:flex;align-items:center;gap:6px">
-                  <i data-lucide="package" class="icon" style="width:16px;height:16px"></i> Inventory Data
-                </div>
-                <a href="#" class="btn btn-ghost btn-sm" data-download-template="inventory">Download CSV Template</a>
+          <!-- Scrollable upload history -->
+          <div class="uploads-history">
+            <div class="card card-table" style="padding:0">
+              <div class="filter-bar">
+                <div class="card-title" style="flex:1">Upload History</div>
+                <select class="form-select" id="history-type-filter" style="width:160px">
+                  <option value="">All Types</option>
+                  <option value="inventory">Inventory</option>
+                  <option value="orders">Orders</option>
+                </select>
+                <button class="btn btn-ghost btn-sm" id="history-refresh-btn">
+                  <i data-lucide="refresh-cw" class="icon" style="width:13px;height:13px"></i> Refresh
+                </button>
               </div>
-              <div class="upload-card-desc">
-                <strong>action</strong> column: <code>Add</code> / <code>Update</code> / <code>Remove</code> &nbsp;&middot;&nbsp; <strong>Add</strong> requires: sku, upc, quantity, part_number, box_number, date_added
-              </div>
-              <div class="drop-zone" id="drop-zone-inventory">
-                <input type="file" id="file-input-inventory" accept=".txt">
-                <div class="drop-icon"><i data-lucide="package" class="icon" style="width:32px;height:32px"></i></div>
-                <div class="drop-text">Drop .txt file here or click to browse</div>
-                <div class="drop-sub">UTF-8 tab-delimited TXT (.txt) &middot; Max 10 MB / 100,000 rows</div>
-                <div class="drop-file" style="display:none"></div>
-              </div>
-              <div class="progress-wrap" id="progress-inventory" style="display:none">
-                <div class="progress-bar"></div>
-              </div>
-              <div id="upload-status-inventory"></div>
-              <div class="upload-actions">
-                <button class="btn btn-secondary btn-sm" id="clear-btn-inventory">Clear</button>
-                <button class="btn btn-primary btn-sm" id="upload-btn-inventory" disabled>Upload</button>
-              </div>
-            </div>
-
-            <!-- Orders upload -->
-            <div class="upload-card">
-              <div class="upload-card-header">
-                <div class="upload-card-title" style="display:flex;align-items:center;gap:6px">
-                  <i data-lucide="shopping-cart" class="icon" style="width:16px;height:16px"></i> Order Data
-                </div>
-                <a href="#" class="btn btn-ghost btn-sm" data-download-template="orders">Download CSV Template</a>
-              </div>
-              <div class="upload-card-desc">
-                <strong>action</strong> column: <code>Add</code> / <code>Update</code> / <code>Remove</code> &nbsp;&middot;&nbsp; <strong>Add</strong> requires: order_date, sku, quantity_sold, platform &nbsp;&middot;&nbsp; <strong>Update/Remove</strong> requires: order_id
-              </div>
-              <div class="drop-zone" id="drop-zone-orders">
-                <input type="file" id="file-input-orders" accept=".txt">
-                <div class="drop-icon"><i data-lucide="clipboard-list" class="icon" style="width:32px;height:32px"></i></div>
-                <div class="drop-text">Drop .txt file here or click to browse</div>
-                <div class="drop-sub">UTF-8 tab-delimited TXT (.txt) &middot; Max 10 MB / 100,000 rows</div>
-                <div class="drop-file" style="display:none"></div>
-              </div>
-              <div class="progress-wrap" id="progress-orders" style="display:none">
-                <div class="progress-bar"></div>
-              </div>
-              <div id="upload-status-orders"></div>
-              <div class="upload-actions">
-                <button class="btn btn-secondary btn-sm" id="clear-btn-orders">Clear</button>
-                <button class="btn btn-primary btn-sm" id="upload-btn-orders" disabled>Upload</button>
+              <div class="table-wrap" style="border:none;border-radius:0">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>File</th>
+                      <th class="num">Rows</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="upload-history-tbody"></tbody>
+                </table>
               </div>
             </div>
           </div>
 
-          <!-- Upload history -->
-          <div class="card card-table" style="padding:0">
-            <div class="filter-bar">
-              <div class="card-title" style="flex:1">Upload History</div>
-              <select class="form-select" id="history-type-filter" style="width:160px">
-                <option value="">All Types</option>
-                <option value="inventory">Inventory</option>
-                <option value="orders">Orders</option>
-              </select>
-              <button class="btn btn-ghost btn-sm" id="history-refresh-btn">
-                <i data-lucide="refresh-cw" class="icon" style="width:13px;height:13px"></i> Refresh
-              </button>
-            </div>
-            <div class="table-wrap" style="border:none;border-radius:0">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th>File</th>
-                    <th class="num">Rows</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody id="upload-history-tbody"></tbody>
-              </table>
-            </div>
-          </div>
         </div>
 
         <!-- ── Settings page ─────────────────────────────────────────── -->
@@ -633,19 +678,19 @@
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 
   <!-- App modules — order matters: utilities first, then API/auth, then features, app last -->
-  <!-- v=22 — bump this number on every deploy to bust browser/CDN cache -->
-  <script src="js/utilities.js?v=22"></script>
-  <script src="js/icons.js?v=22"></script>
-  <script src="js/notifications.js?v=22"></script>
-  <script src="js/loading.js?v=22"></script>
-  <script src="js/api.js?v=22"></script>
-  <script src="js/metricsEngine.js?v=22"></script>
-  <script src="js/auth.js?v=22"></script>
-  <script src="js/dashboard.js?v=22"></script>
-  <script src="js/inventory.js?v=22"></script>
-  <script src="js/orders.js?v=22"></script>
-  <script src="js/uploads.js?v=22"></script>
-  <script src="js/app.js?v=22"></script>
+  <!-- v=23 — bump this number on every deploy to bust browser/CDN cache -->
+  <script src="js/utilities.js?v=23"></script>
+  <script src="js/icons.js?v=23"></script>
+  <script src="js/notifications.js?v=23"></script>
+  <script src="js/loading.js?v=23"></script>
+  <script src="js/api.js?v=23"></script>
+  <script src="js/metricsEngine.js?v=23"></script>
+  <script src="js/auth.js?v=23"></script>
+  <script src="js/dashboard.js?v=23"></script>
+  <script src="js/inventory.js?v=23"></script>
+  <script src="js/orders.js?v=23"></script>
+  <script src="js/uploads.js?v=23"></script>
+  <script src="js/app.js?v=23"></script>
 
 </body>
 </html>
