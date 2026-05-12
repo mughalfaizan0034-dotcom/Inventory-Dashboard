@@ -98,6 +98,12 @@ export function createInventoryMetricsService({ bq, projectId }) {
         SUM(quantity_sold)                            AS units_sold_raw,
         COUNT(DISTINCT CASE WHEN platform IS NOT NULL THEN platform END) AS active_platforms,
         (
+          SELECT COUNT(*)
+          FROM ${ordTable} o2
+          WHERE o2.organization_id = @organizationId
+            AND COALESCE(o2.is_ignored, FALSE) = TRUE
+        ) AS ignored_orders,
+        (
           SELECT COUNT(DISTINCT o2.sku)
           FROM ${ordTable} o2
           WHERE o2.organization_id = @organizationId
