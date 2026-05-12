@@ -153,14 +153,10 @@ const Dashboard = (() => {
 
 /* ── Performance page ───────────────────────────────────────── */
 const Perf = (() => {
-  let _weeklyChart      = null;
-  let _platformChart    = null;
-  let _stockStatusChart = null;
-  let _topBoxesChart    = null;
-  let _healthMonthChart = null;
-  let _boxUtilChart     = null;
-  let _weeks    = 12;
-  let _platform = '';
+  let _weeklyChart   = null;
+  let _platformChart = null;
+  let _weeks         = 12;
+  let _platform      = '';
 
   const PLATFORM_COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#64748b'];
 
@@ -177,9 +173,8 @@ const Perf = (() => {
     if (container) Loading.section(container, true);
 
     try {
-      const [data, invData, platforms] = await Promise.all([
+      const [data, platforms] = await Promise.all([
         API.getPerformanceData(_weeks, _platform),
-        API.getInventoryAnalytics().catch(() => null),
         API.getPlatforms().catch(() => []),
       ]);
 
@@ -187,14 +182,6 @@ const Perf = (() => {
       _renderWeeklyChart(data.weekly   || []);
       _renderPlatformChart(data.platforms || []);
       _renderMonthlyTable(data.monthly || []);
-
-      if (invData) {
-        _renderStockStatus(invData.stockStatus      || []);
-        _renderTopBoxes(invData.topBoxes            || []);
-        _renderHealthByMonth(invData.healthByMonth  || []);
-        _renderOversoldSkus(invData.mostOversoldSkus || []);
-        _renderBoxUtilization(invData.boxUtilization || []);
-      }
     } catch (err) {
       Notify.apiError(err);
     } finally {
@@ -340,228 +327,6 @@ const Perf = (() => {
         <td class="num">${Utils.formatNumber(m.units_sold)}</td>
         <td>${Utils.escapeHtml(m.top_platform || '—')}</td>
       </tr>`).join('');
-  }
-
-  /* ── Inventory Intelligence ─────────────────────────────────── */
-
-  function _renderStockStatus(statusData) {
-    const canvas   = document.getElementById('chart-stock-status');
-    const legendEl = document.getElementById('stock-status-legend');
-    if (!canvas) return;
-
-    if (_stockStatusChart) _stockStatusChart.destroy();
-
-    const sorted = STATUS_ORDER.map(s => statusData.find(d => d.status === s)).filter(Boolean);
-
-    if (!sorted.length) {
-      if (legendEl) legendEl.innerHTML = `<div style="color:var(--txt-4);font-size:13px">No inventory data</div>`;
-      return;
-    }
-
-    _stockStatusChart = new Chart(canvas, {
-      type: 'doughnut',
-      data: {
-        labels:   sorted.map(d => d.status),
-        datasets: [{
-          data:            sorted.map(d => d.count),
-          backgroundColor: sorted.map(d => STATUS_COLORS[d.status] || '#94a3b8'),
-          borderWidth:     3,
-          borderColor:     '#fff',
-          hoverOffset:     8,
-        }],
-      },
-      options: {
-        responsive:          true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: ctx => {
-                const total = sorted.reduce((s, d) => s + d.count, 0);
-                const pct = total > 0 ? Math.round(ctx.parsed / total * 100) : 0;
-                return ` ${Utils.formatNumber(ctx.parsed)} SKUs (${pct}%)`;
-              },
-            },
-          },
-        },
-        cutout: '65%',
-      },
-    });
-
-    if (legendEl) {
-      const total = sorted.reduce((s, d) => s + d.count, 0);
-      legendEl.innerHTML = sorted.map(d => {
-        const pct   = total > 0 ? Math.round(d.count / total * 100) : 0;
-        const color = STATUS_COLORS[d.status] || '#94a3b8';
-        return `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)">
-            <span style="display:flex;align-items:center;gap:9px">
-              <span style="width:11px;height:11px;border-radius:3px;background:${color};flex-shrink:0"></span>
-              <span style="font-size:13px;font-weight:500;color:var(--txt-2)">${d.status}</span>
-            </span>
-            <span style="display:flex;align-items:center;gap:12px">
-              <span style="font-size:12px;color:var(--txt-4);min-width:28px;text-align:right">${pct}%</span>
-              <span style="font-size:14px;font-weight:700;color:var(--txt-1);min-width:48px;text-align:right">${Utils.formatNumber(d.count)}</span>
-            </span>
-          </div>`;
-      }).join('');
-    }
-  }
-
-  function _renderTopBoxes(topBoxes) {
-    const canvas = document.getElementById('chart-top-boxes');
-    if (!canvas) return;
-    if (_topBoxesChart) _topBoxesChart.destroy();
-
-    if (!topBoxes.length) return;
-
-    const labels = topBoxes.map(b => b.box_number);
-    const values = topBoxes.map(b => b.remaining_units);
-
-    _topBoxesChart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label:           'Remaining Units',
-          data:            values,
-          backgroundColor: values.map(v => v < 0 ? 'rgba(220,38,38,.2)' : 'rgba(37,99,235,.18)'),
-          borderColor:     values.map(v => v < 0 ? '#dc2626' : '#2563eb'),
-          borderWidth:     1.5,
-          borderRadius:    3,
-        }],
-      },
-      options: {
-        indexAxis:           'y',
-        responsive:          true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,.04)' } },
-          y: { grid: { display: false }, ticks: { font: { size: 11 } } },
-        },
-      },
-    });
-  }
-
-  function _renderHealthByMonth(healthData) {
-    const canvas = document.getElementById('chart-health-month');
-    if (!canvas) return;
-    if (_healthMonthChart) _healthMonthChart.destroy();
-
-    if (!healthData.length) return;
-
-    _healthMonthChart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels: healthData.map(d => d.month),
-        datasets: [
-          {
-            label:           'In Stock',
-            data:            healthData.map(d => d.in_stock),
-            backgroundColor: 'rgba(22,163,74,.7)',
-            stack:           's1',
-            borderRadius:    0,
-          },
-          {
-            label:           'OOS',
-            data:            healthData.map(d => d.oos),
-            backgroundColor: 'rgba(234,88,12,.65)',
-            stack:           's1',
-            borderRadius:    0,
-          },
-          {
-            label:           'Phantom',
-            data:            healthData.map(d => d.phantom),
-            backgroundColor: 'rgba(220,38,38,.7)',
-            stack:           's1',
-            borderRadius:    0,
-          },
-        ],
-      },
-      options: {
-        responsive:          true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'top',
-            labels:   { boxWidth: 12, font: { size: 12 } },
-          },
-        },
-        scales: {
-          x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
-          y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(0,0,0,.04)' } },
-        },
-      },
-    });
-  }
-
-  function _renderOversoldSkus(skus) {
-    const tbody = document.getElementById('oversold-tbody');
-    if (!tbody) return;
-
-    if (!skus.length) {
-      tbody.innerHTML = `<tr><td colspan="4">${Loading.empty('✅', 'No oversold SKUs — all stock is healthy')}</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = skus.map(s => `
-      <tr>
-        <td style="font-size:12px;font-weight:600;color:var(--txt-1);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-            title="${Utils.escapeHtml(s.sku)}">${Utils.escapeHtml(s.sku)}</td>
-        <td class="num">${Utils.formatNumber(s.original_qty)}</td>
-        <td class="num">${Utils.formatNumber(s.units_sold)}</td>
-        <td class="num" style="color:var(--error);font-weight:700">${Utils.formatNumber(s.remaining)}</td>
-      </tr>`).join('');
-  }
-
-  function _renderBoxUtilization(boxes) {
-    const canvas = document.getElementById('chart-box-util');
-    if (!canvas) return;
-    if (_boxUtilChart) _boxUtilChart.destroy();
-
-    if (!boxes.length) return;
-
-    _boxUtilChart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels: boxes.map(b => b.box_number),
-        datasets: [
-          {
-            label:           'Total SKUs',
-            data:            boxes.map(b => b.total_skus),
-            backgroundColor: 'rgba(37,99,235,.18)',
-            borderColor:     '#2563eb',
-            borderWidth:     1.5,
-            borderRadius:    3,
-          },
-          {
-            label:           'Active SKUs',
-            data:            boxes.map(b => b.active_skus),
-            backgroundColor: 'rgba(22,163,74,.28)',
-            borderColor:     '#16a34a',
-            borderWidth:     1.5,
-            borderRadius:    3,
-          },
-        ],
-      },
-      options: {
-        indexAxis:           'y',
-        responsive:          true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'top',
-            labels:   { boxWidth: 12, font: { size: 12 } },
-          },
-        },
-        scales: {
-          x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,.04)' } },
-          y: { grid: { display: false }, ticks: { font: { size: 11 } } },
-        },
-      },
-    });
   }
 
   function setWeeks(w) {
