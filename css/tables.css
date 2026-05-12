@@ -71,6 +71,11 @@
 .data-table tbody tr.row-unknown         { background: rgba(220, 38, 38, 0.05); }
 .data-table tbody tr.row-unknown:hover   { background: rgba(220, 38, 38, 0.09); }
 
+/* Fulfillment override row */
+.data-table tbody tr.row-override         { background: rgba(254, 216, 181, 0.22); }
+.data-table tbody tr.row-override:hover   { background: rgba(254, 216, 181, 0.30); }
+.data-table tbody tr.row-override td:first-child { border-left: 3px solid #d97706; }
+
 /* ── Compact card table (inside card with no extra border) ─── */
 .card-table .data-table thead th:first-child,
 .card-table .data-table tbody td:first-child { padding-left: 20px; }

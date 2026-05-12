@@ -12,7 +12,7 @@ const Orders = (() => {
   let _sortBy      = 'order_date';
   let _sortDir     = 'desc';
 
-  const DATA_COLS = ['Order Date', 'SKU', 'Qty Sold', 'Shipped From Box', 'Platform', ''];
+  const DATA_COLS = ['Order Date', 'SKU', 'Qty Sold', 'Shipped SKU', 'Platform', ''];
   const ALL_COLS  = ['', ...DATA_COLS];
 
   /* ── SKU parser ──────────────────────────────────────────── */
@@ -109,14 +109,15 @@ const Orders = (() => {
       const id        = row.order_row_id || '';
       const checked   = _selectedIds.has(id) ? ' checked' : '';
       const isUnknown = !!row.is_unknown;
-      const rowClass  = isUnknown ? 'row-unknown' : '';
-      const trAttr    = rowClass ? ` class="${rowClass}"` : '';
 
       const parsedSku  = _parseSku(row.sku || '');
       const origBox    = parsedSku?.box || '';
       const effectiveShippedSku = _getEffectiveSku(row.sku || '', row.shipped_from_box || '');
       const shipped    = row.shipped_from_box || '';
       const isOverride = !!(shipped && shipped !== origBox);
+      let rowClass = isUnknown ? 'row-unknown' : '';
+      if (isOverride) rowClass = rowClass ? `${rowClass} row-override` : 'row-override';
+      const trAttr = rowClass ? ` class="${rowClass}"` : '';
       const shippedHtml = isOverride
         ? `<span style="font-weight:500">${Utils.escapeHtml(effectiveShippedSku)}</span><span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span><button class="order-edit-btn" style="background:none;border:none;opacity:.45;font-size:11px;padding:0 3px;margin-left:4px;cursor:pointer;vertical-align:middle" title="Change fulfillment SKU">✏️</button>`
         : `<span class="order-edit-btn" style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1.5px solid #93c5fd;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700;color:#1d4ed8;cursor:pointer" title="Click to change fulfillment SKU">★ ${Utils.escapeHtml(effectiveShippedSku || '—')}</span>`;
@@ -198,7 +199,7 @@ const Orders = (() => {
     _updateDeleteBtn();
   }
 
-  /* ── Fulfillment box popover ─────────────────────────────── */
+  /* ── Fulfillment SKU popover ─────────────────────────────── */
   let _activePopover    = null;
   let _popoverListeners = { outside: null, keydown: null };
 
@@ -244,9 +245,6 @@ const Orders = (() => {
   function _showSkuPopover(cell, allOptions, pendingBoxInit, onConfirm) {
     _closeBoxPopover();
     let pendingBox = pendingBoxInit;
-    const orig = allOptions.find(o => o.isOriginal);
-    const alts = allOptions.filter(o => !o.isOriginal);
-
     const pop = document.createElement('div');
     pop.style.cssText = 'position:fixed;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.13),0 2px 8px rgba(0,0,0,.07);width:320px;display:flex;flex-direction:column;z-index:10001;font-family:inherit;font-size:13px;overflow:hidden';
 
@@ -260,24 +258,30 @@ const Orders = (() => {
       el.style.cssText = [
         'display:flex;justify-content:space-between;align-items:center',
         'padding:8px 10px;border-radius:7px;cursor:pointer;margin-bottom:2px;transition:background .1s',
-        opt.isOriginal
-          ? (isSel ? 'background:#dbeafe;border:1.5px solid #93c5fd' : 'background:#eff6ff;border:1.5px solid #bfdbfe')
-          : (isSel ? 'background:#e0e7ff;border:1.5px solid #a5b4fc' : 'background:transparent;border:1.5px solid transparent'),
+        isSel ? 'background:#fef3d8;border:1.5px solid #fbbf24' : 'background:transparent;border:1.5px solid transparent',
       ].join(';');
 
       const nameEl = document.createElement('span');
-      nameEl.style.cssText = opt.isOriginal ? 'font-weight:700;color:#1d4ed8'
-        : isSel ? 'font-weight:600;color:#3730a3' : 'font-weight:500;color:#1e293b';
-      nameEl.textContent = opt.isOriginal ? `★ ${opt.effective_sku} (Original)` : opt.effective_sku;
+      nameEl.style.cssText = opt.isOriginal ? 'font-weight:700;color:#1d4ed8' : 'font-weight:500;color:#1e293b';
+      nameEl.textContent = opt.effective_sku;
 
+      const meta = document.createElement('span');
+      meta.style.cssText = 'display:flex;gap:6px;align-items:center;font-size:12px';
       const qtyEl = document.createElement('span');
-      qtyEl.style.cssText = 'font-size:12px;color:' + (opt.isOriginal ? '#3b82f6' : isSel ? '#6366f1' : '#64748b');
+      qtyEl.style.cssText = 'color:' + (isSel ? '#92400e' : '#64748b');
       qtyEl.textContent = `Qty ${opt.remaining_stock}`;
+      meta.appendChild(qtyEl);
+      if (opt.isOriginal) {
+        const badge = document.createElement('span');
+        badge.textContent = 'Original';
+        badge.style.cssText = 'background:#e0f2fe;color:#0369a1;padding:2px 6px;border-radius:999px;font-size:11px;font-weight:600';
+        meta.appendChild(badge);
+      }
 
       el.appendChild(nameEl);
-      el.appendChild(qtyEl);
-      el.addEventListener('mouseenter', () => { if (opt.box_number !== pendingBox) el.style.background = opt.isOriginal ? '#dbeafe' : '#f8fafc'; });
-      el.addEventListener('mouseleave', () => { if (opt.box_number !== pendingBox) el.style.background = opt.isOriginal ? '#eff6ff' : 'transparent'; });
+      el.appendChild(meta);
+      el.addEventListener('mouseenter', () => { if (!isSel) el.style.background = '#f8fafc'; });
+      el.addEventListener('mouseleave', () => { if (!isSel) el.style.background = 'transparent'; });
       el.addEventListener('click', () => { pendingBox = opt.box_number; _render(); });
       return el;
     }
@@ -285,30 +289,22 @@ const Orders = (() => {
     function _render() {
       pop.innerHTML = '';
 
-      const origSect = document.createElement('div');
-      origSect.style.cssText = 'padding:10px 12px 8px;border-bottom:1px solid #f1f5f9';
-      const origLbl = document.createElement('div');
-      origLbl.style.cssText = 'font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px';
-      origLbl.textContent = 'Original SKU';
-      origSect.appendChild(origLbl);
-      if (orig) origSect.appendChild(_makeOptEl(orig));
-      pop.appendChild(origSect);
+      const title = document.createElement('div');
+      title.style.cssText = 'padding:12px 14px;font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #e2e8f0;background:#f8fafc';
+      title.textContent = 'Select fulfillment SKU';
+      pop.appendChild(title);
 
-      const altSect = document.createElement('div');
-      altSect.style.cssText = 'padding:10px 12px 8px;overflow-y:auto;max-height:210px';
-      const altLbl = document.createElement('div');
-      altLbl.style.cssText = 'font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px';
-      altLbl.textContent = 'Alternative In-Stock SKUs';
-      altSect.appendChild(altLbl);
-      if (alts.length) {
-        alts.forEach(a => altSect.appendChild(_makeOptEl(a)));
+      const list = document.createElement('div');
+      list.style.cssText = 'padding:10px 12px;overflow-y:auto;max-height:280px';
+      if (allOptions.length) {
+        allOptions.forEach(opt => list.appendChild(_makeOptEl(opt)));
       } else {
         const empty = document.createElement('div');
-        empty.style.cssText = 'color:#94a3b8;font-size:12px;text-align:center;padding:10px 0';
-        empty.textContent = 'No alternative in-stock SKUs';
-        altSect.appendChild(empty);
+        empty.style.cssText = 'color:#94a3b8;font-size:12px;text-align:center;padding:24px 0';
+        empty.textContent = 'No fulfillment SKUs found for this part or UPC';
+        list.appendChild(empty);
       }
-      pop.appendChild(altSect);
+      pop.appendChild(list);
 
       const footer = document.createElement('div');
       footer.style.cssText = 'padding:10px 12px;border-top:1px solid #f1f5f9;display:flex;gap:8px;justify-content:flex-end;background:#f8fafc';
@@ -385,7 +381,7 @@ const Orders = (() => {
             shipped_from_box: newShipped,
           });
           tr.dataset.shipped = newShipped;
-          Notify.success('Saved', `Fulfillment: ${prevLabel} → ${nextLabel}`);
+          Notify.success('Saved', `Fulfillment SKU: ${prevLabel} → ${nextLabel}`);
         } catch (err) {
           Notify.apiError(err);
           _restoreShippedCell(cell, currentBox);
