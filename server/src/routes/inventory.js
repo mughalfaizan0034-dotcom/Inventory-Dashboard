@@ -1,4 +1,4 @@
-import { authenticate } from '../middleware/authenticate.js';
+import { authenticate, requireRole } from '../middleware/authenticate.js';
 import { inventoryQuerySchema } from '../validation/inventorySchemas.js';
 import { z } from 'zod';
 
@@ -92,7 +92,7 @@ export async function inventoryRoutes(fastify, { inventoryService, activityServi
     }
   });
 
-  fastify.patch('/:sku', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.patch('/:sku', { preHandler: [authenticate, requireRole('staff')] }, async (request, reply) => {
     const originalSku = decodeURIComponent(request.params.sku);
     const parsed = inventoryPatchSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -114,7 +114,7 @@ export async function inventoryRoutes(fastify, { inventoryService, activityServi
     }
   });
 
-  fastify.delete('/rows', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.delete('/rows', { preHandler: [authenticate, requireRole('manager')] }, async (request, reply) => {
     const parsed = deleteBodySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: parsed.error.errors[0]?.message || 'Invalid body' });

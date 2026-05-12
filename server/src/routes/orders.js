@@ -1,4 +1,4 @@
-import { authenticate } from '../middleware/authenticate.js';
+import { authenticate, requireRole } from '../middleware/authenticate.js';
 import { z } from 'zod';
 
 const positiveInt = z.coerce.number().int().positive();
@@ -130,7 +130,7 @@ export async function ordersRoutes(fastify, { ordersService, activityService }) 
     }
   });
 
-  fastify.patch('/:rowId', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.patch('/:rowId', { preHandler: [authenticate, requireRole('staff')] }, async (request, reply) => {
     const rowId  = request.params.rowId;
     const parsed = patchSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -158,7 +158,7 @@ export async function ordersRoutes(fastify, { ordersService, activityService }) 
     }
   });
 
-  fastify.patch('/:rowId/ignore', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.patch('/:rowId/ignore', { preHandler: [authenticate, requireRole('staff')] }, async (request, reply) => {
     try {
       await ordersService.ignoreOrder(
         request.user.organization_id,
@@ -183,7 +183,7 @@ export async function ordersRoutes(fastify, { ordersService, activityService }) 
     mapped_inventory_sku: z.string().min(1),
   });
 
-  fastify.patch('/:rowId/map-sku', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.patch('/:rowId/map-sku', { preHandler: [authenticate, requireRole('staff')] }, async (request, reply) => {
     const parsed = mapSkuBodySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: 'mapped_inventory_sku is required' });
@@ -209,7 +209,7 @@ export async function ordersRoutes(fastify, { ordersService, activityService }) 
     }
   });
 
-  fastify.delete('/rows', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.delete('/rows', { preHandler: [authenticate, requireRole('manager')] }, async (request, reply) => {
     const parsed = deleteBodySchema.safeParse(request.body);
     if (!parsed.success) {
       const msg = parsed.error.errors[0]?.message || 'Invalid request body';

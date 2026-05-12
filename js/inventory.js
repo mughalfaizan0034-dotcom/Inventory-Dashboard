@@ -371,11 +371,11 @@ const InventoryList = (() => {
     }
 
     tbody.innerHTML = items.map(item => {
-      const qty       = Number(item.quantity   ?? 0);
-      const rawSold   = Number(item.units_sold ?? 0);
-      const fulfilled = item.fulfilled_units != null ? Number(item.fulfilled_units) : Math.min(rawSold, qty);
-      const phantom   = item.phantom_units   != null ? Number(item.phantom_units)   : Math.max(rawSold - qty, 0);
-      const remaining = Math.max(qty - fulfilled, 0);
+      const qty       = Number(item.quantity        ?? 0);
+      const fulfilled = Number(item.fulfilled_units ?? 0);
+      const phantom   = Number(item.phantom_units   ?? 0);
+      const remaining = Number(item.remaining_stock ?? Math.max(qty - fulfilled, 0));
+      const canEdit   = Auth.hasRole('staff');
       const checked   = _selectedSkus.has(item.sku) ? ' checked' : '';
       const remColor  = remaining === 0 ? 'color:var(--txt-4)' : 'color:var(--success);font-weight:600';
 
@@ -392,7 +392,7 @@ const InventoryList = (() => {
                   data-notes="${Utils.escapeHtml(item.notes || '')}"
                   data-date="${Utils.escapeHtml(item.date_added || '')}"${rowBg}>
         <td style="width:36px;text-align:center;padding:0 4px">
-          <input type="checkbox" class="inv-row-cb" data-sku="${Utils.escapeHtml(item.sku || '')}"${checked} style="cursor:pointer">
+          ${canEdit ? `<input type="checkbox" class="inv-row-cb" data-sku="${Utils.escapeHtml(item.sku || '')}"${checked} style="cursor:pointer">` : ''}
         </td>
         <td style="font-weight:600;color:var(--txt-1)">${Utils.escapeHtml(item.sku || '—')}${undefBadge}</td>
         <td>${Utils.escapeHtml(item.box_number || '—')}</td>
@@ -405,7 +405,7 @@ const InventoryList = (() => {
         <td>${Utils.formatDate(item.date_added)}</td>
         <td style="font-size:12px;color:var(--txt-4)">${Utils.escapeHtml(item.notes || '—')}</td>
         <td style="width:36px;text-align:center;padding:0 4px">
-          <button class="btn btn-ghost btn-icon btn-sm inv-edit-btn" data-sku="${Utils.escapeHtml(item.sku || '')}" title="Edit" style="opacity:.6"><i data-lucide="pencil" class="icon" style="width:13px;height:13px"></i></button>
+          ${canEdit ? `<button class="btn btn-ghost btn-icon btn-sm inv-edit-btn" data-sku="${Utils.escapeHtml(item.sku || '')}" title="Edit" style="opacity:.6"><i data-lucide="pencil" class="icon" style="width:13px;height:13px"></i></button>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -448,15 +448,12 @@ const InventoryList = (() => {
   }
 
   function _updateDeleteBar() {
-    const bar = document.getElementById('inv-delete-bar');
-    const cnt = document.getElementById('inv-selected-count');
-    if (!bar) return;
-    if (_selectedSkus.size > 0) {
-      bar.style.display = 'flex';
-      if (cnt) cnt.textContent = `${_selectedSkus.size} selected`;
-    } else {
-      bar.style.display = 'none';
-    }
+    const btn = document.getElementById('inv-delete-selected');
+    if (!btn) return;
+    btn.disabled = _selectedSkus.size === 0;
+    btn.textContent = _selectedSkus.size > 0
+      ? `Delete (${_selectedSkus.size} selected)`
+      : 'Delete Selected';
   }
 
   /* ── Inline edit modal ───────────────────────────────────── */
@@ -630,11 +627,17 @@ const InventoryList = (() => {
   }
 
   function init() {
+    const canEdit      = Auth.hasRole('staff');
+    const canDelete    = Auth.hasRole('manager');
     const searchInput  = document.getElementById('inventory-search');
     const statusSel    = document.getElementById('filter-inventory-status');
     const selectAll    = document.getElementById('inv-select-all');
     const deleteSelBtn = document.getElementById('inv-delete-selected');
     const exportBtn    = document.getElementById('inventory-export-btn');
+
+    // Hide mutation controls for viewers
+    if (selectAll)    selectAll.closest('th').style.display    = canEdit ? '' : 'none';
+    if (deleteSelBtn) deleteSelBtn.style.display               = canDelete ? '' : 'none';
 
     if (searchInput) {
       let _debounce;
@@ -651,7 +654,7 @@ const InventoryList = (() => {
       statusSel.addEventListener('change', () => { _statusFilter = statusSel.value; _page = 1; load(); });
     }
 
-    if (selectAll) {
+    if (canEdit && selectAll) {
       selectAll.addEventListener('change', () => {
         document.querySelectorAll('.inv-row-cb').forEach(cb => {
           cb.checked = selectAll.checked;
@@ -662,8 +665,8 @@ const InventoryList = (() => {
       });
     }
 
-    if (deleteSelBtn) deleteSelBtn.addEventListener('click', _deleteSelected);
-    if (exportBtn)    exportBtn.addEventListener('click', _doExportInventory);
+    if (canDelete && deleteSelBtn) deleteSelBtn.addEventListener('click', _deleteSelected);
+    if (exportBtn)                 exportBtn.addEventListener('click', _doExportInventory);
 
     _initSortHeaders();
   }

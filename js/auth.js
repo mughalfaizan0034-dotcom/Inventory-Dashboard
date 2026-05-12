@@ -113,7 +113,7 @@ const Auth = (() => {
     );
   }
 
-  const ROLE_LEVEL = { admin: 3, manager: 2, viewer: 1, staff: 1, operator: 1 };
+  const ROLE_LEVEL = { admin: 6, manager: 4, staff: 2, operator: 2, viewer: 1 };
 
   function hasRole(required) {
     const org = getOrganization();
@@ -383,8 +383,7 @@ const Auth = (() => {
     const org = getOrganization();
     if (!org) return;
 
-    const LEVEL = { admin: 3, manager: 2, staff: 1, viewer: 1, operator: 1 };
-    const level = LEVEL[org.role] || 0;
+    const level = ROLE_LEVEL[org.role] || 0;
 
     document.querySelectorAll('[data-min-role]').forEach(el => {
       const required = LEVEL[el.dataset.minRole] || 0;

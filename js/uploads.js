@@ -257,10 +257,7 @@ const Uploads = (() => {
   /* ── Template downloads ─────────────────────────────────── */
   const _templates = {
     inventory: {
-      filename: 'inventory_template.csv',
-      // Tab-delimited. UPC/SKU are TEXT — format those columns as Text in Excel
-      // BEFORE entering values to prevent leading-zero loss.
-      // action: Add (insert new), Update (partial update by sku), Remove (delete by sku)
+      filename: 'inventory_template.txt',
       content: [
         'action\tsku\tupc\tquantity\tpart_number\tbox_number\tdate_added\tnotes',
         'Add\tSKU-001\t012345678901\t25\tPT-123\tBX-001\t2026-05-11\tSample item',
@@ -270,8 +267,7 @@ const Uploads = (() => {
       ].join('\r\n'),
     },
     orders: {
-      filename: 'orders_template.csv',
-      // action: Add (insert new order, order_id auto-generated), Update/Remove (require order_id)
+      filename: 'orders_template.txt',
       content: [
         'action\torder_id\torder_date\tsku\tquantity_sold\tplatform\tshipped_from_box',
         'Add\t\t2026-05-11\tSKU-001\t2\tAmazon\tBX-001',
@@ -289,7 +285,7 @@ const Uploads = (() => {
         const type = link.dataset.downloadTemplate;
         const tpl  = _templates[type];
         if (!tpl) return;
-        const blob = new Blob([tpl.content], { type: 'text/csv;charset=utf-8' });
+        const blob = new Blob([tpl.content], { type: 'text/plain;charset=utf-8' });
         const url  = URL.createObjectURL(blob);
         const a    = document.createElement('a');
         a.href     = url;

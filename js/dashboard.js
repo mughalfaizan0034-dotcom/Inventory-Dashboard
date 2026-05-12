@@ -148,7 +148,7 @@ const Dashboard = (() => {
       sold   = weekly.map(w => w.units_sold  || 0);
       orders = weekly.map(w => w.order_count || 0);
     } else {
-      const monthly = [...(data.monthly || [])].reverse();
+      const monthly = [...(data.monthly || [])].slice(0, _months).reverse();
       labels = monthly.map(m => m.month_label || m.month || '');
       sold   = monthly.map(m => m.units_sold  || 0);
       orders = monthly.map(m => m.order_count || 0);

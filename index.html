@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Inventory Dashboard</title>
 
-  <!-- CSS â€” v=29: bump on every deploy to bust browser/CDN cache -->
-  <link rel="stylesheet" href="css/main.css?v=29">
-  <link rel="stylesheet" href="css/layout.css?v=29">
-  <link rel="stylesheet" href="css/components.css?v=29">
-  <link rel="stylesheet" href="css/tables.css?v=29">
-  <link rel="stylesheet" href="css/forms.css?v=29">
-  <link rel="stylesheet" href="css/animations.css?v=29">
+  <!-- CSS â€” v=32: bump on every deploy to bust browser/CDN cache -->
+  <link rel="stylesheet" href="css/main.css?v=32">
+  <link rel="stylesheet" href="css/layout.css?v=32">
+  <link rel="stylesheet" href="css/components.css?v=32">
+  <link rel="stylesheet" href="css/tables.css?v=32">
+  <link rel="stylesheet" href="css/forms.css?v=32">
+  <link rel="stylesheet" href="css/animations.css?v=32">
 
   <!-- Favicon: Lucide "package" icon in brand blue -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
@@ -265,13 +265,10 @@
                 <option value="phantom">Phantom SKUs</option>
                 <option value="undefined">Undefined SKUs</option>
               </select>
+              <button class="btn btn-danger btn-sm" id="inv-delete-selected" disabled>Delete Selected</button>
               <button class="btn btn-secondary btn-sm" id="inventory-export-btn">
                 <i data-lucide="download" class="icon" style="width:14px;height:14px"></i> Export
               </button>
-            </div>
-            <div id="inv-delete-bar" style="display:none;align-items:center;gap:10px;padding:8px 16px;background:var(--warning-bg,#fffbeb);border-bottom:1px solid var(--warning-bd,#fde68a)">
-              <span id="inv-selected-count" style="font-size:13px;font-weight:500;color:var(--txt-2)">0 selected</span>
-              <button class="btn btn-danger btn-sm" id="inv-delete-selected">Delete Selected</button>
             </div>
             <div class="table-wrap" style="border:none;border-radius:0">
               <table class="data-table" id="inventory-table">
@@ -626,19 +623,19 @@
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 
   <!-- App modules â€” order matters: utilities first, then API/auth, then features, app last -->
-  <!-- v=29 â€” bump this number on every deploy to bust browser/CDN cache -->
-  <script src="js/utilities.js?v=29"></script>
-  <script src="js/icons.js?v=29"></script>
-  <script src="js/notifications.js?v=29"></script>
-  <script src="js/loading.js?v=29"></script>
-  <script src="js/api.js?v=29"></script>
-  <script src="js/metricsEngine.js?v=29"></script>
-  <script src="js/auth.js?v=29"></script>
-  <script src="js/dashboard.js?v=29"></script>
-  <script src="js/inventory.js?v=29"></script>
-  <script src="js/orders.js?v=29"></script>
-  <script src="js/uploads.js?v=29"></script>
-  <script src="js/app.js?v=29"></script>
+  <!-- v=32 â€” bump this number on every deploy to bust browser/CDN cache -->
+  <script src="js/utilities.js?v=32"></script>
+  <script src="js/icons.js?v=32"></script>
+  <script src="js/notifications.js?v=32"></script>
+  <script src="js/loading.js?v=32"></script>
+  <script src="js/api.js?v=32"></script>
+  <script src="js/metricsEngine.js?v=32"></script>
+  <script src="js/auth.js?v=32"></script>
+  <script src="js/dashboard.js?v=32"></script>
+  <script src="js/inventory.js?v=32"></script>
+  <script src="js/orders.js?v=32"></script>
+  <script src="js/uploads.js?v=32"></script>
+  <script src="js/app.js?v=32"></script>
 
 </body>
 </html>

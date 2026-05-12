@@ -144,7 +144,20 @@ export function createInventoryRepository({ bq, projectId }) {
     const originalBox = `ARA${boxNum}`;
 
     const query = `
-      WITH ord_summary AS (
+      WITH inv_agg AS (
+        SELECT
+          box_number,
+          SUM(quantity) AS total_quantity,
+          ARRAY_AGG(DISTINCT sku) AS skus
+        FROM ${invTable}
+        WHERE organization_id = @organizationId
+          AND part_number = @partNumber
+          AND upc         = @upc
+          AND box_number IS NOT NULL
+          AND TRIM(box_number) != ''
+        GROUP BY box_number
+      ),
+      ord_summary AS (
         SELECT
           CASE
             WHEN shipped_from_box IS NOT NULL
@@ -158,17 +171,21 @@ export function createInventoryRepository({ bq, projectId }) {
         WHERE organization_id = @organizationId
           AND COALESCE(is_ignored, FALSE) = FALSE
         GROUP BY effective_sku
+      ),
+      box_orders AS (
+        SELECT
+          inv.box_number,
+          SUM(COALESCE(o.units_sold, 0)) AS total_sold
+        FROM inv_agg inv,
+        UNNEST(inv.skus) AS inv_sku
+        LEFT JOIN ord_summary o ON o.effective_sku = inv_sku
+        GROUP BY inv.box_number
       )
       SELECT
         i.box_number,
-        GREATEST(i.quantity - COALESCE(o.units_sold, 0), 0) AS remaining_stock
-      FROM ${invTable} i
-      LEFT JOIN ord_summary o ON i.sku = o.effective_sku
-      WHERE i.organization_id = @organizationId
-        AND i.part_number = @partNumber
-        AND i.upc         = @upc
-        AND i.box_number IS NOT NULL
-        AND TRIM(i.box_number) != ''
+        GREATEST(i.total_quantity - COALESCE(bo.total_sold, 0), 0) AS remaining_stock
+      FROM inv_agg i
+      LEFT JOIN box_orders bo ON bo.box_number = i.box_number
       ORDER BY remaining_stock DESC
     `;
     const [rows] = await bq.query({
@@ -176,14 +193,11 @@ export function createInventoryRepository({ bq, projectId }) {
       params: { organizationId, partNumber, upc },
     });
 
-    const seen = new Set();
-    const all  = rows
-      .map(r => ({
-        box_number: r.box_number,
-        effective_sku: `ARA${r.box_number}-${partNumber}-${upc}`,
-        remaining_stock: Number(r.remaining_stock ?? 0),
-      }))
-      .filter(r => { if (seen.has(r.box_number)) return false; seen.add(r.box_number); return true; });
+    const all = rows.map(r => ({
+      box_number:      r.box_number,
+      effective_sku:   `ARA${r.box_number}-${partNumber}-${upc}`,
+      remaining_stock: Number(r.remaining_stock ?? 0),
+    }));
 
     return {
       originalBox,

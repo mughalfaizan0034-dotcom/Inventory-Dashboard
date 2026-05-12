@@ -90,8 +90,10 @@ const Orders = (() => {
   /* ── Render table ────────────────────────────────────────── */
   function _renderTable(rows, total) {
     _total = total || 0;
-    const tbody = document.getElementById('orders-tbody');
-    const info  = document.getElementById('orders-info');
+    const tbody    = document.getElementById('orders-tbody');
+    const info     = document.getElementById('orders-info');
+    const canEdit  = Auth.hasRole('staff');
+    const canDelete = Auth.hasRole('manager');
     if (!tbody) return;
 
     if (!rows || !rows.length) {
@@ -102,8 +104,6 @@ const Orders = (() => {
       Pagination.render('orders-pagination', 1, 0, () => {});
       return;
     }
-
-    const statusFilter = _filters.status || 'all';
 
     tbody.innerHTML = rows.map(row => {
       const id        = row.order_row_id || '';
@@ -118,9 +118,15 @@ const Orders = (() => {
       let rowClass = isUnknown ? 'row-unknown' : '';
       if (isOverride) rowClass = rowClass ? `${rowClass} row-override` : 'row-override';
       const trAttr = rowClass ? ` class="${rowClass}"` : '';
-      const shippedHtml = isOverride
-        ? `<span style="font-weight:500">${Utils.escapeHtml(effectiveShippedSku)}</span><span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span><button class="order-edit-btn" style="background:none;border:none;opacity:.45;padding:0 3px;margin-left:4px;cursor:pointer;vertical-align:middle;display:inline-flex;align-items:center" title="Change fulfillment SKU"><i data-lucide="pencil" class="icon" style="width:12px;height:12px"></i></button>`
-        : `<span class="order-edit-btn" style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1.5px solid #93c5fd;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700;color:#1d4ed8;cursor:pointer" title="Click to change fulfillment SKU">&bull; ${Utils.escapeHtml(effectiveShippedSku || '&mdash;')}</span>`;
+
+      let shippedHtml;
+      if (!canEdit) {
+        shippedHtml = `<span style="font-weight:500">${Utils.escapeHtml(effectiveShippedSku || '—')}</span>${isOverride ? '<span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span>' : ''}`;
+      } else if (isOverride) {
+        shippedHtml = `<span style="font-weight:500">${Utils.escapeHtml(effectiveShippedSku)}</span><span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span><button class="order-edit-btn" style="background:none;border:none;opacity:.45;padding:0 3px;margin-left:4px;cursor:pointer;vertical-align:middle;display:inline-flex;align-items:center" title="Change fulfillment SKU"><i data-lucide="pencil" class="icon" style="width:12px;height:12px"></i></button>`;
+      } else {
+        shippedHtml = `<span class="order-edit-btn" style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1.5px solid #93c5fd;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700;color:#1d4ed8;cursor:pointer" title="Click to change fulfillment SKU">&bull; ${Utils.escapeHtml(effectiveShippedSku || '&mdash;')}</span>`;
+      }
 
       return `<tr data-row-id="${Utils.escapeHtml(id)}"
                 data-order-date="${Utils.escapeHtml(row.order_date || '')}"
@@ -129,7 +135,7 @@ const Orders = (() => {
                 data-shipped="${Utils.escapeHtml(shipped)}"
                 data-platform="${Utils.escapeHtml(row.platform || '')}"${trAttr}>
         <td style="width:36px;text-align:center;padding:0 4px">
-          <input type="checkbox" class="order-row-cb" data-id="${Utils.escapeHtml(id)}"${checked} style="cursor:pointer">
+          ${canDelete ? `<input type="checkbox" class="order-row-cb" data-id="${Utils.escapeHtml(id)}"${checked} style="cursor:pointer">` : ''}
         </td>
         <td>${Utils.escapeHtml(row.order_date || '-')}</td>
         <td style="font-weight:500">${Utils.escapeHtml(row.sku || '-')}</td>
@@ -141,21 +147,25 @@ const Orders = (() => {
       </tr>`;
     }).join('');
 
-    tbody.querySelectorAll('.order-row-cb').forEach(cb => {
-      cb.addEventListener('change', () => {
-        if (cb.checked) _selectedIds.add(cb.dataset.id);
-        else _selectedIds.delete(cb.dataset.id);
-        _syncSelectAll();
-        _updateDeleteBtn();
+    if (canDelete) {
+      tbody.querySelectorAll('.order-row-cb').forEach(cb => {
+        cb.addEventListener('change', () => {
+          if (cb.checked) _selectedIds.add(cb.dataset.id);
+          else _selectedIds.delete(cb.dataset.id);
+          _syncSelectAll();
+          _updateDeleteBtn();
+        });
       });
-    });
+    }
 
-    tbody.querySelectorAll('.order-edit-btn').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        _openInlineSkuSelector(btn.closest('tr'));
+    if (canEdit) {
+      tbody.querySelectorAll('.order-edit-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          _openInlineSkuSelector(btn.closest('tr'));
+        });
       });
-    });
+    }
 
 
     _syncSelectAll();
@@ -537,6 +547,7 @@ const Orders = (() => {
 
   /* ── Init ────────────────────────────────────────────────── */
   function init() {
+    const canDelete    = Auth.hasRole('manager');
     const resetBtn     = document.getElementById('orders-reset-filters');
     const exportBtn    = document.getElementById('orders-export');
     const searchEl     = document.getElementById('orders-search');
@@ -547,15 +558,19 @@ const Orders = (() => {
     const dateFrom     = document.getElementById('filter-date-from');
     const dateTo       = document.getElementById('filter-date-to');
 
-    if (resetBtn)     resetBtn.addEventListener('click',     _resetFilters);
-    if (exportBtn)    exportBtn.addEventListener('click',    _doExport);
-    if (deleteSelBtn) deleteSelBtn.addEventListener('click', _deleteSelected);
-    if (statusSel)    statusSel.addEventListener('change',   () => { _collectFilters(); _page = 1; load(); });
-    if (platSel)      platSel.addEventListener('change',     () => { _collectFilters(); _page = 1; load(); });
-    if (dateFrom)     dateFrom.addEventListener('change',    () => { _collectFilters(); _page = 1; load(); });
-    if (dateTo)       dateTo.addEventListener('change',      () => { _collectFilters(); _page = 1; load(); });
+    // Hide deletion controls for non-managers
+    if (selectAll)    selectAll.closest('th').style.display = canDelete ? '' : 'none';
+    if (deleteSelBtn) deleteSelBtn.style.display            = canDelete ? '' : 'none';
 
-    if (selectAll) {
+    if (resetBtn)  resetBtn.addEventListener('click',  _resetFilters);
+    if (exportBtn) exportBtn.addEventListener('click', _doExport);
+    if (canDelete && deleteSelBtn) deleteSelBtn.addEventListener('click', _deleteSelected);
+    if (statusSel) statusSel.addEventListener('change', () => { _collectFilters(); _page = 1; load(); });
+    if (platSel)   platSel.addEventListener('change',   () => { _collectFilters(); _page = 1; load(); });
+    if (dateFrom)  dateFrom.addEventListener('change',  () => { _collectFilters(); _page = 1; load(); });
+    if (dateTo)    dateTo.addEventListener('change',    () => { _collectFilters(); _page = 1; load(); });
+
+    if (canDelete && selectAll) {
       selectAll.addEventListener('change', () => {
         document.querySelectorAll('.order-row-cb').forEach(cb => {
           cb.checked = selectAll.checked;
