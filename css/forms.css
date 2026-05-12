@@ -137,6 +137,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 /* ── Upload guide side panel ────────────────────────────────── */
@@ -148,6 +150,8 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
 }
 .upload-guide-panel-header {
   background: var(--primary);

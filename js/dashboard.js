@@ -1,5 +1,5 @@
 /* ============================================================
-   dashboard.js — Dashboard: KPI strip + full analytics/charts
+   dashboard.js — Dashboard: KPI cards + analytics charts
    ============================================================ */
 
 const Dashboard = (() => {
@@ -25,10 +25,40 @@ const Dashboard = (() => {
   /* ── Chart + filter state ────────────────────────────────── */
   let _weeklyChart   = null;
   let _platformChart = null;
+  let _mode          = 'wow'; // 'wow' | 'mom'
   let _weeks         = 12;
+  let _months        = 6;
   let _platform      = '';
 
   const PLATFORM_COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#64748b'];
+
+  const WOW_RANGES = [
+    { value: 4,  label: 'Last 4 weeks'  },
+    { value: 8,  label: 'Last 8 weeks'  },
+    { value: 12, label: 'Last 12 weeks' },
+    { value: 24, label: 'Last 24 weeks' },
+    { value: 52, label: 'Last 52 weeks' },
+  ];
+  const MOM_RANGES = [
+    { value: 2,  label: 'Last 2 months'  },
+    { value: 4,  label: 'Last 4 months'  },
+    { value: 6,  label: 'Last 6 months'  },
+    { value: 12, label: 'Last 12 months' },
+  ];
+
+  function _weeksParam() {
+    return _mode === 'wow' ? _weeks : Math.round(_months * 4.33);
+  }
+
+  function _updateRangeSelect() {
+    const sel = document.getElementById('dash-range-select');
+    if (!sel) return;
+    const ranges  = _mode === 'wow' ? WOW_RANGES : MOM_RANGES;
+    const current = _mode === 'wow' ? _weeks : _months;
+    sel.innerHTML = ranges.map(r =>
+      `<option value="${r.value}"${r.value === current ? ' selected' : ''}>${Utils.escapeHtml(r.label)}</option>`
+    ).join('');
+  }
 
   /* ── KPI rendering ───────────────────────────────────────── */
   function _valueColor(def, val) {
@@ -69,7 +99,7 @@ const Dashboard = (() => {
     return `
       <div class="dash-kpi-item">
         <div class="skel skel-line" style="width:72px;height:10px;margin-bottom:6px"></div>
-        <div class="skel skel-line" style="width:56px;height:20px"></div>
+        <div class="skel skel-line" style="width:56px;height:22px"></div>
       </div>`;
   }
 
@@ -106,14 +136,26 @@ const Dashboard = (() => {
     sel.value = _platform;
   }
 
-  function _renderWeeklyChart(weekly) {
+  function _renderTrendChart(data) {
     const canvas = document.getElementById('chart-weekly');
     if (!canvas) return;
     if (_weeklyChart) _weeklyChart.destroy();
 
-    const labels = weekly.map(w => w.week_label || w.week_start || '');
-    const sold   = weekly.map(w => w.units_sold  || 0);
-    const orders = weekly.map(w => w.order_count || 0);
+    let labels, sold, orders;
+    if (_mode === 'wow') {
+      const weekly = data.weekly || [];
+      labels = weekly.map(w => w.week_label || w.week_start || '');
+      sold   = weekly.map(w => w.units_sold  || 0);
+      orders = weekly.map(w => w.order_count || 0);
+    } else {
+      const monthly = data.monthly || [];
+      labels = monthly.map(m => m.month_label || m.month || '');
+      sold   = monthly.map(m => m.units_sold  || 0);
+      orders = monthly.map(m => m.order_count || 0);
+    }
+
+    const titleEl = document.getElementById('chart-trend-title');
+    if (titleEl) titleEl.textContent = _mode === 'wow' ? 'Weekly Sales' : 'Monthly Sales';
 
     _weeklyChart = new Chart(canvas, {
       type: 'bar',
@@ -218,22 +260,6 @@ const Dashboard = (() => {
     }
   }
 
-  function _renderMonthlyTable(monthly) {
-    const tbody = document.getElementById('monthly-tbody');
-    if (!tbody) return;
-    if (!monthly.length) {
-      tbody.innerHTML = `<tr><td colspan="4">${Loading.empty('calendar', 'No data')}</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = monthly.map(m => `
-      <tr>
-        <td>${Utils.escapeHtml(m.month_label || m.month)}</td>
-        <td class="num">${Utils.formatNumber(m.order_count)}</td>
-        <td class="num">${Utils.formatNumber(m.units_sold)}</td>
-        <td>${Utils.escapeHtml(m.top_platform || '—')}</td>
-      </tr>`).join('');
-  }
-
   /* ── Data loaders ────────────────────────────────────────── */
   async function _loadKPIs() {
     _renderPanel('panel-inventory-intel', INVENTORY_METRICS, null);
@@ -256,13 +282,12 @@ const Dashboard = (() => {
     if (container) Loading.section(container, true);
     try {
       const [data, platforms] = await Promise.all([
-        API.getPerformanceData(_weeks, _platform),
+        API.getPerformanceData(_weeksParam(), _platform),
         API.getPlatforms().catch(() => []),
       ]);
       _populatePlatformSelect(platforms);
-      _renderWeeklyChart(data.weekly     || []);
+      _renderTrendChart(data);
       _renderPlatformChart(data.platforms || []);
-      _renderMonthlyTable(data.monthly   || []);
     } catch (err) {
       Notify.apiError(err);
     } finally {
@@ -276,9 +301,40 @@ const Dashboard = (() => {
 
   function init() {
     const platSel  = document.getElementById('dash-platform-select');
-    const weeksSel = document.getElementById('dash-weeks-select');
-    if (platSel)  platSel.addEventListener('change',  e => { _platform = e.target.value || ''; _loadCharts(); });
-    if (weeksSel) weeksSel.addEventListener('change', e => { _weeks    = parseInt(e.target.value) || 12; _loadCharts(); });
+    const rangeSel = document.getElementById('dash-range-select');
+    const modeWow  = document.getElementById('dash-mode-wow');
+    const modeMom  = document.getElementById('dash-mode-mom');
+
+    _updateRangeSelect();
+
+    if (platSel) platSel.addEventListener('change', e => {
+      _platform = e.target.value || '';
+      _loadCharts();
+    });
+
+    if (rangeSel) rangeSel.addEventListener('change', e => {
+      const v = parseInt(e.target.value) || 12;
+      if (_mode === 'wow') _weeks = v; else _months = v;
+      _loadCharts();
+    });
+
+    if (modeWow) modeWow.addEventListener('click', () => {
+      if (_mode === 'wow') return;
+      _mode = 'wow';
+      modeWow.classList.add('active');
+      modeMom.classList.remove('active');
+      _updateRangeSelect();
+      _loadCharts();
+    });
+
+    if (modeMom) modeMom.addEventListener('click', () => {
+      if (_mode === 'mom') return;
+      _mode = 'mom';
+      modeMom.classList.add('active');
+      modeWow.classList.remove('active');
+      _updateRangeSelect();
+      _loadCharts();
+    });
   }
 
   return { load, init };

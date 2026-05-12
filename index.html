@@ -1,31 +1,31 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Inventory Dashboard</title>
 
-  <!-- CSS — v=24: bump on every deploy to bust browser/CDN cache -->
-  <link rel="stylesheet" href="css/main.css?v=24">
-  <link rel="stylesheet" href="css/layout.css?v=24">
-  <link rel="stylesheet" href="css/components.css?v=24">
-  <link rel="stylesheet" href="css/tables.css?v=24">
-  <link rel="stylesheet" href="css/forms.css?v=24">
-  <link rel="stylesheet" href="css/animations.css?v=24">
+  <!-- CSS â€” v=25: bump on every deploy to bust browser/CDN cache -->
+  <link rel="stylesheet" href="css/main.css?v=25">
+  <link rel="stylesheet" href="css/layout.css?v=25">
+  <link rel="stylesheet" href="css/components.css?v=25">
+  <link rel="stylesheet" href="css/tables.css?v=25">
+  <link rel="stylesheet" href="css/forms.css?v=25">
+  <link rel="stylesheet" href="css/animations.css?v=25">
 
   <!-- Favicon: Lucide "package" icon in brand blue -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
 </head>
 <body>
 
-  <!-- ── Loading Screen ─────────────────────────────────────────────── -->
+  <!-- â”€â”€ Loading Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div id="loading-screen">
     <div class="load-logo">P</div>
     <div class="load-text">Loading Dashboard&hellip;</div>
     <div class="spin" style="margin-top:8px"></div>
   </div>
 
-  <!-- ── Org Selector Screen ────────────────────────────────────────── -->
+  <!-- â”€â”€ Org Selector Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div id="org-selector-screen" style="display:none">
     <div class="login-card">
       <div class="login-brand">
@@ -43,7 +43,7 @@
     </div>
   </div>
 
-  <!-- ── Login Screen ───────────────────────────────────────────────── -->
+  <!-- â”€â”€ Login Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div id="login-screen" style="display:none">
     <div class="login-card">
       <div class="login-brand">
@@ -73,7 +73,7 @@
     </div>
   </div>
 
-  <!-- ── App Shell ──────────────────────────────────────────────────── -->
+  <!-- â”€â”€ App Shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div id="app-shell" style="display:none">
 
     <!-- Sidebar -->
@@ -91,6 +91,10 @@
           <span class="nav-icon"><i data-lucide="layout-dashboard" class="icon" style="width:18px;height:18px"></i></span>
           <span>Dashboard</span>
         </div>
+        <div class="nav-item" data-page="box-lookup">
+          <span class="nav-icon"><i data-lucide="search" class="icon" style="width:18px;height:18px"></i></span>
+          <span>Box Lookup</span>
+        </div>
         <div class="nav-item" data-page="inventory">
           <span class="nav-icon"><i data-lucide="package" class="icon" style="width:18px;height:18px"></i></span>
           <span>Inventory List</span>
@@ -106,10 +110,6 @@
         <div class="nav-item" data-page="settings" data-min-role="admin">
           <span class="nav-icon"><i data-lucide="settings" class="icon" style="width:18px;height:18px"></i></span>
           <span>Settings</span>
-        </div>
-        <div class="nav-item" data-page="box-lookup">
-          <span class="nav-icon"><i data-lucide="search" class="icon" style="width:18px;height:18px"></i></span>
-          <span>Box Lookup</span>
         </div>
       </nav>
 
@@ -132,7 +132,7 @@
       <header class="topbar">
         <div id="topbar-title" class="topbar-title">Dashboard</div>
         <div class="topbar-actions">
-          <!-- Org switcher — hidden when user has only one org -->
+          <!-- Org switcher â€” hidden when user has only one org -->
           <div id="org-switcher" style="display:none;position:relative;cursor:pointer;user-select:none">
             <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#fff;padding:6px 11px;border:none;border-radius:var(--r-sm);background:var(--primary);transition:background .15s" onmouseover="this.style.background='var(--primary-dark,#1d4ed8)'" onmouseout="this.style.background='var(--primary)'">
               <span id="current-org-name">&mdash;</span>
@@ -153,91 +153,63 @@
       <!-- Page content -->
       <main class="page-content">
 
-        <!-- ── Dashboard page ───────────────────────────────────────── -->
+        <!-- â”€â”€ Dashboard page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div id="page-dashboard" class="page active">
 
-          <!-- Compact KPI strip: Inventory + Sales rows -->
-          <div class="dash-kpi-bar">
-            <div class="dash-kpi-row">
-              <div class="dash-kpi-row-label">
-                <span class="dash-kpi-row-icon"><i data-lucide="package" class="icon" style="width:15px;height:15px"></i></span>
-                <span class="dash-kpi-row-title">Inventory</span>
+          <!-- KPI Cards: Inventory + Sales -->
+          <div class="dash-kpi-area">
+            <div class="dash-kpi-section">
+              <div class="dash-kpi-section-title">
+                <i data-lucide="package" class="icon" style="width:12px;height:12px"></i>
+                Inventory Intelligence
               </div>
-              <div class="dash-kpi-row-metrics" id="panel-inventory-intel"></div>
+              <div class="dash-kpi-grid" id="panel-inventory-intel"></div>
             </div>
-            <div class="dash-kpi-row">
-              <div class="dash-kpi-row-label">
-                <span class="dash-kpi-row-icon"><i data-lucide="trending-up" class="icon" style="width:15px;height:15px"></i></span>
-                <span class="dash-kpi-row-title">Sales</span>
+            <div class="dash-kpi-section">
+              <div class="dash-kpi-section-title">
+                <i data-lucide="trending-up" class="icon" style="width:12px;height:12px"></i>
+                Sales Intelligence
               </div>
-              <div class="dash-kpi-row-metrics" id="panel-sales-intel"></div>
+              <div class="dash-kpi-grid" id="panel-sales-intel"></div>
             </div>
           </div>
 
           <!-- Analytics filter toolbar -->
           <div class="dash-filter-bar">
             <span class="dash-filter-label">Analytics</span>
+            <div class="dash-mode-toggle">
+              <button class="dash-mode-btn active" id="dash-mode-wow">WoW</button>
+              <button class="dash-mode-btn" id="dash-mode-mom">MoM</button>
+            </div>
+            <select class="form-select" id="dash-range-select" style="width:auto;font-size:12px;padding:5px 10px"></select>
             <select class="form-select" id="dash-platform-select" style="width:auto;font-size:12px;padding:5px 10px">
               <option value="">All Platforms</option>
             </select>
-            <select class="form-select" id="dash-weeks-select" style="width:auto;font-size:12px;padding:5px 10px">
-              <option value="4">Last 4 weeks</option>
-              <option value="8">Last 8 weeks</option>
-              <option value="12" selected>Last 12 weeks</option>
-              <option value="24">Last 24 weeks</option>
-              <option value="52">Last 52 weeks</option>
-            </select>
           </div>
 
-          <!-- Charts area — scrollable, fills remaining height -->
+          <!-- Charts area â€” scrollable, fills remaining height -->
           <div class="dash-charts-area" id="dash-charts-container">
 
-            <!-- Weekly Sales — full width -->
+            <!-- Trend chart â€” full width, title updates with WoW/MoM mode -->
             <div class="card" style="margin-bottom:14px">
-              <div class="card-header"><div class="card-title">Weekly Sales</div></div>
+              <div class="card-header"><div class="card-title" id="chart-trend-title">Weekly Sales</div></div>
               <div class="chart-wrap"><canvas id="chart-weekly"></canvas></div>
             </div>
 
-            <!-- Platform chart + Monthly summary — responsive 2-col grid -->
-            <div class="dash-charts-row">
-
-              <!-- Sales by Platform -->
-              <div class="card">
-                <div class="card-header"><div class="card-title">Sales by Platform</div></div>
-                <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:0 4px 8px">
-                  <div style="width:200px;height:200px;flex-shrink:0">
-                    <canvas id="chart-platform"></canvas>
-                  </div>
-                  <div id="platform-legend" style="width:100%"></div>
-                </div>
+            <!-- Sales by Platform â€” full width -->
+            <div class="card">
+              <div class="card-header"><div class="card-title">Sales by Platform</div></div>
+              <div class="dash-platform-body">
+                <div class="dash-platform-doughnut"><canvas id="chart-platform"></canvas></div>
+                <div id="platform-legend" class="dash-platform-legend"></div>
               </div>
-
-              <!-- Monthly Summary -->
-              <div class="card card-table" style="padding:0">
-                <div class="card-header" style="padding:16px 20px 0">
-                  <div class="card-title">Monthly Summary</div>
-                </div>
-                <div class="table-wrap" style="border:none;margin-top:12px">
-                  <table class="data-table">
-                    <thead>
-                      <tr>
-                        <th>Month</th>
-                        <th class="num">Orders</th>
-                        <th class="num">Units Sold</th>
-                        <th>Top Platform</th>
-                      </tr>
-                    </thead>
-                    <tbody id="monthly-tbody"></tbody>
-                  </table>
-                </div>
-              </div>
-
             </div>
+
           </div>
 
         </div>
 
-        <!-- ── Box Lookup page ──────────────────────────────────────── -->
+        <!-- â”€â”€ Box Lookup page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div id="page-box-lookup" class="page">
 
           <!-- Sticky search bar -->
@@ -276,7 +248,7 @@
 
         </div>
 
-        <!-- ── Inventory List page ──────────────────────────────────── -->
+        <!-- â”€â”€ Inventory List page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div id="page-inventory" class="page">
           <div class="card card-table" style="padding:0">
             <div class="filter-bar" style="flex-wrap:wrap">
@@ -329,7 +301,7 @@
           </div>
         </div>
 
-        <!-- ── Orders page ──────────────────────────────────────────── -->
+        <!-- â”€â”€ Orders page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div id="page-orders" class="page">
           <div class="card card-table" style="padding:0">
             <div class="filter-bar" style="flex-wrap:wrap">
@@ -377,7 +349,7 @@
           </div>
         </div>
 
-        <!-- ── Orders delete confirmation modal ──────────────────────── -->
+        <!-- â”€â”€ Orders delete confirmation modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div id="orders-delete-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center">
           <div class="login-card" style="max-width:440px;width:100%;padding:24px 28px">
             <div style="font-size:15px;font-weight:600;margin-bottom:10px;color:var(--txt-1)">Confirm Delete</div>
@@ -389,12 +361,12 @@
           </div>
         </div>
 
-        <!-- ── Uploads page ─────────────────────────────────────────── -->
+        <!-- â”€â”€ Uploads page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div id="page-uploads" class="page" data-min-role="manager">
 
           <!-- Sticky top section: 3-col grid (Inventory | Orders | Guide) -->
           <div class="uploads-top">
-            <div style="display:grid;grid-template-columns:1fr 1fr 300px;gap:14px;align-items:start">
+            <div style="display:grid;grid-template-columns:3fr 3fr 4fr;gap:14px;align-items:stretch">
 
               <!-- Inventory upload card -->
               <div class="upload-card">
@@ -524,7 +496,7 @@
 
         </div>
 
-        <!-- ── Settings page ─────────────────────────────────────────── -->
+        <!-- â”€â”€ Settings page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div id="page-settings" class="page" data-min-role="admin">
           <div class="section-header">
             <div>
@@ -644,20 +616,20 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 
-  <!-- App modules — order matters: utilities first, then API/auth, then features, app last -->
-  <!-- v=24 — bump this number on every deploy to bust browser/CDN cache -->
-  <script src="js/utilities.js?v=24"></script>
-  <script src="js/icons.js?v=24"></script>
-  <script src="js/notifications.js?v=24"></script>
-  <script src="js/loading.js?v=24"></script>
-  <script src="js/api.js?v=24"></script>
-  <script src="js/metricsEngine.js?v=24"></script>
-  <script src="js/auth.js?v=24"></script>
-  <script src="js/dashboard.js?v=24"></script>
-  <script src="js/inventory.js?v=24"></script>
-  <script src="js/orders.js?v=24"></script>
-  <script src="js/uploads.js?v=24"></script>
-  <script src="js/app.js?v=24"></script>
+  <!-- App modules â€” order matters: utilities first, then API/auth, then features, app last -->
+  <!-- v=25 â€” bump this number on every deploy to bust browser/CDN cache -->
+  <script src="js/utilities.js?v=25"></script>
+  <script src="js/icons.js?v=25"></script>
+  <script src="js/notifications.js?v=25"></script>
+  <script src="js/loading.js?v=25"></script>
+  <script src="js/api.js?v=25"></script>
+  <script src="js/metricsEngine.js?v=25"></script>
+  <script src="js/auth.js?v=25"></script>
+  <script src="js/dashboard.js?v=25"></script>
+  <script src="js/inventory.js?v=25"></script>
+  <script src="js/orders.js?v=25"></script>
+  <script src="js/uploads.js?v=25"></script>
+  <script src="js/app.js?v=25"></script>
 
 </body>
 </html>
