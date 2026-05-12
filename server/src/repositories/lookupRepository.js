@@ -71,7 +71,8 @@ export function createLookupRepository({ bq, projectId }) {
         ig.part_number,
         ig.box_number,
         ig.initial_stock,
-        COALESCE(bo.units_sold, 0)                                    AS units_sold,
+        LEAST(COALESCE(bo.units_sold, 0), ig.initial_stock)          AS fulfilled_units,
+        GREATEST(COALESCE(bo.units_sold, 0) - ig.initial_stock, 0)   AS phantom_units,
         GREATEST(ig.initial_stock - COALESCE(bo.units_sold, 0), 0)   AS remaining_stock
       FROM inv_grouped ig
       LEFT JOIN box_orders bo
@@ -88,7 +89,8 @@ export function createLookupRepository({ bq, projectId }) {
     return rows.map(r => ({
       ...r,
       initial_stock:   Number(r.initial_stock   ?? 0),
-      units_sold:      Number(r.units_sold       ?? 0),
+      fulfilled_units: Number(r.fulfilled_units  ?? 0),
+      phantom_units:   Number(r.phantom_units    ?? 0),
       remaining_stock: Number(r.remaining_stock  ?? 0),
     }));
   }

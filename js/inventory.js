@@ -7,45 +7,50 @@ const BoxLookup = (() => {
   let _activeTab = 'instock';
 
   /* ── Status pill ─────────────────────────────────────────── */
-  function _statusPill(rem, large = false) {
+  function _statusPill(rem, phantom = 0, large = false) {
     const pad = large ? '4px 14px' : '2px 9px';
     const fs  = large ? '12.5px'   : '11.5px';
+    if (phantom > 0)
+      return `<span style="display:inline-flex;align-items:center;padding:${pad};border-radius:9999px;font-size:${fs};font-weight:600;background:rgba(220,38,38,.1);color:#dc2626;white-space:nowrap">Phantom</span>`;
     if (rem > 0)
       return `<span style="display:inline-flex;align-items:center;padding:${pad};border-radius:9999px;font-size:${fs};font-weight:600;background:rgba(22,163,74,.12);color:#15803d;white-space:nowrap">In Stock</span>`;
-    if (rem === 0)
-      return `<span style="display:inline-flex;align-items:center;padding:${pad};border-radius:9999px;font-size:${fs};font-weight:600;background:rgba(234,88,12,.1);color:#c2410c;white-space:nowrap">OOS</span>`;
-    return `<span style="display:inline-flex;align-items:center;padding:${pad};border-radius:9999px;font-size:${fs};font-weight:600;background:rgba(220,38,38,.1);color:#dc2626;white-space:nowrap">Phantom</span>`;
+    return `<span style="display:inline-flex;align-items:center;padding:${pad};border-radius:9999px;font-size:${fs};font-weight:600;background:rgba(234,88,12,.1);color:#c2410c;white-space:nowrap">OOS</span>`;
   }
 
   /* ── Remaining colour ────────────────────────────────────── */
   function _remColor(rem) {
-    return rem > 0 ? '#15803d' : rem === 0 ? 'var(--txt-4)' : '#dc2626';
+    return rem > 0 ? '#15803d' : 'var(--txt-4)';
   }
 
   /* ── UPC totals card ─────────────────────────────────────── */
-  function _upcSummaryCard(upc, totalInitial, totalSold, totalRemaining) {
-    const rem = Number(totalRemaining);
+  function _upcSummaryCard(upc, totalInitial, totalFulfilled, totalPhantom, totalRemaining) {
+    const rem     = Number(totalRemaining);
+    const phantom = Number(totalPhantom);
     return `
       <div style="margin-bottom:14px">
         <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
           <span style="font-size:10.5px;font-weight:700;color:var(--txt-4);letter-spacing:.08em;text-transform:uppercase">UPC</span>
           <span style="font-size:14px;font-weight:700;color:var(--txt-1);font-family:'Courier New',monospace;letter-spacing:.04em">${Utils.escapeHtml(upc || '—')}</span>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;border:1px solid var(--border);border-radius:8px;overflow:hidden">
           <div style="padding:12px 16px;border-right:1px solid var(--border)">
             <div style="font-size:10.5px;font-weight:600;color:var(--txt-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Initial</div>
             <div style="font-size:22px;font-weight:700;color:var(--txt-2);line-height:1">${Utils.formatNumber(totalInitial)}</div>
           </div>
           <div style="padding:12px 16px;border-right:1px solid var(--border)">
-            <div style="font-size:10.5px;font-weight:600;color:var(--txt-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Sold</div>
-            <div style="font-size:22px;font-weight:700;color:var(--txt-2);line-height:1">${Utils.formatNumber(totalSold)}</div>
+            <div style="font-size:10.5px;font-weight:600;color:var(--txt-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Actual Sold</div>
+            <div style="font-size:22px;font-weight:700;color:var(--txt-2);line-height:1">${Utils.formatNumber(totalFulfilled)}</div>
+          </div>
+          <div style="padding:12px 16px;border-right:1px solid var(--border)">
+            <div style="font-size:10.5px;font-weight:600;color:var(--txt-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Phantom</div>
+            <div style="font-size:22px;font-weight:700;color:${phantom > 0 ? '#dc2626' : 'var(--txt-4)'};line-height:1">${Utils.formatNumber(phantom)}</div>
           </div>
           <div style="padding:12px 16px;border-right:1px solid var(--border)">
             <div style="font-size:10.5px;font-weight:600;color:var(--txt-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Remaining</div>
             <div style="font-size:22px;font-weight:700;color:${_remColor(rem)};line-height:1">${Utils.formatNumber(rem)}</div>
           </div>
           <div style="padding:12px 16px;display:flex;align-items:center;justify-content:center;min-width:90px">
-            ${_statusPill(rem, true)}
+            ${_statusPill(rem, phantom, true)}
           </div>
         </div>
       </div>`;
@@ -53,16 +58,18 @@ const BoxLookup = (() => {
 
   /* ── Box-level table row ─────────────────────────────────── */
   function _boxRow(box) {
-    const rem      = Number(box.remaining_stock ?? 0);
-    const rowClass = rem < 0 ? ' class="row-phantom"' : '';
-    const rowStyle = rem === 0 ? ' style="background:rgba(0,0,0,.02)"' : '';
+    const rem     = Number(box.remaining_stock ?? 0);
+    const phantom = Number(box.phantom_units   ?? 0);
+    const rowClass = phantom > 0 ? ' class="row-phantom"' : '';
+    const rowStyle = rem === 0 && phantom === 0 ? ' style="background:rgba(0,0,0,.02)"' : '';
     return `
       <tr${rowClass}${rowStyle}>
         <td style="font-weight:600;color:var(--txt-1)">${Utils.escapeHtml(box.box_number || '—')}</td>
         <td class="num">${Utils.formatNumber(box.initial_stock)}</td>
-        <td class="num">${Utils.formatNumber(box.units_sold)}</td>
+        <td class="num">${Utils.formatNumber(box.fulfilled_units)}</td>
+        <td class="num" style="font-weight:600;color:${phantom > 0 ? '#dc2626' : 'var(--txt-4)'}">${Utils.formatNumber(phantom)}</td>
         <td class="num" style="font-weight:600;color:${_remColor(rem)}">${Utils.formatNumber(rem)}</td>
-        <td>${_statusPill(rem)}</td>
+        <td>${_statusPill(rem, phantom)}</td>
       </tr>`;
   }
 
@@ -73,13 +80,15 @@ const BoxLookup = (() => {
       const key = `${b.box_number}|${b.part_number}|${b.upc}`;
       if (map.has(key)) {
         const m = map.get(key);
-        m.initial_stock  += Number(b.initial_stock  ?? 0);
-        m.units_sold     += Number(b.units_sold      ?? 0);
-        m.remaining_stock = m.initial_stock - m.units_sold;
+        m.initial_stock   += Number(b.initial_stock   ?? 0);
+        m.fulfilled_units += Number(b.fulfilled_units  ?? 0);
+        m.phantom_units   += Number(b.phantom_units    ?? 0);
+        m.remaining_stock += Number(b.remaining_stock  ?? 0);
       } else {
         map.set(key, { ...b,
           initial_stock:   Number(b.initial_stock   ?? 0),
-          units_sold:      Number(b.units_sold       ?? 0),
+          fulfilled_units: Number(b.fulfilled_units  ?? 0),
+          phantom_units:   Number(b.phantom_units    ?? 0),
           remaining_stock: Number(b.remaining_stock  ?? 0),
         });
       }
@@ -88,17 +97,18 @@ const BoxLookup = (() => {
   }
 
   /* ── Render one UPC block (summary card + box table) ─────── */
-  function _renderUpcBlock(upcLabel, totalInitial, totalSold, totalRemaining, visibleBoxes) {
+  function _renderUpcBlock(upcLabel, totalInitial, totalFulfilled, totalPhantom, totalRemaining, visibleBoxes) {
     return `
       <div>
-        ${_upcSummaryCard(upcLabel, totalInitial, totalSold, totalRemaining)}
+        ${_upcSummaryCard(upcLabel, totalInitial, totalFulfilled, totalPhantom, totalRemaining)}
         <div class="table-wrap" style="border:none;margin:0">
           <table class="data-table">
             <thead>
               <tr>
                 <th>Box #</th>
                 <th class="num">Initial</th>
-                <th class="num">Sold</th>
+                <th class="num">Actual Sold</th>
+                <th class="num">Phantom</th>
                 <th class="num">Remaining</th>
                 <th>Status</th>
               </tr>
@@ -125,10 +135,11 @@ const BoxLookup = (() => {
       const upcBlocks = [];
 
       for (const sub of subSections) {
-        const allBoxes       = _mergeByBox(sub.boxes);
-        const totalInitial   = allBoxes.reduce((s, b) => s + Number(b.initial_stock   ?? 0), 0);
-        const totalSold      = allBoxes.reduce((s, b) => s + Number(b.units_sold       ?? 0), 0);
-        const totalRemaining = allBoxes.reduce((s, b) => s + Number(b.remaining_stock  ?? 0), 0);
+        const allBoxes        = _mergeByBox(sub.boxes);
+        const totalInitial    = allBoxes.reduce((s, b) => s + Number(b.initial_stock   ?? 0), 0);
+        const totalFulfilled  = allBoxes.reduce((s, b) => s + Number(b.fulfilled_units  ?? 0), 0);
+        const totalPhantom    = allBoxes.reduce((s, b) => s + Number(b.phantom_units    ?? 0), 0);
+        const totalRemaining  = allBoxes.reduce((s, b) => s + Number(b.remaining_stock  ?? 0), 0);
 
         // In Stock tab: show UPC if ANY individual box has remaining > 0
         const hasAnyInStock = allBoxes.some(b => Number(b.remaining_stock ?? 0) > 0);
@@ -141,7 +152,7 @@ const BoxLookup = (() => {
         if (!visibleBoxes.length) continue;
 
         const upcLabel = sub.upc ?? sub.part_number ?? '—';
-        upcBlocks.push(_renderUpcBlock(upcLabel, totalInitial, totalSold, totalRemaining, visibleBoxes));
+        upcBlocks.push(_renderUpcBlock(upcLabel, totalInitial, totalFulfilled, totalPhantom, totalRemaining, visibleBoxes));
       }
 
       if (!upcBlocks.length) continue;
