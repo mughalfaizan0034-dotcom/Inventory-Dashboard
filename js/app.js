@@ -196,16 +196,19 @@ const Settings = (() => {
     if (!el) return;
     el.innerHTML = `<div style="display:flex;justify-content:center;padding:24px">${Loading.spinnerHtml()}</div>`;
     try {
-      const logs = await API.getLogs();
-      const entries = logs.entries || logs || [];
-      if (!entries.length) { el.innerHTML = Loading.empty('📋', 'No logs'); return; }
-      el.innerHTML = `<pre style="font-size:11.5px;color:var(--txt-2);overflow:auto;max-height:400px;line-height:1.6">${
-        entries.slice(-100).map(l => Utils.escapeHtml(
-          `[${l.timestamp || ''}] [${(l.level || 'INFO').toUpperCase()}] ${l.message || ''}`
-        )).join('\n')
-      }</pre>`;
+      const items = await API.getActivity(20);
+      if (!items.length) { el.innerHTML = Loading.empty('📋', 'No activity found'); return; }
+      el.innerHTML = items.map(item => `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:18px">${Utils.escapeHtml(item.icon || '📄')}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500;color:var(--txt-1)">${Utils.escapeHtml(item.title)}</div>
+            <div style="font-size:11.5px;color:var(--txt-4)">${Utils.timeAgo(item.date)}</div>
+          </div>
+        </div>`).join('');
     } catch (err) {
-      el.innerHTML = Loading.error('Failed to load logs');
+      el.innerHTML = Loading.error('Failed to load activity logs');
+      Notify.apiError(err);
     }
   }
 
@@ -410,7 +413,6 @@ const App = (() => {
   const PAGES = {
     dashboard:  { label: 'Dashboard',       init: () => Dashboard.load() },
     performance:{ label: 'Performance',     init: () => Perf.load() },
-    lookup:     { label: 'Box Lookup',      init: () => {} },
     inventory:  { label: 'Inventory List',  init: () => InventoryList.load() },
     orders:     { label: 'Orders',          init: () => Orders.load() },
     uploads:    { label: 'Uploads',         init: () => Uploads.loadHistory() },

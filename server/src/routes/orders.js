@@ -5,6 +5,13 @@ const positiveInt = z.coerce.number().int().positive();
 
 const STATUS_VALUES = z.enum(['all', 'normal', 'phantom', 'unknown', 'ignored']).optional().default('all');
 
+const effectiveShippedSku = (sku, shippedFromBox) => {
+  if (!sku) return '';
+  const m = sku.match(/^ARA(\d+)(-.+)$/);
+  if (!m) return sku;
+  return shippedFromBox ? `ARA${shippedFromBox}${m[2]}` : sku;
+};
+
 const ordersExportSchema = z.object({
   platform:   z.string().optional(),
   start_date: z.string().optional(),
@@ -67,9 +74,13 @@ export async function ordersRoutes(fastify, { ordersService, activityService }) 
       });
 
       const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-      const header = 'Order Date,SKU,Qty Sold,Shipped From Box,Platform';
+      const header = 'Order Date,SKU,Qty Sold,Shipped SKU,Platform';
       const lines  = rows.map(r => [
-        r.order_date, r.sku, r.quantity_sold, r.shipped_from_box, r.platform,
+        r.order_date,
+        r.sku,
+        r.quantity_sold,
+        effectiveShippedSku(r.sku, r.shipped_from_box),
+        r.platform,
       ].map(esc).join(','));
 
       const filename = `orders-export-${new Date().toISOString().slice(0,10)}.csv`;

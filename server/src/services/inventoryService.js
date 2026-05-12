@@ -20,9 +20,10 @@ export function createInventoryService({ inventoryRepo }) {
   }
 
   async function findAlternatives(organizationId, sku) {
-    const { originalBox, alternatives } = await inventoryRepo.findAlternativeBoxes(organizationId, sku);
+    const { originalBox, originalSku, alternatives } = await inventoryRepo.findAlternativeBoxes(organizationId, sku);
     return {
       originalBox,
+      originalSku,
       alternatives,
       inStock:  alternatives.filter(a => a.remaining_stock > 0),
     };

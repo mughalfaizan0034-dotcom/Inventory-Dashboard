@@ -95,10 +95,6 @@
           <span class="nav-icon">📈</span>
           <span>Performance</span>
         </div>
-        <div class="nav-item" data-page="lookup">
-          <span class="nav-icon">🔍</span>
-          <span>Box Lookup</span>
-        </div>
         <div class="nav-item" data-page="inventory">
           <span class="nav-icon">📦</span>
           <span>Inventory List</span>
@@ -161,11 +157,25 @@
             <div id="panel-inventory-intel" class="card" style="padding:0;overflow:hidden"></div>
             <div id="panel-sales-intel"     class="card" style="padding:0;overflow:hidden"></div>
           </div>
-          <div class="card">
-            <div class="card-header">
-              <div class="card-title">Recent Activity</div>
+          <div class="card card-table" style="padding:0">
+            <div class="filter-bar" style="flex-wrap:wrap">
+              <div style="position:relative;flex:1;min-width:240px">
+                <span class="search-icon" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt-4)">🔍</span>
+                <input class="form-input search-input" id="box-search-input"
+                  placeholder="Search part number or UPC…" autocomplete="off">
+              </div>
+              <button class="btn btn-ghost btn-sm" id="box-clear-btn" style="display:none">✕ Clear</button>
             </div>
-            <div id="recent-activity-list"></div>
+            <div id="lookup-result-area" style="padding:16px 20px">
+              <div id="lookup-tabs" style="display:none;margin-bottom:16px">
+                <div style="display:flex;gap:0;border-bottom:2px solid var(--border)">
+                  <button class="lookup-tab active" data-tab="instock" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);border-bottom:2px solid var(--primary);margin-bottom:-2px">In Stock</button>
+                  <button class="lookup-tab" data-tab="all" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:var(--txt-3)">All Boxes</button>
+                </div>
+              </div>
+              <div id="lookup-instock"></div>
+              <div id="lookup-all" style="display:none"></div>
+            </div>
           </div>
         </div>
 
@@ -225,32 +235,6 @@
               </div>
             </div>
 
-          </div>
-        </div>
-
-        <!-- ── Box Lookup page ─────────────────────────────── -->
-        <div id="page-lookup" class="page">
-          <!-- Sticky search bar -->
-          <div id="lookup-search-bar" style="position:sticky;top:0;z-index:100;background:var(--surface-1);border-bottom:1px solid var(--border);padding:12px 0 12px;margin:-24px -24px 16px;padding-left:24px;padding-right:24px">
-            <div style="display:flex;gap:8px;align-items:center">
-              <div style="position:relative;flex:1">
-                <span class="search-icon" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt-4)">🔍</span>
-                <input class="form-input search-input" id="box-search-input"
-                  placeholder="Enter Part Number or UPC…" autocomplete="off">
-              </div>
-              <button class="btn btn-ghost btn-sm" id="box-clear-btn" style="display:none">✕ Clear</button>
-            </div>
-          </div>
-          <!-- Results tabs -->
-          <div id="lookup-result-area">
-            <div id="lookup-tabs" style="display:none;margin-bottom:16px">
-              <div style="display:flex;gap:0;border-bottom:2px solid var(--border)">
-                <button class="lookup-tab active" data-tab="instock" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);border-bottom:2px solid var(--primary);margin-bottom:-2px">In Stock</button>
-                <button class="lookup-tab" data-tab="all" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:var(--txt-3)">All Boxes</button>
-              </div>
-            </div>
-            <div id="lookup-instock"></div>
-            <div id="lookup-all" style="display:none"></div>
           </div>
         </div>
 
@@ -334,7 +318,7 @@
                     <th data-sort="order_date">Order Date</th>
                     <th data-sort="sku">SKU</th>
                     <th class="num" data-sort="quantity_sold">Qty Sold</th>
-                    <th data-sort="shipped_from_box">Shipped From Box</th>
+                    <th data-sort="shipped_from_box">Shipped SKU</th>
                     <th data-sort="platform">Platform</th>
                   </tr>
                 </thead>
@@ -585,7 +569,7 @@
           <!-- Logs tab -->
           <div id="tab-logs" class="tab-panel">
             <div class="card">
-              <div class="card-header"><div class="card-title">Application Logs</div></div>
+              <div class="card-header"><div class="card-title">Activity Logs</div></div>
               <div id="logs-content">
                 <div style="display:flex;justify-content:center;padding:24px"><div class="spin"></div></div>
               </div>

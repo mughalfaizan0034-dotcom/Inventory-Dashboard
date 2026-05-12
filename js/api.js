@@ -301,6 +301,7 @@ const API = (() => {
 
     /* Activity */
     async getActivity(limit=10)                                                { return _crGet('/activity', { limit }); },
+    async getLogs(limit=20)                                                   { return _crGet('/activity', { limit }); },
 
     /* Uploads — file is a File object (multipart) */
     async uploadInventory(file) { return _crMultipart('/uploads/inventory', file); },
@@ -328,6 +329,5 @@ const API = (() => {
     /* System */
     async ping()              { return _crGet('/health'); },
     async getSystemStatus()   { return _crGet('/health'); },
-    async getLogs()           { return { entries: [] }; },
   };
 })();

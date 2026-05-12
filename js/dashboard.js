@@ -49,7 +49,7 @@ const Dashboard = (() => {
     return 'var(--txt-1)';
   }
 
-  function _metricRow(def, data) {
+  function _metricCard(def, data) {
     const val     = data[def.field] ?? null;
     const display = val != null ? Utils.formatNumber(val) : '—';
     const color   = _valueColor(def, val ?? 0);
@@ -57,20 +57,20 @@ const Dashboard = (() => {
       ? `data-navigate="${def.navigate}"${def.action ? ` data-action="${def.action}"` : ''}`
       : '';
     return `
-      <div class="dash-metric-row${def.navigate ? ' clickable' : ''}" ${nav}>
+      <div class="dash-metric-card${def.navigate ? ' clickable' : ''}" ${nav}>
         <div>
-          <span class="dash-metric-label">${Utils.escapeHtml(def.label)}</span>
-          ${def.sub ? `<span class="dash-metric-sub">${Utils.escapeHtml(def.sub)}</span>` : ''}
+          <div class="dash-metric-label">${Utils.escapeHtml(def.label)}</div>
+          ${def.sub ? `<div class="dash-metric-sub">${Utils.escapeHtml(def.sub)}</div>` : ''}
         </div>
-        <span class="dash-metric-value" id="${def.id}" style="color:${color}">${Utils.escapeHtml(String(display))}</span>
+        <div class="dash-metric-value" id="${def.id}" style="color:${color}">${Utils.escapeHtml(String(display))}</div>
       </div>`;
   }
 
-  function _skeletonRow() {
+  function _skeletonCard() {
     return `
-      <div class="dash-metric-row">
-        <div class="skel skel-line" style="width:130px;height:13px"></div>
-        <div class="skel skel-line" style="width:52px;height:18px"></div>
+      <div class="dash-metric-card">
+        <div class="skel skel-line" style="width:80px;height:13px;margin-bottom:10px"></div>
+        <div class="skel skel-line" style="width:105px;height:24px"></div>
       </div>`;
   }
 
@@ -80,10 +80,10 @@ const Dashboard = (() => {
 
     const isLoading = !data;
     const groupsHtml = metricGroups.map(group => {
-      const rowsHtml = isLoading
-        ? group.rows.map(_skeletonRow).join('')
-        : group.rows.map(def => _metricRow(def, data)).join('');
-      return `<div class="dash-metric-group${group.divided ? ' dash-metric-group--divided' : ''}">${rowsHtml}</div>`;
+      const cardsHtml = isLoading
+        ? group.rows.map(_skeletonCard).join('')
+        : group.rows.map(def => _metricCard(def, data)).join('');
+      return `<div class="dash-card-grid${group.divided ? ' dash-card-grid--divided' : ''}">${cardsHtml}</div>`;
     }).join('');
 
     el.innerHTML = `
@@ -91,13 +91,13 @@ const Dashboard = (() => {
         <span style="font-size:15px;line-height:1">${icon}</span>
         <span class="dash-panel-title">${Utils.escapeHtml(title)}</span>
       </div>
-      <div>${groupsHtml}</div>`;
+      <div class="dash-panel-body">${groupsHtml}</div>`;
 
     if (data) {
-      el.querySelectorAll('.dash-metric-row[data-navigate]').forEach(row => {
-        row.addEventListener('click', () => {
-          App.navigate(row.dataset.navigate);
-          const action = row.dataset.action;
+      el.querySelectorAll('.dash-metric-card[data-navigate]').forEach(card => {
+        card.addEventListener('click', () => {
+          App.navigate(card.dataset.navigate);
+          const action = card.dataset.action;
           if (action === 'phantom')        setTimeout(() => InventoryList.setStatusFilter?.('phantom'), 60);
           else if (action === 'undefined') setTimeout(() => InventoryList.setStatusFilter?.('undefined'), 60);
           else if (action === 'unknown_orders') setTimeout(() => Orders.setStatusFilter?.('unknown'), 60);

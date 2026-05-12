@@ -22,6 +22,14 @@ const Orders = (() => {
     return { box: m[1], partNumber: m[2], upc: m[3] };
   }
 
+  function _getEffectiveSku(sku, shippedFromBox) {
+    if (!sku) return '';
+    const parsed = _parseSku(sku);
+    if (!parsed) return sku;
+    const box = shippedFromBox || parsed.box;
+    return `ARA${box}-${parsed.partNumber}-${parsed.upc}`;
+  }
+
   /* ── Platform badge ──────────────────────────────────────── */
   function _platformBadge(platform) {
     if (!platform) return '<span style="color:var(--txt-4)">-</span>';
@@ -106,11 +114,12 @@ const Orders = (() => {
 
       const parsedSku  = _parseSku(row.sku || '');
       const origBox    = parsedSku?.box || '';
+      const effectiveShippedSku = _getEffectiveSku(row.sku || '', row.shipped_from_box || '');
       const shipped    = row.shipped_from_box || '';
       const isOverride = !!(shipped && shipped !== origBox);
       const shippedHtml = isOverride
-        ? `<span style="font-weight:500">${Utils.escapeHtml(shipped)}</span><span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span><button class="order-edit-btn" style="background:none;border:none;opacity:.45;font-size:11px;padding:0 3px;margin-left:4px;cursor:pointer;vertical-align:middle" title="Change fulfillment box">✏️</button>`
-        : `<span class="order-edit-btn" style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1.5px solid #93c5fd;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700;color:#1d4ed8;cursor:pointer" title="Click to change fulfillment box">★ ${Utils.escapeHtml(origBox || '—')}</span>`;
+        ? `<span style="font-weight:500">${Utils.escapeHtml(effectiveShippedSku)}</span><span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span><button class="order-edit-btn" style="background:none;border:none;opacity:.45;font-size:11px;padding:0 3px;margin-left:4px;cursor:pointer;vertical-align:middle" title="Change fulfillment SKU">✏️</button>`
+        : `<span class="order-edit-btn" style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1.5px solid #93c5fd;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700;color:#1d4ed8;cursor:pointer" title="Click to change fulfillment SKU">★ ${Utils.escapeHtml(effectiveShippedSku || '—')}</span>`;
 
       return `<tr data-row-id="${Utils.escapeHtml(id)}"
                 data-order-date="${Utils.escapeHtml(row.order_date || '')}"
@@ -143,7 +152,7 @@ const Orders = (() => {
     tbody.querySelectorAll('.order-edit-btn').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        _openInlineBoxSelector(btn.closest('tr'));
+        _openInlineSkuSelector(btn.closest('tr'));
       });
     });
 
@@ -200,7 +209,9 @@ const Orders = (() => {
   }
 
   function _restoreShippedCell(cell, boxValue) {
-    const origBox    = _parseSku(cell.closest('tr')?.dataset.sku || '')?.box || '';
+    const sku = cell.closest('tr')?.dataset.sku || '';
+    const origBox    = _parseSku(sku)?.box || '';
+    const shippedSku = _getEffectiveSku(sku, boxValue || '');
     const shipped    = boxValue || '';
     const isOverride = !!(shipped && shipped !== origBox);
     cell.innerHTML   = '';
@@ -208,40 +219,40 @@ const Orders = (() => {
     if (isOverride) {
       const text = document.createElement('span');
       text.style.fontWeight = '500';
-      text.textContent = shipped;
+      text.textContent = shippedSku;
       const badge = document.createElement('span');
       badge.textContent = 'Override';
       badge.style.cssText = 'font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle';
       const btn = document.createElement('button');
       btn.style.cssText = 'background:none;border:none;opacity:.45;font-size:11px;padding:0 3px;margin-left:4px;cursor:pointer;vertical-align:middle';
-      btn.title = 'Change fulfillment box';
+      btn.title = 'Change fulfillment SKU';
       btn.textContent = '✏️';
-      btn.addEventListener('click', e => { e.stopPropagation(); _openInlineBoxSelector(cell.closest('tr')); });
+      btn.addEventListener('click', e => { e.stopPropagation(); _openInlineSkuSelector(cell.closest('tr')); });
       text.appendChild(badge);
       cell.appendChild(text);
       cell.appendChild(btn);
     } else {
       const chip = document.createElement('span');
       chip.style.cssText = 'display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1.5px solid #93c5fd;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700;color:#1d4ed8;cursor:pointer';
-      chip.title = 'Click to change fulfillment box';
-      chip.textContent = origBox ? `★ ${origBox}` : '—';
-      chip.addEventListener('click', e => { e.stopPropagation(); _openInlineBoxSelector(cell.closest('tr')); });
+      chip.title = 'Click to change fulfillment SKU';
+      chip.textContent = shippedSku ? `★ ${shippedSku}` : '—';
+      chip.addEventListener('click', e => { e.stopPropagation(); _openInlineSkuSelector(cell.closest('tr')); });
       cell.appendChild(chip);
     }
   }
 
-  function _showBoxPopover(cell, allOptions, pendingBoxInit, onConfirm) {
+  function _showSkuPopover(cell, allOptions, pendingBoxInit, onConfirm) {
     _closeBoxPopover();
     let pendingBox = pendingBoxInit;
     const orig = allOptions.find(o => o.isOriginal);
     const alts = allOptions.filter(o => !o.isOriginal);
 
     const pop = document.createElement('div');
-    pop.style.cssText = 'position:fixed;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.13),0 2px 8px rgba(0,0,0,.07);width:272px;display:flex;flex-direction:column;z-index:10001;font-family:inherit;font-size:13px;overflow:hidden';
+    pop.style.cssText = 'position:fixed;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.13),0 2px 8px rgba(0,0,0,.07);width:320px;display:flex;flex-direction:column;z-index:10001;font-family:inherit;font-size:13px;overflow:hidden';
 
     const rect = cell.getBoundingClientRect();
     pop.style.top  = (rect.bottom + 6) + 'px';
-    pop.style.left = Math.min(rect.left, window.innerWidth - 284) + 'px';
+    pop.style.left = Math.min(rect.left, window.innerWidth - 336) + 'px';
 
     function _makeOptEl(opt) {
       const isSel = opt.box_number === pendingBox;
@@ -257,7 +268,7 @@ const Orders = (() => {
       const nameEl = document.createElement('span');
       nameEl.style.cssText = opt.isOriginal ? 'font-weight:700;color:#1d4ed8'
         : isSel ? 'font-weight:600;color:#3730a3' : 'font-weight:500;color:#1e293b';
-      nameEl.textContent = opt.isOriginal ? `★ Box ${opt.box_number} (Original)` : `Box ${opt.box_number}`;
+      nameEl.textContent = opt.isOriginal ? `★ ${opt.effective_sku} (Original)` : opt.effective_sku;
 
       const qtyEl = document.createElement('span');
       qtyEl.style.cssText = 'font-size:12px;color:' + (opt.isOriginal ? '#3b82f6' : isSel ? '#6366f1' : '#64748b');
@@ -278,7 +289,7 @@ const Orders = (() => {
       origSect.style.cssText = 'padding:10px 12px 8px;border-bottom:1px solid #f1f5f9';
       const origLbl = document.createElement('div');
       origLbl.style.cssText = 'font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px';
-      origLbl.textContent = 'Original Box';
+      origLbl.textContent = 'Original SKU';
       origSect.appendChild(origLbl);
       if (orig) origSect.appendChild(_makeOptEl(orig));
       pop.appendChild(origSect);
@@ -287,14 +298,14 @@ const Orders = (() => {
       altSect.style.cssText = 'padding:10px 12px 8px;overflow-y:auto;max-height:210px';
       const altLbl = document.createElement('div');
       altLbl.style.cssText = 'font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px';
-      altLbl.textContent = 'Alternative In-Stock Boxes';
+      altLbl.textContent = 'Alternative In-Stock SKUs';
       altSect.appendChild(altLbl);
       if (alts.length) {
         alts.forEach(a => altSect.appendChild(_makeOptEl(a)));
       } else {
         const empty = document.createElement('div');
         empty.style.cssText = 'color:#94a3b8;font-size:12px;text-align:center;padding:10px 0';
-        empty.textContent = 'No alternative in-stock boxes';
+        empty.textContent = 'No alternative in-stock SKUs';
         altSect.appendChild(empty);
       }
       pop.appendChild(altSect);
@@ -326,7 +337,7 @@ const Orders = (() => {
     document.addEventListener('keydown', _popoverListeners.keydown);
   }
 
-  async function _openInlineBoxSelector(tr) {
+  async function _openInlineSkuSelector(tr) {
     const rowId      = tr.dataset.rowId;
     const sku        = tr.dataset.sku;
     const parsed     = _parseSku(sku);
@@ -344,12 +355,13 @@ const Orders = (() => {
 
     try {
       const result = await API.getInventoryAlternatives(sku);
-      const { originalBox, alternatives } = result || {};
+      const { originalBox, originalSku, alternatives } = result || {};
       const effectiveOrigBox = originalBox || parsed.box;
+      const effectiveOrigSku = originalSku || _getEffectiveSku(sku, effectiveOrigBox);
 
       const origData   = (alternatives || []).find(a => a.box_number === effectiveOrigBox);
       const allOptions = [
-        { box_number: effectiveOrigBox, remaining_stock: origData?.remaining_stock ?? 0, isOriginal: true },
+        { box_number: effectiveOrigBox, effective_sku: effectiveOrigSku, remaining_stock: origData?.remaining_stock ?? 0, isOriginal: true },
         ...(alternatives || [])
           .filter(a => a.box_number !== effectiveOrigBox && a.remaining_stock > 0)
           .sort((a, b) => b.remaining_stock - a.remaining_stock)
@@ -358,11 +370,11 @@ const Orders = (() => {
 
       if (trigger) { trigger.style.opacity = ''; trigger.style.pointerEvents = ''; }
 
-      _showBoxPopover(cell, allOptions, currentBox || effectiveOrigBox, async selectedBox => {
+      _showSkuPopover(cell, allOptions, currentBox || effectiveOrigBox, async selectedBox => {
         const isOriginalSelected = selectedBox === effectiveOrigBox;
         const newShipped = isOriginalSelected ? '' : selectedBox;
-        const prevLabel  = currentBox && currentBox !== effectiveOrigBox ? currentBox : `★ ${effectiveOrigBox}`;
-        const nextLabel  = isOriginalSelected ? `★ ${effectiveOrigBox} (Original)` : selectedBox;
+        const prevLabel  = currentBox && currentBox !== effectiveOrigBox ? _getEffectiveSku(sku, currentBox) : `★ ${_getEffectiveSku(sku, effectiveOrigBox)}`;
+        const nextLabel  = isOriginalSelected ? `★ ${_getEffectiveSku(sku, effectiveOrigBox)} (Original)` : _getEffectiveSku(sku, selectedBox);
 
         _restoreShippedCell(cell, newShipped);
         try {
@@ -384,7 +396,7 @@ const Orders = (() => {
 
     } catch {
       if (trigger) { trigger.style.opacity = ''; trigger.style.pointerEvents = ''; }
-      Notify.error('Failed', 'Could not load box alternatives');
+      Notify.error('Failed', 'Could not load fulfillment SKU alternatives');
     }
   }
 

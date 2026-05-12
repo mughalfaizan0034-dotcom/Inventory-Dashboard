@@ -178,11 +178,16 @@ export function createInventoryRepository({ bq, projectId }) {
 
     const seen = new Set();
     const all  = rows
-      .map(r => ({ box_number: r.box_number, remaining_stock: Number(r.remaining_stock ?? 0) }))
+      .map(r => ({
+        box_number: r.box_number,
+        effective_sku: `ARA${r.box_number}-${partNumber}-${upc}`,
+        remaining_stock: Number(r.remaining_stock ?? 0),
+      }))
       .filter(r => { if (seen.has(r.box_number)) return false; seen.add(r.box_number); return true; });
 
     return {
       originalBox,
+      originalSku: sku,
       alternatives: all,
     };
   }
