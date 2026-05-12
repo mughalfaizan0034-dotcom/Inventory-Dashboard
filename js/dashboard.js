@@ -5,76 +5,112 @@
 /* ── Dashboard (Overview page) ──────────────────────────────── */
 const Dashboard = (() => {
 
-  const INVENTORY_KPIS = [
-    { id: 'kpi-total-skus',      label: 'Total SKUs',      icon: '📦', color: 'blue',   field: 'totalSkus',              format: 'number', navigate: 'inventory' },
-    { id: 'kpi-total-units',     label: 'Total Units',     icon: '🔢', color: 'purple', field: 'totalUnits',             format: 'number', navigate: 'inventory' },
-    { id: 'kpi-remaining-stock', label: 'Remaining Stock', icon: '🏭', color: 'green',  field: 'physicalRemainingUnits', format: 'number', navigate: 'inventory' },
-    { id: 'kpi-phantom-units',   label: 'Phantom Units',   icon: '👻', color: 'red',    field: 'phantomUnits',           format: 'number', navigate: 'inventory', action: 'phantom' },
-    { id: 'kpi-undefined-skus',  label: 'Undefined SKUs',  icon: '⚠',  color: 'gray',   field: 'undefinedSkus',          format: 'number', navigate: 'inventory', action: 'undefined' },
+  const INVENTORY_METRICS = [
+    {
+      rows: [
+        { id: 'dm-total-skus',    label: 'Total SKUs',          field: 'totalSkus',              navigate: 'inventory' },
+        { id: 'dm-total-units',   label: 'Total Units',         field: 'totalUnits',             navigate: 'inventory' },
+        { id: 'dm-remaining',     label: 'Physical Remaining',  field: 'physicalRemainingUnits', navigate: 'inventory', accent: 'green' },
+        { id: 'dm-phantom-units', label: 'Phantom Units',       field: 'phantomUnits',           navigate: 'inventory', action: 'phantom', warnIfPositive: true },
+        { id: 'dm-undef-inv',     label: 'Undefined Rows',      field: 'undefinedSkus',          navigate: 'inventory', action: 'undefined', warnIfPositive: true },
+      ],
+    },
+    {
+      divided: true,
+      rows: [
+        { id: 'dm-instock-skus',  label: 'In Stock SKUs',       field: 'inStockSkus',            accent: 'green' },
+        { id: 'dm-oos-skus',      label: 'OOS SKUs',            field: 'oosSkus',                accent: 'orange' },
+        { id: 'dm-phantom-skus',  label: 'Oversold SKUs',       field: 'phantomSkus',            warnIfPositive: true },
+      ],
+    },
   ];
 
-  const SALES_KPIS = [
-    { id: 'kpi-units-sold',        label: 'Units Sold',           icon: '🛒', color: 'orange', field: 'unitsSold',          format: 'number', navigate: 'orders' },
-    { id: 'kpi-actual-units-sold', label: 'Actual Units Sold',    icon: '✅', color: 'teal',   field: 'actualUnitsSold',    format: 'number' },
-    { id: 'kpi-total-orders',      label: 'Total Orders',         icon: '📋', color: 'cyan',   field: 'totalOrders',        format: 'number', navigate: 'orders' },
-    { id: 'kpi-undefined-orders',  label: 'Undefined SKU Orders', icon: '❓', color: 'pink',   field: 'undefinedSkuOrders', format: 'number', navigate: 'orders', action: 'unknown_orders' },
+  const SALES_METRICS = [
+    {
+      rows: [
+        { id: 'dm-total-orders',  label: 'Total Orders',        field: 'totalOrders',            navigate: 'orders' },
+        { id: 'dm-units-sold',    label: 'Units Sold',          field: 'unitsSold',              navigate: 'orders' },
+        { id: 'dm-actual-sold',   label: 'Actual Units Sold',   field: 'actualUnitsSold',        accent: 'teal', sub: 'Inventory-backed fulfilled units' },
+        { id: 'dm-phantom-u-s',   label: 'Phantom Units',       field: 'phantomUnits',           warnIfPositive: true },
+        { id: 'dm-ignored-ord',   label: 'Ignored Orders',      field: 'ignoredOrders' },
+      ],
+    },
+    {
+      divided: true,
+      rows: [
+        { id: 'dm-undef-orders',  label: 'Undefined SKU Orders', field: 'undefinedSkuOrders',    navigate: 'orders', action: 'unknown_orders', warnIfPositive: true },
+      ],
+    },
   ];
 
-  function _renderSkeletons() {
-    const invGrid  = document.getElementById('kpi-inventory-grid');
-    const salesGrid = document.getElementById('kpi-sales-grid');
-    if (invGrid)   invGrid.innerHTML   = Loading.kpiGrid(5);
-    if (salesGrid) salesGrid.innerHTML = Loading.kpiGrid(3);
+  function _valueColor(def, val) {
+    if (def.warnIfPositive && val > 0) return 'var(--error)';
+    if (def.accent === 'green')  return '#16a34a';
+    if (def.accent === 'orange') return '#c2410c';
+    if (def.accent === 'teal')   return '#0d9488';
+    return 'var(--txt-1)';
   }
 
-  function _buildSub(def, data) {
-    if (def.field === 'phantomUnits'         && data.phantomUnits         > 0) return 'Unfulfillable demand — exceeds stock';
-    if (def.field === 'undefinedSkuOrders'   && data.undefinedSkuOrders   > 0) return 'Orders with no inventory record';
-    if (def.field === 'undefinedSkus'        && data.undefinedSkus        > 0) return 'Inventory rows with NA/blank values';
-    if (def.field === 'actualUnitsSold')                                        return 'Fulfilled inventory-backed sales only';
-    if (def.field === 'physicalRemainingUnits' && data.physicalRemainingUnits === 0) return 'All stock fulfilled or phantom';
-    return '';
+  function _metricRow(def, data) {
+    const val     = data[def.field] ?? null;
+    const display = val != null ? Utils.formatNumber(val) : '—';
+    const color   = _valueColor(def, val ?? 0);
+    const nav     = def.navigate
+      ? `data-navigate="${def.navigate}"${def.action ? ` data-action="${def.action}"` : ''}`
+      : '';
+    return `
+      <div class="dash-metric-row${def.navigate ? ' clickable' : ''}" ${nav}>
+        <div>
+          <span class="dash-metric-label">${Utils.escapeHtml(def.label)}</span>
+          ${def.sub ? `<span class="dash-metric-sub">${Utils.escapeHtml(def.sub)}</span>` : ''}
+        </div>
+        <span class="dash-metric-value" id="${def.id}" style="color:${color}">${Utils.escapeHtml(String(display))}</span>
+      </div>`;
   }
 
-  function _renderKPIGroup(gridId, defs, data) {
-    const grid = document.getElementById(gridId);
-    if (!grid) return;
+  function _skeletonRow() {
+    return `
+      <div class="dash-metric-row">
+        <div class="skel skel-line" style="width:130px;height:13px"></div>
+        <div class="skel skel-line" style="width:52px;height:18px"></div>
+      </div>`;
+  }
 
-    grid.innerHTML = defs.map(def => {
-      const value   = data[def.field];
-      const display = value != null && def.format === 'number' ? Utils.formatNumber(value) : '—';
-      const sub     = _buildSub(def, data);
-      const clickable = def.navigate
-        ? `data-navigate="${def.navigate}" ${def.action ? `data-action="${def.action}"` : ''} style="cursor:pointer"`
-        : '';
+  function _renderPanel(containerId, icon, title, metricGroups, data) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
 
-      return `
-        <div class="kpi-card ${def.color}" ${clickable}>
-          <div class="kpi-label">${def.icon} ${Utils.escapeHtml(def.label)}</div>
-          <div class="kpi-value" id="${def.id}">${Utils.escapeHtml(String(display))}</div>
-          ${sub ? `<div class="kpi-sub">${Utils.escapeHtml(sub)}</div>` : ''}
-        </div>`;
+    const isLoading = !data;
+    const groupsHtml = metricGroups.map(group => {
+      const rowsHtml = isLoading
+        ? group.rows.map(_skeletonRow).join('')
+        : group.rows.map(def => _metricRow(def, data)).join('');
+      return `<div class="dash-metric-group${group.divided ? ' dash-metric-group--divided' : ''}">${rowsHtml}</div>`;
     }).join('');
 
-    grid.querySelectorAll('.kpi-card[data-navigate]').forEach(card => {
-      card.addEventListener('click', () => {
-        const target = card.dataset.navigate;
-        const action = card.dataset.action;
-        App.navigate(target);
-        if (action === 'phantom') {
-          setTimeout(() => InventoryList.setStatusFilter?.('phantom'), 60);
-        } else if (action === 'undefined') {
-          setTimeout(() => InventoryList.setStatusFilter?.('undefined'), 60);
-        } else if (action === 'unknown_orders') {
-          setTimeout(() => Orders.setStatusFilter?.('unknown'), 60);
-        }
+    el.innerHTML = `
+      <div class="dash-panel-header">
+        <span style="font-size:15px;line-height:1">${icon}</span>
+        <span class="dash-panel-title">${Utils.escapeHtml(title)}</span>
+      </div>
+      <div>${groupsHtml}</div>`;
+
+    if (data) {
+      el.querySelectorAll('.dash-metric-row[data-navigate]').forEach(row => {
+        row.addEventListener('click', () => {
+          App.navigate(row.dataset.navigate);
+          const action = row.dataset.action;
+          if (action === 'phantom')        setTimeout(() => InventoryList.setStatusFilter?.('phantom'), 60);
+          else if (action === 'undefined') setTimeout(() => InventoryList.setStatusFilter?.('undefined'), 60);
+          else if (action === 'unknown_orders') setTimeout(() => Orders.setStatusFilter?.('unknown'), 60);
+        });
       });
-    });
+    }
   }
 
-  function _renderKPIs(data) {
-    _renderKPIGroup('kpi-inventory-grid', INVENTORY_KPIS, data);
-    _renderKPIGroup('kpi-sales-grid',     SALES_KPIS,     data);
+  function _renderSkeletons() {
+    _renderPanel('panel-inventory-intel', '📦', 'Inventory Intelligence', INVENTORY_METRICS, null);
+    _renderPanel('panel-sales-intel',     '📈', 'Sales Intelligence',     SALES_METRICS,     null);
   }
 
   function _renderRecentActivity(items) {
@@ -100,14 +136,15 @@ const Dashboard = (() => {
         MetricsEngine.load(),
         API.getActivity().catch(() => []),
       ]);
-      _renderKPIs(kpiData);
+      _renderPanel('panel-inventory-intel', '📦', 'Inventory Intelligence', INVENTORY_METRICS, kpiData);
+      _renderPanel('panel-sales-intel',     '📈', 'Sales Intelligence',     SALES_METRICS,     kpiData);
       _renderRecentActivity(activityData);
 
       const lastSyncEl = document.getElementById('last-sync-time');
       if (lastSyncEl) lastSyncEl.textContent = 'Updated ' + Utils.timeAgo(new Date().toISOString());
     } catch (err) {
-      const invGrid = document.getElementById('kpi-inventory-grid');
-      if (invGrid) invGrid.innerHTML = Loading.error('Failed to load dashboard data', load);
+      const inv = document.getElementById('panel-inventory-intel');
+      if (inv) inv.innerHTML = Loading.error('Failed to load dashboard data', load);
       Notify.apiError(err);
     }
   }

@@ -142,6 +142,7 @@ export function createInventoryMetricsService({ bq, projectId }) {
         unitsSold:              Number(ordRow.units_sold_raw          ?? 0),
         totalOrders:            Number(ordRow.total_orders            ?? 0),
         activePlatforms:        Number(ordRow.active_platforms        ?? 0),
+        ignoredOrders:          Number(ordRow.ignored_orders          ?? 0),
         undefinedSkuOrders:     Number(ordRow.undefined_sku_orders    ?? 0),
         // Aliases used by existing frontend field references
         remainingStock:         physicalRemainingUnits,
@@ -151,7 +152,7 @@ export function createInventoryMetricsService({ bq, projectId }) {
       return {
         totalSkus: 0, totalUnits: 0, actualUnitsSold: 0, physicalRemainingUnits: 0,
         phantomUnits: 0, inStockSkus: 0, oosSkus: 0, phantomSkus: 0, undefinedSkus: 0,
-        unitsSold: 0, totalOrders: 0, activePlatforms: 0, undefinedSkuOrders: 0,
+        unitsSold: 0, totalOrders: 0, activePlatforms: 0, ignoredOrders: 0, undefinedSkuOrders: 0,
         remainingStock: 0,
       };
     }

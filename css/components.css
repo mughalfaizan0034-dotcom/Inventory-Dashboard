@@ -371,6 +371,69 @@
   .kpi-grid.kpi-grid-sales { grid-template-columns: 1fr; }
 }
 
+/* ── Dashboard analytics panels ─────────────────────────────── */
+#dash-analytics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+@media (max-width: 720px) { #dash-analytics { grid-template-columns: 1fr; } }
+
+.dash-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.dash-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--txt-4);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.dash-metric-group { padding: 4px 0; }
+.dash-metric-group--divided { border-top: 1px solid var(--border); }
+
+.dash-metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 20px;
+  min-height: 38px;
+  transition: background var(--dur);
+}
+.dash-metric-row:not(:last-child) { border-bottom: 1px solid var(--border-2); }
+.dash-metric-row.clickable { cursor: pointer; }
+.dash-metric-row.clickable:hover { background: var(--surface-3); }
+
+.dash-metric-label {
+  font-size: 13px;
+  color: var(--txt-2);
+  font-weight: 500;
+}
+.dash-metric-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--txt-4);
+  margin-top: 1px;
+}
+.dash-metric-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--txt-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-family: var(--font-title);
+}
+
 /* ── Performance page sticky filter bar ─────────────────────── */
 .perf-filter-sticky {
   position: sticky;

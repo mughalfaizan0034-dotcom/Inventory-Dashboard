@@ -157,23 +157,11 @@
 
         <!-- ── Dashboard page ──────────────────────────────── -->
         <div id="page-dashboard" class="page active">
-          <div id="kpi-sticky-bar" class="kpi-sticky-bar">
-            <div class="kpi-section">
-              <div class="kpi-section-header">
-                <span class="kpi-section-icon">📦</span>
-                <span class="kpi-section-title">Inventory Intelligence</span>
-              </div>
-              <div id="kpi-inventory-grid" class="kpi-grid kpi-grid-inv"></div>
-            </div>
-            <div class="kpi-section">
-              <div class="kpi-section-header">
-                <span class="kpi-section-icon">📈</span>
-                <span class="kpi-section-title">Sales Intelligence</span>
-              </div>
-              <div id="kpi-sales-grid" class="kpi-grid kpi-grid-sales"></div>
-            </div>
+          <div id="dash-analytics">
+            <div id="panel-inventory-intel" class="card" style="padding:0;overflow:hidden"></div>
+            <div id="panel-sales-intel"     class="card" style="padding:0;overflow:hidden"></div>
           </div>
-          <div class="card" style="margin-top:20px">
+          <div class="card">
             <div class="card-header">
               <div class="card-title">Recent Activity</div>
             </div>
@@ -677,18 +665,18 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <!-- App modules — order matters: utilities first, then API/auth, then features, app last -->
-  <!-- v=15 — bump this number on every deploy to bust browser/CDN cache -->
-  <script src="js/utilities.js?v=15"></script>
-  <script src="js/notifications.js?v=15"></script>
-  <script src="js/loading.js?v=15"></script>
-  <script src="js/api.js?v=15"></script>
-  <script src="js/metricsEngine.js?v=15"></script>
-  <script src="js/auth.js?v=15"></script>
-  <script src="js/dashboard.js?v=15"></script>
-  <script src="js/inventory.js?v=15"></script>
-  <script src="js/orders.js?v=15"></script>
-  <script src="js/uploads.js?v=15"></script>
-  <script src="js/app.js?v=15"></script>
+  <!-- v=16 — bump this number on every deploy to bust browser/CDN cache -->
+  <script src="js/utilities.js?v=16"></script>
+  <script src="js/notifications.js?v=16"></script>
+  <script src="js/loading.js?v=16"></script>
+  <script src="js/api.js?v=16"></script>
+  <script src="js/metricsEngine.js?v=16"></script>
+  <script src="js/auth.js?v=16"></script>
+  <script src="js/dashboard.js?v=16"></script>
+  <script src="js/inventory.js?v=16"></script>
+  <script src="js/orders.js?v=16"></script>
+  <script src="js/uploads.js?v=16"></script>
+  <script src="js/app.js?v=16"></script>
 
 </body>
 </html>
