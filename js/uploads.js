@@ -283,25 +283,39 @@ const Uploads = (() => {
   }
 
   /* ── Template downloads ─────────────────────────────────── */
+  // Templates MUST match server/src/uploads/schemas/{inventory,orders}Schema.js.
+  // Keep these field orders in sync with the backend parser.
+  //
+  // INVENTORY columns (9):
+  //   action, uid, sku, upc, quantity, part_number, box_number, date_added, notes
+  //   • uid: leave blank on Add (auto-assigned). Required on Update / Remove.
+  //
+  // ORDERS columns (8):
+  //   action, uid, order_id, order_date, sku, quantity_sold, platform, shipped_from_box
+  //   • uid: INTERNAL row tracker. Blank on Add. Required on Update / Remove.
+  //   • order_id: EXTERNAL marketplace order number. Required on Add.
   const _templates = {
     inventory: {
       filename: 'inventory_template.csv',
       content: [
-        'action,sku,upc,quantity,part_number,box_number,date_added,notes',
-        'Add,SKU-001,012345678901,25,PT-123,BX-001,2026-05-11,Sample item',
-        'Add,SKU-002,098765432109,10,,,2026-05-11,',
-        'Update,SKU-001,,30,,,,',
-        'Remove,SKU-002,,,,,, ',
+        'action,uid,sku,upc,quantity,part_number,box_number,date_added,notes',
+        'Add,,SKU-001,012345678901,25,PT-123,BX-001,2026-05-11,Sample item',
+        'Add,,SKU-002,098765432109,10,,,2026-05-11,',
+        'Update,UID-FROM-EXPORT,,,30,,,,',
+        'Remove,UID-FROM-EXPORT,,,,,,,',
       ].join('\r\n'),
     },
     orders: {
       filename: 'orders_template.csv',
       content: [
-        'action,order_id,order_date,sku,quantity_sold,platform,shipped_from_box',
-        'Add,,2026-05-11,SKU-001,2,Amazon,BX-001',
-        'Add,,2026-05-11,SKU-002,1,eBay,',
-        'Update,ORD-UUID-HERE,,,3,,',
-        'Remove,ORD-UUID-HERE,,,,,',
+        // 8 columns: action, uid, order_id, order_date, sku, quantity_sold, platform, shipped_from_box
+        'action,uid,order_id,order_date,sku,quantity_sold,platform,shipped_from_box',
+        'Add,,111-2222222-3333333,2026-05-11,SKU-001,2,Amazon,BX-001',
+        'Add,,EBAY-9876543210,2026-05-11,SKU-002,1,eBay,',
+        // Update qty_sold to 3, leave all other fields unchanged:
+        'Update,UID-FROM-EXPORT,,,,3,,',
+        // Remove only needs action + uid; remaining 6 fields blank:
+        'Remove,UID-FROM-EXPORT,,,,,,',
       ].join('\r\n'),
     },
   };
