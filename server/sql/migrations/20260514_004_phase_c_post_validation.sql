@@ -18,7 +18,7 @@ WHERE table_name = 'users' AND column_name = 'role';
 -- Expected: 0 rows.
 SELECT user_id, username, role
 FROM `patman-inventory.patman_inventory.users`
-WHERE role NOT IN ('admin', 'user', 'view') OR role IS NULL;
+WHERE role NOT IN ('admin', 'manager', 'viewer') OR role IS NULL;
 
 
 -- ── Check 3 ─────────────────────────────────────────────────

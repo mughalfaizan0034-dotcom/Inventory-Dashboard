@@ -20,7 +20,7 @@ const inventoryPatchSchema = z.object({
 });
 
 const deleteBodySchema = z.object({
-  skus: z.array(z.string().min(1)).min(1),
+  row_uids: z.array(z.string().min(1)).min(1),
 });
 
 export async function inventoryRoutes(fastify, { inventoryService, activityService, dashboardService }) {
@@ -57,8 +57,9 @@ export async function inventoryRoutes(fastify, { inventoryService, activityServi
       });
 
       const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-      const header = 'SKU,Box #,Part #,UPC,Initial Qty,Actual Sold,Phantom Units,Actual Remaining,Date Added,Notes';
+      const header = 'UID,SKU,Box #,Part #,UPC,Initial Qty,Actual Sold,Phantom Units,Actual Remaining,Date Added,Notes';
       const lines  = rows.map(r => [
+        r.row_uid,
         r.sku, r.box_number, r.part_number, r.upc,
         r.quantity,
         r.fulfilled_units ?? Math.min(Number(r.units_sold ?? 0), Number(r.quantity ?? 0)),
@@ -92,26 +93,27 @@ export async function inventoryRoutes(fastify, { inventoryService, activityServi
     }
   });
 
-  fastify.patch('/:sku', { preHandler: [authenticate, requireRole('staff')] }, async (request, reply) => {
-    const originalSku = decodeURIComponent(request.params.sku);
+  // :id is the inventory row_uid — the canonical tracker.
+  fastify.patch('/:id', { preHandler: [authenticate, requireRole('manager')] }, async (request, reply) => {
+    const rowUid = decodeURIComponent(request.params.id);
     const parsed = inventoryPatchSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: 'Invalid body', details: parsed.error.flatten() });
     }
     try {
-      await inventoryService.updateRow(request.user.organization_id, originalSku, parsed.data);
+      await inventoryService.updateRow(request.user.organization_id, rowUid, parsed.data);
       dashboardService?.invalidateKPICache(request.user.organization_id);
       activityService?.log({
         organizationId: request.user.organization_id,
         userId:         request.user.user_id,
         actionType:     'edit_inventory',
         entityType:     'inventory',
-        description:    `Updated inventory SKU ${parsed.data.sku}`,
+        description:    `Updated inventory row ${rowUid.slice(0, 8)} (SKU ${parsed.data.sku})`,
       }).catch(() => {});
       return reply.send({ success: true });
     } catch (err) {
       request.log.error({ err }, 'Inventory update error');
-      return reply.code(500).send({ success: false, error: 'Internal server error' });
+      return reply.code(500).send({ success: false, error: err?.message || 'Internal server error' });
     }
   });
 
@@ -121,7 +123,7 @@ export async function inventoryRoutes(fastify, { inventoryService, activityServi
       return reply.code(400).send({ success: false, error: parsed.error.errors[0]?.message || 'Invalid body' });
     }
     try {
-      const result = await inventoryService.deleteRows(request.user.organization_id, parsed.data.skus);
+      const result = await inventoryService.deleteRows(request.user.organization_id, parsed.data.row_uids);
       dashboardService?.invalidateKPICache(request.user.organization_id);
       activityService?.log({
         organizationId: request.user.organization_id,

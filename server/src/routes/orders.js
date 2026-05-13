@@ -132,7 +132,7 @@ export async function ordersRoutes(fastify, { ordersService, activityService, da
     }
   });
 
-  fastify.patch('/:rowId', { preHandler: [authenticate, requireRole('staff')] }, async (request, reply) => {
+  fastify.patch('/:rowId', { preHandler: [authenticate, requireRole('manager')] }, async (request, reply) => {
     const rowId  = request.params.rowId;
     const parsed = patchSchema.safeParse(request.body);
     if (!parsed.success) {

@@ -16,16 +16,19 @@
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS `patman-inventory.patman_inventory.inventory` (
+  row_uid          STRING    NOT NULL,                -- canonical row tracker (UUID); replaces SKU for updates/deletes
   organization_id  STRING    NOT NULL,
-  sku              STRING    NOT NULL,
+  sku              STRING    NOT NULL,                -- operational identifier; CAN be duplicated across rows
   upc              STRING    NOT NULL,
   part_number      STRING,
   box_number       STRING,
-  quantity         INT64     NOT NULL,                -- initial allocated quantity for this SKU
+  quantity         INT64     NOT NULL,                -- initial allocated quantity for this row
   date_added       STRING,                            -- free-form date string from upload (YYYY-MM-DD typical)
   notes            STRING,
   updated_at       TIMESTAMP
 );
 
 -- Uniqueness contracts enforced by application code:
---   UNIQUE(organization_id, sku)
+--   UNIQUE(row_uid)
+-- SKU is NOT unique — two rows in the same org may share a SKU (e.g.
+-- different boxes/batches). Use row_uid as the mutation key.

@@ -30,10 +30,10 @@ ADD COLUMN IF NOT EXISTS role STRING;
 -- Backfill users.role by collapsing the highest membership role
 -- across each user's active memberships.
 --
--- Tier mapping:
---   tier 3 (admin) ← admin, organization_admin, super_admin
---   tier 2 (user)  ← manager, staff, operator, user
---   tier 1 (view)  ← viewer, view, anything else, null
+-- Canonical 3-tier global role model:
+--   tier 3 (admin)   ← admin, organization_admin, super_admin
+--   tier 2 (manager) ← manager, staff, operator, user
+--   tier 1 (viewer)  ← viewer, view, anything else, null
 --
 -- Pre-validation Check 2 confirmed every user has a SINGLE tier
 -- across all their memberships, so MAX() is deterministic — no
@@ -56,8 +56,8 @@ SET role = (
       END
     )
       WHEN 3 THEN 'admin'
-      WHEN 2 THEN 'user'
-      ELSE        'view'
+      WHEN 2 THEN 'manager'
+      ELSE        'viewer'
     END
   FROM `patman-inventory.patman_inventory.memberships` m
   WHERE m.user_id = u.user_id
@@ -101,7 +101,7 @@ WHERE TRUE;
 -- Any user with an unexpected role value?
 SELECT user_id, username, role
 FROM `patman-inventory.patman_inventory.users`
-WHERE role NOT IN ('admin', 'user', 'view') OR role IS NULL;
+WHERE role NOT IN ('admin', 'manager', 'viewer') OR role IS NULL;
 
 -- Any membership whose role disagrees with the user's global role?
 SELECT m.membership_id, m.user_id, m.role AS membership_role, u.role AS user_role

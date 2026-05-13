@@ -10,13 +10,14 @@ export function createInventoryService({ inventoryRepo }) {
     };
   }
 
-  async function deleteRows(organizationId, skus) {
-    const deleted = await inventoryRepo.deleteBySkus(organizationId, skus);
+  // rowUids is the canonical tracker — SKU is no longer the row key.
+  async function deleteRows(organizationId, rowUids) {
+    const deleted = await inventoryRepo.deleteByRowUids(organizationId, rowUids);
     return { deleted };
   }
 
-  async function updateRow(organizationId, originalSku, updates) {
-    await inventoryRepo.updateRow(organizationId, originalSku, updates);
+  async function updateRow(organizationId, rowUid, updates) {
+    await inventoryRepo.updateRow(organizationId, rowUid, updates);
   }
 
   async function findAlternatives(organizationId, sku) {

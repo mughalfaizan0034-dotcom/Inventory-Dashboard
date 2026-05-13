@@ -113,19 +113,24 @@ export async function uploadsRoutes(fastify, { uploadsService, dashboardService 
       const { type } = request.params;
 
       const templates = {
+        // uid is the canonical row tracker. For Add: leave blank — system
+        // assigns one. For Update / Remove: paste the existing row's uid
+        // (copy from the Inventory table or a previous export).
         inventory: [
-          'action,sku,upc,quantity,part_number,box_number,date_added,notes',
-          'Add,SKU-001,012345678901,25,PT-123,BX-001,2026-05-11,Sample item',
-          'Add,SKU-002,098765432109,10,,,2026-05-11,',
-          'Update,SKU-001,,30,,,,',
-          'Remove,SKU-002,,,,,, ',
+          'action,uid,sku,upc,quantity,part_number,box_number,date_added,notes',
+          'Add,,SKU-001,012345678901,25,PT-123,BX-001,2026-05-11,Sample item',
+          'Add,,SKU-002,098765432109,10,,,2026-05-11,',
+          'Update,UID-FROM-EXPORT,,,30,,,,',
+          'Remove,UID-FROM-EXPORT,,,,,,, ',
         ].join('\r\n'),
+        // Same convention for orders. uid is the order_row_id field —
+        // exported as UID, paste back in for Update / Remove.
         orders: [
-          'action,order_id,order_date,sku,quantity_sold,platform,shipped_from_box',
+          'action,uid,order_date,sku,quantity_sold,platform,shipped_from_box',
           'Add,,2026-05-11,SKU-001,2,Amazon,BX-001',
           'Add,,2026-05-11,SKU-002,1,eBay,',
-          'Update,ORD-UUID-HERE,,,3,,',
-          'Remove,ORD-UUID-HERE,,,,,',
+          'Update,UID-FROM-EXPORT,,,3,,',
+          'Remove,UID-FROM-EXPORT,,,,,',
         ].join('\r\n'),
       };
 

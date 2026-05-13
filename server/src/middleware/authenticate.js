@@ -1,11 +1,16 @@
+// Canonical 3-tier role hierarchy. Legacy tiers (super_admin, organization_admin,
+// staff, operator, user) are folded into the closest canonical tier so that
+// stale JWTs from before the Phase C migration still validate during rollout.
 const ROLE_LEVEL = {
-  super_admin:         10,
-  organization_admin:   8,
-  admin:                6,
-  manager:              4,
+  admin:                3,
+  // legacy aliases — collapsed to manager:
+  manager:              2,
   staff:                2,
   operator:             2,
+  user:                 2,
+  // legacy aliases — collapsed to viewer:
   viewer:               1,
+  view:                 1,
 };
 
 // Verifies the Bearer JWT and rejects non-access tokens.

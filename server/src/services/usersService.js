@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { AppError } from '../utils/errors.js';
 
 const BCRYPT_ROUNDS = 12;
-const VALID_ROLES   = ['admin', 'manager', 'staff', 'viewer'];
+const VALID_ROLES   = ['admin', 'manager', 'viewer'];
 
 export function createUsersService({ usersRepo, membershipsRepo, usernameService }) {
 

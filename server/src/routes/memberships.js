@@ -4,11 +4,11 @@ import { z } from 'zod';
 
 const addMemberSchema = z.object({
   user_id: z.string().uuid(),
-  role:    z.enum(['admin', 'manager', 'staff', 'viewer']).default('viewer'),
+  role:    z.enum(['admin', 'manager', 'viewer']).default('viewer'),
 });
 
 const updateSchema = z.object({
-  role:      z.enum(['admin', 'manager', 'staff', 'viewer']).optional(),
+  role:      z.enum(['admin', 'manager', 'viewer']).optional(),
   is_active: z.boolean().optional(),
 });
 

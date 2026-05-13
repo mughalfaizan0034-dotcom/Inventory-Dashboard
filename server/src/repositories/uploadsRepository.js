@@ -78,16 +78,16 @@ export function createUploadsRepository({ bq, projectId }) {
     await dataset.table('orders').insert(rows);
   }
 
-  // Returns a Set of SKUs that already exist for this org (from the given candidate list).
-  async function getInventoryKeySet(organizationId, skus) {
-    if (!skus.length) return new Set();
+  // Returns a Set of row_uids that already exist for this org (from the given candidate list).
+  async function getInventoryKeySet(organizationId, rowUids) {
+    if (!rowUids.length) return new Set();
     const query = `
-      SELECT sku FROM ${invTable}
+      SELECT row_uid FROM ${invTable}
       WHERE organization_id = @organizationId
-        AND sku IN UNNEST(@skus)
+        AND row_uid IN UNNEST(@rowUids)
     `;
-    const [rows] = await bq.query({ query, params: { organizationId, skus } });
-    return new Set(rows.map(r => r.sku));
+    const [rows] = await bq.query({ query, params: { organizationId, rowUids } });
+    return new Set(rows.map(r => r.row_uid));
   }
 
   // Returns a Set of order_row_ids that already exist for this org.
@@ -102,12 +102,15 @@ export function createUploadsRepository({ bq, projectId }) {
     return new Set(rows.map(r => r.order_row_id));
   }
 
-  // Partial update of inventory rows — each row may contain a different subset of columns.
-  async function updateInventoryBySku(organizationId, rows) {
+  // Partial update of inventory rows, keyed by row_uid. Each row may contain
+  // a different subset of mutable columns (sku is now mutable — only row_uid
+  // identifies the row).
+  async function updateInventoryByRowUid(organizationId, rows) {
     for (const row of rows) {
       const sets   = [];
-      const params = { organizationId, sku: row.sku };
+      const params = { organizationId, row_uid: row.row_uid };
 
+      if (row.sku         !== undefined) { sets.push('sku = @sku');                   params.sku         = row.sku; }
       if (row.upc         !== undefined) { sets.push('upc = @upc');                   params.upc         = row.upc; }
       if (row.part_number !== undefined) { sets.push('part_number = @part_number');   params.part_number = row.part_number; }
       if (row.box_number  !== undefined) { sets.push('box_number = @box_number');     params.box_number  = row.box_number; }
@@ -122,7 +125,7 @@ export function createUploadsRepository({ bq, projectId }) {
       const query = `
         UPDATE ${invTable}
         SET ${sets.join(', ')}
-        WHERE organization_id = @organizationId AND sku = @sku
+        WHERE organization_id = @organizationId AND row_uid = @row_uid
       `;
       await bq.query({ query, params });
     }
@@ -151,14 +154,14 @@ export function createUploadsRepository({ bq, projectId }) {
     }
   }
 
-  async function deleteInventoryBySkus(organizationId, skus) {
-    if (!skus.length) return;
+  async function deleteInventoryByRowUids(organizationId, rowUids) {
+    if (!rowUids.length) return;
     const query = `
       DELETE FROM ${invTable}
       WHERE organization_id = @organizationId
-        AND sku IN UNNEST(@skus)
+        AND row_uid IN UNNEST(@rowUids)
     `;
-    await bq.query({ query, params: { organizationId, skus } });
+    await bq.query({ query, params: { organizationId, rowUids } });
   }
 
   async function deleteOrdersByOrderIds(organizationId, orderIds) {
@@ -175,7 +178,7 @@ export function createUploadsRepository({ bq, projectId }) {
     getHistory, logInventoryUpload, logOrderUpload,
     deleteInventory, insertInventoryBatch, insertOrdersBatch,
     getInventoryKeySet, getOrderKeySet,
-    updateInventoryBySku, updateOrdersByOrderId,
-    deleteInventoryBySkus, deleteOrdersByOrderIds,
+    updateInventoryByRowUid, updateOrdersByOrderId,
+    deleteInventoryByRowUids, deleteOrdersByOrderIds,
   };
 }

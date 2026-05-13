@@ -18,17 +18,19 @@ export const ordersSchema = {
     }
 
     if (action === 'Remove') {
-      const orderId = raw.order_id?.trim();
+      // Accept both `uid` (canonical) and legacy `order_id` for backward compat.
+      const orderId = (raw.uid ?? raw.order_id)?.trim();
       if (!orderId) {
-        return { error: { row: lineNum, field: 'order_id', reason: 'order_id is required for Remove' } };
+        return { error: { row: lineNum, field: 'uid', reason: 'uid is required for Remove' } };
       }
       return { action, row: { organization_id: organizationId, order_row_id: orderId } };
     }
 
     if (action === 'Update') {
-      const orderId = raw.order_id?.trim();
+      // Accept both `uid` (canonical) and legacy `order_id` for backward compat.
+      const orderId = (raw.uid ?? raw.order_id)?.trim();
       if (!orderId) {
-        return { error: { row: lineNum, field: 'order_id', reason: 'order_id is required for Update' } };
+        return { error: { row: lineNum, field: 'uid', reason: 'uid is required for Update' } };
       }
 
       const row = { organization_id: organizationId, order_row_id: orderId };

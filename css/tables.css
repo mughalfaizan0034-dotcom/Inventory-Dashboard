@@ -28,6 +28,13 @@
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
   user-select: none;
+  /* Stick to the top of the scrollable .table-wrap when the body scrolls.
+     border-bottom doesn't render on sticky cells in some browsers — we use
+     box-shadow as a fallback divider that paints over the scrolling rows. */
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  box-shadow: inset 0 -1px 0 var(--border);
 }
 
 /* Sortable column indicator */

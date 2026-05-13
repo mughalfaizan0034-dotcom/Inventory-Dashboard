@@ -6,7 +6,7 @@ const createUserSchema = z.object({
   display_name:      z.string().min(1).max(100),
   username:          z.string().min(2).max(32),
   password:          z.string().min(8),
-  role:              z.enum(['admin', 'manager', 'staff', 'viewer']),
+  role:              z.enum(['admin', 'manager', 'viewer']),
   organization_ids:  z.array(z.string().uuid()).min(1),
 });
 

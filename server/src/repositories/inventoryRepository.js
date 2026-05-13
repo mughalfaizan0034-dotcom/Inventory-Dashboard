@@ -69,7 +69,7 @@ export function createInventoryRepository({ bq, projectId }) {
     const dataQuery = `
       ${cte}
       SELECT
-        i.sku, i.upc, i.part_number, i.box_number, i.quantity, i.date_added, i.notes,
+        i.row_uid, i.sku, i.upc, i.part_number, i.box_number, i.quantity, i.date_added, i.notes,
         COALESCE(o.units_sold, 0)                                    AS units_sold,
         LEAST(COALESCE(o.units_sold, 0), i.quantity)                 AS fulfilled_units,
         GREATEST(COALESCE(o.units_sold, 0) - i.quantity, 0)         AS phantom_units,
@@ -96,17 +96,19 @@ export function createInventoryRepository({ bq, projectId }) {
     };
   }
 
-  async function deleteBySkus(organizationId, skus) {
-    if (!skus?.length) return 0;
+  // Delete by row_uid — the canonical tracker. SKU is NOT the row key
+  // anymore (multiple rows can share a SKU).
+  async function deleteByRowUids(organizationId, rowUids) {
+    if (!rowUids?.length) return 0;
     const query = `
       DELETE FROM ${invTable}
-      WHERE organization_id = @organizationId AND sku IN UNNEST(@skus)
+      WHERE organization_id = @organizationId AND row_uid IN UNNEST(@rowUids)
     `;
-    await bq.query({ query, params: { organizationId, skus } });
-    return skus.length;
+    await bq.query({ query, params: { organizationId, rowUids } });
+    return rowUids.length;
   }
 
-  async function updateRow(organizationId, originalSku, updates) {
+  async function updateRow(organizationId, rowUid, updates) {
     const query = `
       UPDATE ${invTable}
       SET
@@ -116,14 +118,15 @@ export function createInventoryRepository({ bq, projectId }) {
         part_number = @partNumber,
         box_number  = @boxNumber,
         notes       = @notes,
-        date_added  = @dateAdded
-      WHERE sku = @originalSku AND organization_id = @organizationId
+        date_added  = @dateAdded,
+        updated_at  = CURRENT_TIMESTAMP()
+      WHERE row_uid = @rowUid AND organization_id = @organizationId
     `;
     await bq.query({
       query,
       params: {
         organizationId,
-        originalSku,
+        rowUid,
         sku:        updates.sku,
         upc:        updates.upc,
         quantity:   updates.quantity,
@@ -268,7 +271,7 @@ export function createInventoryRepository({ bq, projectId }) {
     const query = `
       ${cte}
       SELECT
-        i.sku, i.upc, i.part_number, i.box_number, i.quantity, i.date_added, i.notes,
+        i.row_uid, i.sku, i.upc, i.part_number, i.box_number, i.quantity, i.date_added, i.notes,
         COALESCE(o.units_sold, 0)                                    AS units_sold,
         LEAST(COALESCE(o.units_sold, 0), i.quantity)                 AS fulfilled_units,
         GREATEST(COALESCE(o.units_sold, 0) - i.quantity, 0)         AS phantom_units,
@@ -283,5 +286,5 @@ export function createInventoryRepository({ bq, projectId }) {
     return rows;
   }
 
-  return { findAll, exportAll, deleteBySkus, updateRow, findAlternativeBoxes };
+  return { findAll, exportAll, deleteByRowUids, updateRow, findAlternativeBoxes };
 }

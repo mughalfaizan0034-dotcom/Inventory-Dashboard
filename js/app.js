@@ -9,8 +9,13 @@ const Settings = (() => {
   let _usersCache = [];
   let _orgsCache  = [];
 
-  const ROLE_COLOR = { admin: 'error', manager: 'warning', staff: 'info', viewer: 'gray' };
-  const ROLE_LABEL = { admin: 'Admin — full access', manager: 'Manager — uploads & reports', staff: 'User — full operations', viewer: 'Viewer — view & download only' };
+  // 3-tier role model: admin / manager / viewer.
+  const ROLE_COLOR = { admin: 'error', manager: 'warning', viewer: 'gray' };
+  const ROLE_LABEL = {
+    admin:   'Admin — full access',
+    manager: 'Manager — operational actions',
+    viewer:  'Viewer — view & download only',
+  };
 
   function _roleOptions(selected = 'viewer') {
     return Object.entries(ROLE_LABEL).map(([v, l]) =>

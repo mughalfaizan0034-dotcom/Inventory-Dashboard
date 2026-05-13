@@ -3,10 +3,10 @@ import { inventorySchema } from '../schemas/inventorySchema.js';
 export const inventoryImporter = {
   type:     'inventory',
   schema:   inventorySchema,
-  keyField: 'sku',
+  keyField: 'row_uid',
 
   getKey(row) {
-    return row.sku;
+    return row.row_uid;
   },
 
   async fetchKeySet(uploadsRepo, organizationId, keys) {
@@ -18,11 +18,11 @@ export const inventoryImporter = {
   },
 
   async updateBatch(uploadsRepo, organizationId, rows) {
-    await uploadsRepo.updateInventoryBySku(organizationId, rows);
+    await uploadsRepo.updateInventoryByRowUid(organizationId, rows);
   },
 
   async removeBatch(uploadsRepo, organizationId, keys) {
-    await uploadsRepo.deleteInventoryBySkus(organizationId, keys);
+    await uploadsRepo.deleteInventoryByRowUids(organizationId, keys);
   },
 
   async logUpload(uploadsRepo, meta) {

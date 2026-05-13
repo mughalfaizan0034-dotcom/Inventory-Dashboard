@@ -309,7 +309,7 @@ const InventoryList = (() => {
   let _sortDir       = 'desc';
   let _statusFilter  = 'all';
 
-  const COLS = ['SKU', 'Box #', 'Part #', 'UPC', 'Initial', 'Actual Sold', 'Phantom', 'Remaining', 'Date Added', 'Notes', ''];
+  const COLS = ['UID', 'SKU', 'Box #', 'Part #', 'UPC', 'Initial', 'Actual Sold', 'Phantom', 'Remaining', 'Date Added', 'Notes', ''];
 
   /* ── Undefined SKU check ─────────────────────────────────── */
   function _isUndefined(val) {

@@ -113,7 +113,13 @@ const Auth = (() => {
     );
   }
 
-  const ROLE_LEVEL = { admin: 6, manager: 4, staff: 2, operator: 2, viewer: 1 };
+  // Canonical 3-tier role hierarchy. Legacy aliases (staff/operator/user/view)
+  // collapse to the closest canonical tier so old JWTs still resolve.
+  const ROLE_LEVEL = {
+    admin:    3,
+    manager:  2, staff:    2, operator: 2, user: 2,  // legacy → manager
+    viewer:   1, view:     1,                         // legacy → viewer
+  };
 
   function hasRole(required) {
     const org = getOrganization();

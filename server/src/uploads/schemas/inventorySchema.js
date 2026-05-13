@@ -1,11 +1,12 @@
+import { randomUUID } from 'crypto';
 import { safeString, parsePositiveInt, normalizeDate } from '../core/rowNormalizer.js';
 
 const VALID_ACTIONS = new Set(['Add', 'Update', 'Remove']);
 
 export const inventorySchema = {
-  // Only 'sku' is universally required across all action types.
-  // Action-specific required fields are validated in buildRow.
-  required: ['sku'],
+  // For Add: row_uid is optional (auto-generated if absent).
+  // For Update / Remove: row_uid is mandatory (canonical row tracker).
+  required: [],
 
   buildRow(raw, organizationId, lineNum) {
     const action = raw.action?.trim() || 'Add';
@@ -13,18 +14,18 @@ export const inventorySchema = {
       return { error: { row: lineNum, field: 'action', reason: `action must be Add, Update, or Remove (got "${action}")` } };
     }
 
-    const sku = raw.sku?.trim();
-    if (!sku) {
-      return { error: { row: lineNum, field: 'sku', reason: 'sku is required' } };
-    }
+    const uid = raw.uid?.trim();
 
     if (action === 'Remove') {
-      return { action, row: { organization_id: organizationId, sku } };
+      if (!uid) return { error: { row: lineNum, field: 'uid', reason: 'uid is required for Remove' } };
+      return { action, row: { organization_id: organizationId, row_uid: uid } };
     }
 
     if (action === 'Update') {
-      const row = { organization_id: organizationId, sku, updated_at: new Date().toISOString() };
+      if (!uid) return { error: { row: lineNum, field: 'uid', reason: 'uid is required for Update' } };
+      const row = { organization_id: organizationId, row_uid: uid, updated_at: new Date().toISOString() };
 
+      if (raw.sku?.trim())         row.sku         = safeString(raw.sku);
       if (raw.upc?.trim())         row.upc         = safeString(raw.upc);
       if (raw.part_number?.trim()) row.part_number  = safeString(raw.part_number);
       if (raw.box_number?.trim())  row.box_number   = safeString(raw.box_number);
@@ -40,7 +41,10 @@ export const inventorySchema = {
       return { action, row };
     }
 
-    // Add: all fields required
+    // Add: all operational fields required, uid optional (auto-generated).
+    if (!raw.sku?.trim()) {
+      return { error: { row: lineNum, field: 'sku', value: raw.sku, reason: 'sku is required' } };
+    }
     if (!raw.upc?.trim()) {
       return { error: { row: lineNum, field: 'upc', value: raw.upc, reason: 'upc is required' } };
     }
@@ -61,6 +65,7 @@ export const inventorySchema = {
       action,
       row: {
         organization_id: organizationId,
+        row_uid:     uid || randomUUID(),
         sku:         safeString(raw.sku),
         upc:         safeString(raw.upc),
         part_number: safeString(raw.part_number),
