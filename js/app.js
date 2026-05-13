@@ -992,7 +992,7 @@ const Settings = (() => {
 
     document.getElementById('add-user-btn')?.addEventListener('click', _openAddNewUserModal);
     document.getElementById('add-existing-user-btn')?.addEventListener('click', _openAddExistingModal);
-    document.getElementById('add-org-btn')?.addEventListener('click', () => _openOrgModal());
+    document.getElementById('add-org-btn')?.addEventListener('click', _openNewOrgModal);
 
     // Users table — event delegation
     document.getElementById('users-tbody')?.addEventListener('click', e => {
@@ -1005,16 +1005,12 @@ const Settings = (() => {
       // the Edit modal. The buttons no longer exist in the rendered row.
     });
 
-    // Orgs table — event delegation
+    // Orgs table — event delegation. All actions (edit / deactivate / activate)
+    // live inside the Edit modal now, so this only needs the edit-org handler.
     document.getElementById('orgs-tbody')?.addEventListener('click', e => {
-      const btn    = e.target.closest('[data-action]');
+      const btn = e.target.closest('[data-action]');
       if (!btn) return;
-      const action   = btn.dataset.action;
-      const id       = btn.dataset.id;
-      const name     = btn.dataset.name || id;
-      const activate = btn.dataset.activate === 'true';
-      if (action === 'edit-org')    _openOrgModal(id);
-      else if (action === 'toggle-org') _toggleOrg(id, name, activate);
+      if (btn.dataset.action === 'edit-org') _openEditOrgModal(btn.dataset.id);
     });
   }
 
