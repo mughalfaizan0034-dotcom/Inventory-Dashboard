@@ -382,5 +382,11 @@ const Uploads = (() => {
     }
   }
 
-  return { init, loadHistory, downloadFailedRows, openModal };
+  // Clears in-memory state — called by App.resetAllState() on org switch.
+  function reset() {
+    const historyEl = document.getElementById('upload-history');
+    if (historyEl) historyEl.innerHTML = '';
+  }
+
+  return { init, loadHistory, downloadFailedRows, openModal, reset };
 })();

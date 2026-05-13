@@ -11,7 +11,7 @@ const Orders = (() => {
   let _sortBy      = 'order_date';
   let _sortDir     = 'desc';
 
-  const COL_COUNT = 5; // Order Date, SKU, Qty Sold, Shipped SKU, Platform
+  const COL_COUNT = 6; // Order ID, Order Date, SKU, Qty Sold, Shipped SKU, Platform
 
   /* ── SKU parser ──────────────────────────────────────────── */
   function _parseSku(sku) {
@@ -122,12 +122,18 @@ const Orders = (() => {
         shippedHtml = `<span class="order-edit-btn" style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1.5px solid #93c5fd;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700;color:#1d4ed8;cursor:pointer" title="Click to change fulfillment SKU">&bull; ${Utils.escapeHtml(effectiveShippedSku || '&mdash;')}</span>`;
       }
 
+      const shortId = id ? id.slice(0, 8) : '—';
+      const idCell  = id
+        ? `<span class="order-id" title="Click to copy full ID&#10;${Utils.escapeHtml(id)}" style="font-family:'Courier New',monospace;font-size:11.5px;color:var(--txt-3);cursor:pointer;user-select:all">${Utils.escapeHtml(shortId)}</span>`
+        : `<span style="color:var(--txt-4)">—</span>`;
+
       return `<tr data-row-id="${Utils.escapeHtml(id)}"
                 data-order-date="${Utils.escapeHtml(row.order_date || '')}"
                 data-sku="${Utils.escapeHtml(row.sku || '')}"
                 data-qty="${Utils.escapeHtml(String(row.quantity_sold ?? ''))}"
                 data-shipped="${Utils.escapeHtml(shipped)}"
                 data-platform="${Utils.escapeHtml(row.platform || '')}"${trAttr}>
+        <td>${idCell}</td>
         <td>${Utils.escapeHtml(row.order_date || '-')}</td>
         <td style="font-weight:500">${Utils.escapeHtml(row.sku || '-')}</td>
         <td class="num"><strong>${Utils.formatNumber(row.quantity_sold)}</strong></td>
@@ -146,6 +152,21 @@ const Orders = (() => {
         });
       });
     }
+
+    // Click-to-copy full order ID
+    tbody.querySelectorAll('.order-id').forEach(el => {
+      el.addEventListener('click', async e => {
+        e.stopPropagation();
+        const fullId = el.closest('tr')?.dataset.rowId || '';
+        if (!fullId) return;
+        try {
+          await navigator.clipboard.writeText(fullId);
+          Notify.success('Copied', `Order ID ${fullId.slice(0, 8)}… copied to clipboard`);
+        } catch {
+          Notify.warning('Copy failed', 'Could not access clipboard');
+        }
+      });
+    });
 
     const ps = CONFIG.getPageSize();
     if (info) {
@@ -344,6 +365,8 @@ const Orders = (() => {
             original_sku:     tr.dataset.sku || '',
           });
           tr.dataset.shipped = newShipped;
+          // Reassignment changes inventory deductions → invalidate canonical KPIs.
+          MetricsEngine.invalidate();
           Notify.success('Saved', `Fulfillment SKU: ${prevLabel} → ${nextLabel}`);
         } catch (err) {
           Notify.apiError(err);
@@ -484,5 +507,20 @@ const Orders = (() => {
     _initSortHeaders();
   }
 
-  return { init, load, setStatusFilter };
+  // Clears in-memory state — called by App.resetAllState() on org switch.
+  function reset() {
+    _page      = 1;
+    _filters   = {};
+    _total     = 0;
+    _loading   = false;
+    _platforms = [];
+    _sortBy    = 'order_date';
+    _sortDir   = 'desc';
+    const tbody = document.querySelector('#page-orders tbody');
+    if (tbody) tbody.innerHTML = '';
+    ['orders-search','orders-platform','orders-start-date','orders-end-date','orders-status-filter']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  }
+
+  return { init, load, reset, setStatusFilter };
 })();

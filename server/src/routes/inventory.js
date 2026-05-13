@@ -23,7 +23,7 @@ const deleteBodySchema = z.object({
   skus: z.array(z.string().min(1)).min(1),
 });
 
-export async function inventoryRoutes(fastify, { inventoryService, activityService }) {
+export async function inventoryRoutes(fastify, { inventoryService, activityService, dashboardService }) {
   fastify.get('/', { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = inventoryQuerySchema.safeParse(request.query);
     if (!parsed.success) {
@@ -100,6 +100,7 @@ export async function inventoryRoutes(fastify, { inventoryService, activityServi
     }
     try {
       await inventoryService.updateRow(request.user.organization_id, originalSku, parsed.data);
+      dashboardService?.invalidateKPICache(request.user.organization_id);
       activityService?.log({
         organizationId: request.user.organization_id,
         userId:         request.user.user_id,
@@ -121,6 +122,7 @@ export async function inventoryRoutes(fastify, { inventoryService, activityServi
     }
     try {
       const result = await inventoryService.deleteRows(request.user.organization_id, parsed.data.skus);
+      dashboardService?.invalidateKPICache(request.user.organization_id);
       activityService?.log({
         organizationId: request.user.organization_id,
         userId:         request.user.user_id,

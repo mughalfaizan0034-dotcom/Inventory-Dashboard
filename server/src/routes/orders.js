@@ -57,7 +57,7 @@ const patchSchema = z.object({
   original_sku:     z.string().optional().default(''),
 });
 
-export async function ordersRoutes(fastify, { ordersService, activityService }) {
+export async function ordersRoutes(fastify, { ordersService, activityService, dashboardService }) {
   fastify.get('/export', { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = ordersExportSchema.safeParse(request.query);
     if (!parsed.success) {
@@ -75,8 +75,9 @@ export async function ordersRoutes(fastify, { ordersService, activityService }) 
       });
 
       const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-      const header = 'Order Date,SKU,Qty Sold,Shipped SKU,Platform';
+      const header = 'Order ID,Order Date,SKU,Qty Sold,Shipped SKU,Platform';
       const lines  = rows.map(r => [
+        r.order_row_id,
         r.order_date,
         r.sku,
         r.quantity_sold,
@@ -144,6 +145,7 @@ export async function ordersRoutes(fastify, { ordersService, activityService }) 
     };
     try {
       await ordersService.updateRow(request.user.organization_id, rowId, updates);
+      dashboardService?.invalidateKPICache(request.user.organization_id);
       const originalLabel  = original_sku || rowId;
       const reassignedDesc = updates.shipped_from_box
         ? `Reassigned fulfillment: ${originalLabel} → shipped from box ${updates.shipped_from_box} (order ${rowId})`
@@ -180,6 +182,7 @@ export async function ordersRoutes(fastify, { ordersService, activityService }) 
           search:    filters.search     || null,
         } : null,
       });
+      dashboardService?.invalidateKPICache(request.user.organization_id);
       activityService?.log({
         organizationId: request.user.organization_id,
         userId:         request.user.user_id,

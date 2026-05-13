@@ -91,6 +91,10 @@ export function createInventoryMetricsService({ bq, projectId }) {
       FROM per_sku ps
     `;
 
+    // Undefined SKU = orders whose EFFECTIVE shipped SKU does not exist in inventory.
+    // The shipped_from_box override + ARA-pattern reassignment compute the effective
+    // SKU; if that effective SKU resolves to an inventory row, the order counts as
+    // fulfilled (not undefined). A manual mapping (mapped_inventory_sku) also rescues it.
     const ordersQuery = `
       SELECT
         COUNT(*)                                      AS total_orders,
@@ -103,12 +107,24 @@ export function createInventoryMetricsService({ bq, projectId }) {
             AND COALESCE(o2.is_ignored, FALSE) = TRUE
         ) AS ignored_orders,
         (
-          SELECT COUNT(DISTINCT o2.sku)
-          FROM ${ordTable} o2
-          WHERE o2.organization_id = @organizationId
-            AND COALESCE(o2.is_ignored, FALSE) = FALSE
-            AND COALESCE(o2.mapped_inventory_sku, '') = ''
-            AND o2.sku NOT IN (
+          SELECT COUNT(DISTINCT o2.effective_sku)
+          FROM (
+            SELECT
+              CASE
+                WHEN shipped_from_box IS NOT NULL
+                     AND TRIM(CAST(shipped_from_box AS STRING)) != ''
+                     AND REGEXP_CONTAINS(sku, r'^ARA[0-9]+-.+$')
+                THEN CONCAT('ARA', TRIM(CAST(shipped_from_box AS STRING)),
+                            REGEXP_EXTRACT(sku, r'^ARA[0-9]+(.+)$'))
+                ELSE sku
+              END AS effective_sku,
+              mapped_inventory_sku
+            FROM ${ordTable}
+            WHERE organization_id = @organizationId
+              AND COALESCE(is_ignored, FALSE) = FALSE
+          ) o2
+          WHERE COALESCE(o2.mapped_inventory_sku, '') = ''
+            AND o2.effective_sku NOT IN (
               SELECT sku FROM ${invTable} WHERE organization_id = @organizationId
             )
         ) AS undefined_sku_orders

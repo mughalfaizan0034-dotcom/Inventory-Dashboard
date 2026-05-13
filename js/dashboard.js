@@ -281,6 +281,20 @@ const Dashboard = (() => {
     await Promise.all([_loadKPIs(), _loadCharts()]);
   }
 
+  // Clears in-memory state — called by App.resetAllState() on org switch.
+  function reset() {
+    if (_weeklyChart)   { try { _weeklyChart.destroy(); }   catch {} _weeklyChart = null; }
+    if (_platformChart) { try { _platformChart.destroy(); } catch {} _platformChart = null; }
+    _mode     = 'wow';
+    _weeks    = 12;
+    _months   = 6;
+    _platform = '';
+    // Reset KPI value spans to '—' so we never momentarily show prior org figures.
+    document.querySelectorAll('#dash-kpi-area .kpi-card-value, #dash-kpi-area .kpi-sub-value')
+      .forEach(el => { el.textContent = '—'; el.classList.remove('green','orange','teal','warn','error'); });
+    document.getElementById('dash-kpi-area')?.classList.remove('kpi-loading');
+  }
+
   function init() {
     _wireKPICards();
 
@@ -321,5 +335,5 @@ const Dashboard = (() => {
     });
   }
 
-  return { load, init };
+  return { load, init, reset };
 })();

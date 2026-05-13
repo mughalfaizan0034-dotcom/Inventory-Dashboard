@@ -162,6 +162,42 @@
   animation: spin .7s linear infinite;
 }
 .spin-sm { width: 16px; height: 16px; border-width: 2px; }
+.spin-lg { width: 36px; height: 36px; border-width: 3.5px; }
+
+/* ── Full-page interaction lock ─────────────────────────────── */
+.app-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(241, 245, 249, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 180ms var(--ease);
+  pointer-events: all;
+}
+.app-lock.visible { opacity: 1; }
+
+.app-lock-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 36px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+}
+.app-lock-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--txt-2);
+  letter-spacing: .01em;
+}
 
 /* ── Button loading state ───────────────────────────────────── */
 .btn-loading { pointer-events: none; }

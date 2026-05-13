@@ -284,7 +284,19 @@ const BoxLookup = (() => {
     }
   }
 
-  return { init, search };
+  // Clears in-memory state — called by App.resetAllState() on org switch.
+  function reset() {
+    _lastData  = null;
+    _activeTab = 'instock';
+    const searchInput = document.getElementById('box-search-input');
+    if (searchInput) searchInput.value = '';
+    const tabsEl   = document.getElementById('lookup-tabs');
+    const resultsEl = document.getElementById('lookup-results');
+    if (tabsEl)    tabsEl.style.display = 'none';
+    if (resultsEl) resultsEl.innerHTML = '';
+  }
+
+  return { init, search, reset };
 })();
 
 /* ── Inventory List page ────────────────────────────────────── */
@@ -485,6 +497,8 @@ const InventoryList = (() => {
             return;
           }
           await API.updateInventory(tr.dataset.sku, updates);
+          // Inventory edit changes initial stock → invalidate canonical KPIs.
+          MetricsEngine.invalidate();
           Notify.success('Saved', 'Inventory row updated');
           m.hide(); m.destroy();
           load();
@@ -585,7 +599,24 @@ const InventoryList = (() => {
     _initSortHeaders();
   }
 
-  return { init, load, setUndefinedFilter: () => setStatusFilter('undefined'), setStatusFilter };
+  // Clears in-memory state — called by App.resetAllState() on org switch.
+  function reset() {
+    _page         = 1;
+    _search       = '';
+    _total        = 0;
+    _loading      = false;
+    _sortBy       = 'date_added';
+    _sortDir      = 'desc';
+    _statusFilter = 'all';
+    const tbody = document.querySelector('#page-inventory tbody');
+    if (tbody) tbody.innerHTML = '';
+    const searchInput = document.getElementById('inventory-search');
+    if (searchInput) searchInput.value = '';
+    const statusSel = document.getElementById('inv-status-filter');
+    if (statusSel) statusSel.value = 'all';
+  }
+
+  return { init, load, reset, setUndefinedFilter: () => setStatusFilter('undefined'), setStatusFilter };
 })();
 
 /* ── Pagination helper ──────────────────────────────────────── */

@@ -99,6 +99,33 @@ const Loading = {
       </div>`;
   },
 
+  /* ── Full-page interaction lock ─────────────────────────── */
+  // Shows a blurred fullscreen overlay with spinner that blocks ALL clicks/keystrokes.
+  // Used during org switching, data recalculation, and other moments where the user
+  // must NEVER interact with stale or partial state.
+  lock(show = true, message = 'Loading…') {
+    let overlay = document.getElementById('app-lock');
+    if (show) {
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'app-lock';
+        overlay.className = 'app-lock';
+        overlay.innerHTML = `
+          <div class="app-lock-inner">
+            <div class="spin spin-lg"></div>
+            <div class="app-lock-text"></div>
+          </div>`;
+        document.body.appendChild(overlay);
+      }
+      const txt = overlay.querySelector('.app-lock-text');
+      if (txt) txt.textContent = message;
+      requestAnimationFrame(() => overlay.classList.add('visible'));
+    } else if (overlay) {
+      overlay.classList.remove('visible');
+      setTimeout(() => overlay.remove(), 180);
+    }
+  },
+
   /* ── Error state ────────────────────────────────────────── */
   error(message = 'Failed to load data', onRetry = null) {
     const retryBtn = onRetry

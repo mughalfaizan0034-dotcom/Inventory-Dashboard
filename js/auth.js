@@ -266,17 +266,31 @@ const Auth = (() => {
   }
 
   /* ── Org switching (in-app) ──────────────────────────────── */
+  // Performs a full state reset before showing the new org. While in flight,
+  // a fullscreen interaction lock prevents the user from clicking anything
+  // that would render stale data from the previous org.
   async function switchOrg(membershipId) {
+    Loading.lock(true, 'Switching organization…');
     try {
-      const result = await API.switchOrg(membershipId);
+      const result      = await API.switchOrg(membershipId);
       const currentUser = getUser();
-      // Update stored org; keep same user object
+
+      // Wipe all frontend caches/state BEFORE persisting the new org. This
+      // guarantees that nothing in the next render cycle can read stale data.
+      App.resetAllState();
+
+      // Force navigation hash to dashboard so showApp() doesn't restore a
+      // page that was bound to the previous org's data.
+      try { history.replaceState(null, '', '#dashboard'); } catch {}
+
       saveSession(result.access_token, currentUser, result.organization,
         sessionStorage.getItem(REFRESH_KEY), getMemberships());
-      // Reload page data by navigating to dashboard
+
       App.showApp();
     } catch (err) {
       if (typeof Notify !== 'undefined') Notify.error('Switch failed', err.message);
+    } finally {
+      Loading.lock(false);
     }
   }
 

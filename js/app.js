@@ -628,10 +628,21 @@ const Settings = (() => {
     });
   }
 
+  // Clears in-memory state — called by App.resetAllState() on org switch.
+  function reset() {
+    const usersTbody = document.getElementById('users-tbody');
+    const orgsTbody  = document.getElementById('orgs-tbody');
+    const logsList   = document.getElementById('logs-list');
+    if (usersTbody) usersTbody.innerHTML = '';
+    if (orgsTbody)  orgsTbody.innerHTML  = '';
+    if (logsList)   logsList.innerHTML   = '';
+  }
+
   return {
     init:         initTabs,
     loadUsers,
     loadOrganizations,
+    reset,
     _goLogsPage:  p => { _logsPage = p; _renderLogsPage(); },
   };
 })();
@@ -784,6 +795,18 @@ const App = (() => {
     navigate(PAGES[hash] ? hash : 'dashboard');
   }
 
+  // Full frontend state reset. Called on org switch BEFORE rendering the new org.
+  // Clears: KPI cache, page init memory, current-page pointer, and each module's
+  // in-memory state. After this call, the next navigate() will fetch fresh data.
+  function resetAllState() {
+    try { MetricsEngine.invalidate(); } catch {}
+    _initialized = {};
+    _currentPage = null;
+    [Dashboard, InventoryList, BoxLookup, Orders, Uploads, Settings].forEach(mod => {
+      try { mod?.reset?.(); } catch (err) { console.warn('module reset failed', err); }
+    });
+  }
+
   function showLogin() {
     document.getElementById('loading-screen')?.style.setProperty('display', 'none');
     document.getElementById('app-shell')?.style.setProperty('display', 'none');
@@ -843,7 +866,7 @@ const App = (() => {
     }
   }
 
-  return { navigate, showApp, showLogin, boot, syncFilterHighlights };
+  return { navigate, showApp, showLogin, boot, syncFilterHighlights, resetAllState };
 })();
 
 /* ── Entry point ────────────────────────────────────────────── */
