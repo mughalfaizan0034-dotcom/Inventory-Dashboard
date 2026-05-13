@@ -1,7 +1,9 @@
 import { TABLES } from '../config/tables.js';
 
 export function createUsersRepository({ bq, projectId }) {
-  const table = `\`${projectId}.${TABLES.USERS}\``;
+  const table     = `\`${projectId}.${TABLES.USERS}\``;
+  const mTable    = `\`${projectId}.${TABLES.MEMBERSHIPS}\``;
+  const orgsTable = `\`${projectId}.${TABLES.ORGANIZATIONS}\``;
 
   // Global lookup — usernames are unique across the platform.
   async function findByUsernameGlobal(username) {
@@ -32,6 +34,34 @@ export function createUsersRepository({ bq, projectId }) {
       SELECT user_id, username, display_name, is_active, created_at
       FROM ${table}
       ORDER BY display_name
+    `;
+    const [rows] = await bq.query({ query });
+    return rows;
+  }
+
+  // Global list used by the Settings → Users tab. Returns every user along
+  // with their active memberships (org + role). Settings is admin-only and
+  // org-neutral, so we never scope this to the caller's current workspace.
+  //
+  // Each row:
+  //   { user_id, username, display_name, is_active, created_at,
+  //     memberships: [ { membership_id, organization_id, org_name, role } ] }
+  async function findAllWithMemberships() {
+    const query = `
+      SELECT
+        u.user_id, u.username, u.display_name, u.is_active, u.created_at,
+        ARRAY(
+          SELECT AS STRUCT
+            m.membership_id, m.organization_id, m.role, o.display_name AS org_name
+          FROM ${mTable} m
+          JOIN ${orgsTable} o USING (organization_id)
+          WHERE m.user_id   = u.user_id
+            AND m.is_active = TRUE
+            AND o.is_active = TRUE
+          ORDER BY o.display_name
+        ) AS memberships
+      FROM ${table} u
+      ORDER BY u.display_name
     `;
     const [rows] = await bq.query({ query });
     return rows;
@@ -71,5 +101,5 @@ export function createUsersRepository({ bq, projectId }) {
     await bq.query({ query, params: { passwordHash, userId } });
   }
 
-  return { findByUsernameGlobal, findById, findAll, insert, update, updatePasswordHash };
+  return { findByUsernameGlobal, findById, findAll, findAllWithMemberships, insert, update, updatePasswordHash };
 }

@@ -47,7 +47,7 @@ export function createMembershipsRepository({ bq, projectId }) {
   async function getMembersByOrg(organizationId) {
     const query = `
       SELECT m.membership_id, m.user_id, m.role, m.is_active, m.created_at,
-             u.username, u.display_name, u.email
+             u.username, u.display_name
       FROM ${table} m
       JOIN ${usersTable} u USING (user_id)
       WHERE m.organization_id = @organizationId

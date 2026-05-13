@@ -7,9 +7,10 @@ const VALID_ROLES   = ['admin', 'manager', 'staff', 'viewer'];
 
 export function createUsersService({ usersRepo, membershipsRepo, usernameService }) {
 
-  // List members of a given organization (via memberships join).
-  async function list(organizationId) {
-    return membershipsRepo.getMembersByOrg(organizationId);
+  // Global list of every user with their active memberships.
+  // Settings is admin-only and org-neutral — never scope to current workspace.
+  async function list() {
+    return usersRepo.findAllWithMemberships();
   }
 
   // Find global user by username — used by the "add existing user" flow.
@@ -96,52 +97,36 @@ export function createUsersService({ usersRepo, membershipsRepo, usernameService
     return { username: normalized, valid: true, available: false, suggestions };
   }
 
-  // Update membership and/or user profile.
-  // Accepted fields: role, is_active (membership) | display_name, password (user profile).
-  async function updateUser(membershipId, organizationId, updates) {
-    const membership = await membershipsRepo.getMembershipById(membershipId);
-    if (!membership || membership.organization_id !== organizationId) {
-      throw new AppError(404, 'Membership not found');
-    }
+  // Global user update (org-neutral, Settings context).
+  // Accepted fields on the user row:
+  //   display_name, password, is_active
+  // Role is currently still per-membership; per-org role editing will be
+  // surfaced by a dedicated membership endpoint in Phase C.
+  async function updateGlobalUser(userId, updates) {
+    const user = await usersRepo.findById(userId);
+    if (!user) throw new AppError(404, 'User not found');
 
-    const membershipUpdates = {};
-    if (updates.role !== undefined) {
-      if (!VALID_ROLES.includes(updates.role)) {
-        throw new AppError(400, `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`);
-      }
-      membershipUpdates.role = updates.role;
-    }
-    if (updates.is_active !== undefined) membershipUpdates.is_active = updates.is_active;
-
-    if (Object.keys(membershipUpdates).length > 0) {
-      await membershipsRepo.updateMembership(membershipId, membershipUpdates);
-    }
-
-    if (updates.display_name !== undefined) {
-      await usersRepo.update(membership.user_id, { display_name: updates.display_name.trim() });
-    }
+    const profile = {};
+    if (updates.display_name !== undefined) profile.display_name = updates.display_name.trim();
+    if (updates.is_active    !== undefined) profile.is_active    = updates.is_active;
+    if (Object.keys(profile).length) await usersRepo.update(userId, profile);
 
     if (updates.password !== undefined) {
       if (updates.password.length < 8) throw new AppError(400, 'Password must be at least 8 characters');
       const hash = await bcrypt.hash(updates.password, BCRYPT_ROUNDS);
-      await usersRepo.updatePasswordHash(membership.user_id, hash);
+      await usersRepo.updatePasswordHash(userId, hash);
     }
   }
 
-  // Kept for backwards-compat with existing route (membership-only updates).
-  async function updateMembership(membershipId, organizationId, updates) {
-    return updateUser(membershipId, organizationId, updates);
+  // Deactivate the user globally. All memberships become unreachable
+  // because authentication checks users.is_active. The row is preserved
+  // (no hard delete) so audit references in activity_log stay valid.
+  async function deactivateUser(userId, requestingUserId) {
+    if (userId === requestingUserId) throw new AppError(400, 'Cannot deactivate your own account');
+    const user = await usersRepo.findById(userId);
+    if (!user) throw new AppError(404, 'User not found');
+    await usersRepo.update(userId, { is_active: false });
   }
 
-  // Deactivate membership (does not delete global user account).
-  async function deactivateMembership(membershipId, organizationId, requestingMembershipId) {
-    if (membershipId === requestingMembershipId) throw new AppError(400, 'Cannot remove your own membership');
-    const membership = await membershipsRepo.getMembershipById(membershipId);
-    if (!membership || membership.organization_id !== organizationId) {
-      throw new AppError(404, 'Membership not found');
-    }
-    await membershipsRepo.updateMembership(membershipId, { is_active: false });
-  }
-
-  return { list, findByUsername, create, checkUsername, updateUser, updateMembership, deactivateMembership };
+  return { list, findByUsername, create, checkUsername, updateGlobalUser, deactivateUser };
 }

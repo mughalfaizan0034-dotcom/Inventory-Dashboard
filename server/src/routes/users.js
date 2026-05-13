@@ -11,7 +11,6 @@ const createUserSchema = z.object({
 });
 
 const updateUserSchema = z.object({
-  role:         z.enum(['admin', 'manager', 'staff', 'viewer']).optional(),
   is_active:    z.boolean().optional(),
   display_name: z.string().min(1).max(100).optional(),
   password:     z.string().min(8).optional(),
@@ -52,14 +51,15 @@ export async function usersRoutes(fastify, { usersService }) {
     }
   });
 
-  // List members of the current org (via memberships).
-  fastify.get('/', { preHandler: [authenticate, requireRole('manager')] }, async (request, reply) => {
+  // Global list of all users with their memberships. Admin-only because
+  // Settings is the admin workspace and is org-neutral.
+  fastify.get('/', { preHandler: [authenticate, requireRole('admin')] }, async (request, reply) => {
     try {
-      const data = await usersService.list(request.user.organization_id);
+      const data = await usersService.list();
       return reply.send({ success: true, data });
     } catch (err) {
       request.log.error({ err }, 'Users list error');
-      return reply.code(500).send({ success: false, error: 'Internal server error' });
+      return reply.code(500).send({ success: false, error: err?.message || 'Internal server error' });
     }
   });
 
@@ -90,14 +90,15 @@ export async function usersRoutes(fastify, { usersService }) {
     }
   });
 
-  // Update membership role/status and optionally user profile (display_name, password).
+  // Update global user profile (display_name / password / is_active).
+  // :id is the user_id (Settings is org-neutral, no membership lookup needed).
   fastify.patch('/:id', { preHandler: [authenticate, requireRole('admin')] }, async (request, reply) => {
     const parsed = updateUserSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: 'Invalid request body' });
     }
     try {
-      await usersService.updateUser(request.params.id, request.user.organization_id, parsed.data);
+      await usersService.updateGlobalUser(request.params.id, parsed.data);
       request.log.info({ event: 'user_updated', target_id: request.params.id, by: request.user.user_id }, 'User updated');
       return reply.send({ success: true });
     } catch (err) {
@@ -105,24 +106,23 @@ export async function usersRoutes(fastify, { usersService }) {
         return reply.code(err.statusCode).send({ success: false, error: err.message });
       }
       request.log.error({ err }, 'User update error');
-      return reply.code(500).send({ success: false, error: 'Internal server error' });
+      return reply.code(500).send({ success: false, error: err?.message || 'Internal server error' });
     }
   });
 
-  // Deactivate membership (does not delete the global user account).
+  // Deactivate the user globally. The row is preserved for audit; auth
+  // checks reject login because users.is_active = false.
   fastify.delete('/:id', { preHandler: [authenticate, requireRole('admin')] }, async (request, reply) => {
     try {
-      await usersService.deactivateMembership(
-        request.params.id, request.user.organization_id, request.user.membership_id
-      );
-      request.log.info({ event: 'membership_deactivated', target_id: request.params.id, by: request.user.user_id }, 'Membership deactivated');
+      await usersService.deactivateUser(request.params.id, request.user.user_id);
+      request.log.info({ event: 'user_deactivated', target_id: request.params.id, by: request.user.user_id }, 'User deactivated');
       return reply.send({ success: true });
     } catch (err) {
       if (err instanceof AppError) {
         return reply.code(err.statusCode).send({ success: false, error: err.message });
       }
       request.log.error({ err }, 'User delete error');
-      return reply.code(500).send({ success: false, error: 'Internal server error' });
+      return reply.code(500).send({ success: false, error: err?.message || 'Internal server error' });
     }
   });
 }

@@ -19,6 +19,8 @@ const Settings = (() => {
   }
 
   /* ── Users: load ────────────────────────────────────────── */
+  // Global list (Settings is org-neutral). Each user row shows their
+  // active memberships as badges (org_name + role).
   async function loadUsers() {
     const tbody = document.getElementById('users-tbody');
     if (!tbody) return;
@@ -27,29 +29,44 @@ const Settings = (() => {
       const users  = await API.getUsers();
       _usersCache  = users;
       if (!users.length) {
-        tbody.innerHTML = `<tr><td colspan="5">${Loading.empty('users', 'No users in this organization', 'Add a new user or assign an existing one')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5">${Loading.empty('users', 'No users yet', 'Add a new user to get started')}</td></tr>`;
         return;
       }
-      const myMembershipId = Auth.getOrganization()?.membership_id;
+      const myUserId = Auth.getUser()?.user_id;
       tbody.innerHTML = users.map(u => {
-        const mid   = Utils.escapeHtml(u.membership_id || '');
-        const dname = Utils.escapeHtml(u.display_name || u.username || '?');
-        const isSelf = u.membership_id === myMembershipId;
-        return `<tr>
+        const uid     = Utils.escapeHtml(u.user_id || '');
+        const dname   = Utils.escapeHtml(u.display_name || u.username || '?');
+        const initial = (u.display_name || u.username || '?')[0].toUpperCase();
+        const isSelf  = u.user_id === myUserId;
+
+        const memberships = Array.isArray(u.memberships) ? u.memberships : [];
+        const membershipsHtml = memberships.length === 0
+          ? `<span style="font-size:12px;color:var(--txt-4);font-style:italic">No active memberships</span>`
+          : memberships.map(m => {
+              const role = m.role || '';
+              const color = ROLE_COLOR[role] || 'gray';
+              return `<span class="user-org-badge user-org-badge-${color}" title="Role: ${Utils.escapeHtml(Utils.capitalize(role))}">
+                  <span class="user-org-name">${Utils.escapeHtml(m.org_name || m.organization_id)}</span>
+                  <span class="user-org-role">${Utils.escapeHtml(Utils.capitalize(role))}</span>
+                </span>`;
+            }).join('');
+
+        return `<tr data-user-id="${uid}">
           <td>
             <div style="display:flex;align-items:center;gap:8px">
-              <div class="user-avatar-sm">${(u.display_name || u.username || '?')[0].toUpperCase()}</div>
+              <div class="user-avatar-sm">${initial}</div>
               <span style="font-weight:500">${dname}</span>
+              ${isSelf ? '<span class="user-self-tag">You</span>' : ''}
             </div>
           </td>
           <td><span style="font-size:12px;color:var(--txt-3);font-family:monospace">@${Utils.escapeHtml(u.username || '—')}</span></td>
-          <td>${Utils.badgeHtml(ROLE_COLOR[u.role] || 'gray', Utils.capitalize(u.role || ''))}</td>
+          <td><div class="user-org-badges">${membershipsHtml}</div></td>
           <td>${u.is_active !== false ? Utils.badgeHtml('success', 'Active') : Utils.badgeHtml('gray', 'Inactive')}</td>
           <td>
             <div style="display:flex;gap:4px;flex-wrap:wrap">
-              <button class="btn btn-secondary btn-sm" data-action="edit-user" data-id="${mid}">Edit</button>
-              <button class="btn btn-ghost btn-sm" data-action="change-pwd" data-id="${mid}" title="Change password">Pwd</button>
-              ${!isSelf ? `<button class="btn btn-danger btn-sm" data-action="remove-user" data-id="${mid}" data-name="${dname}">Remove</button>` : ''}
+              <button class="btn btn-secondary btn-sm" data-action="edit-user"   data-id="${uid}">Edit</button>
+              <button class="btn btn-ghost     btn-sm" data-action="change-pwd"  data-id="${uid}" title="Change password">Pwd</button>
+              ${!isSelf ? `<button class="btn btn-danger btn-sm" data-action="remove-user" data-id="${uid}" data-name="${dname}">Remove</button>` : ''}
             </div>
           </td>
         </tr>`;
@@ -384,15 +401,18 @@ const Settings = (() => {
   }
 
   /* ── Users: edit ────────────────────────────────────────── */
-  function _openEditUserModal(membershipId) {
-    const user = _usersCache.find(u => u.membership_id === membershipId);
+  // Edits the GLOBAL user profile (display_name + active status). Role per
+  // org is currently still on the membership row — that will be surfaced
+  // by a dedicated membership editor in Phase C.
+  function _openEditUserModal(userId) {
+    const user = _usersCache.find(u => u.user_id === userId);
     if (!user) return;
     const m = new Modal({ title: 'Edit User', maxWidth: '440px' });
     m.setBody(`
-      <form id="edit-user-form" autocomplete="off">
+      <form data-form="edit-user" autocomplete="off">
         <div class="form-group">
           <label class="form-label">Display Name <span class="req">*</span></label>
-          <input class="form-input" id="eu-display" value="${Utils.escapeHtml(user.display_name || '')}" autocomplete="off">
+          <input class="form-input" data-field="display" value="${Utils.escapeHtml(user.display_name || '')}" autocomplete="off">
         </div>
         <div class="form-group">
           <label class="form-label">Username</label>
@@ -402,44 +422,44 @@ const Settings = (() => {
           <div class="form-hint">Username is fixed and used for login tracking.</div>
         </div>
         <div class="form-group">
-          <label class="form-label">Role</label>
-          <select class="form-select" id="eu-role">${_roleOptions(user.role)}</select>
-        </div>
-        <div class="form-group">
           <label class="form-label">Status</label>
-          <select class="form-select" id="eu-status">
+          <select class="form-select" data-field="status">
             <option value="true"  ${user.is_active !== false ? 'selected' : ''}>Active</option>
             <option value="false" ${user.is_active === false  ? 'selected' : ''}>Inactive</option>
           </select>
+          <div class="form-hint">Inactive users cannot log in. Memberships are preserved.</div>
         </div>
-        <div id="edit-user-error" class="form-error" style="display:none"></div>
+        <div data-field="error" class="form-error" style="display:none"></div>
       </form>`);
     m.setFooter(`
-      <button class="btn btn-secondary btn-sm" id="eu-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="eu-save">Save Changes</button>`);
+      <button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" data-action="save">Save Changes</button>`);
     m.show();
 
-    const _save = () => _doEditUser(m, membershipId);
-    document.getElementById('eu-cancel')?.addEventListener('click', () => m.hide());
-    document.getElementById('eu-save')?.addEventListener('click', _save);
-    document.getElementById('edit-user-form')?.addEventListener('submit', e => { e.preventDefault(); _save(); });
+    const q  = sel => m.bodyEl.querySelector(sel);
+    const qf = sel => m.footerEl.querySelector(sel);
+    const _hideAndDestroy = () => { m.hide(); m.destroy(); };
+
+    qf('[data-action="cancel"]')?.addEventListener('click', _hideAndDestroy);
+    qf('[data-action="save"]')?.addEventListener('click', () => _doEditUser(m, q, qf, userId));
+    q('[data-form="edit-user"]')?.addEventListener('submit', e => { e.preventDefault(); _doEditUser(m, q, qf, userId); });
   }
 
-  async function _doEditUser(m, membershipId) {
-    const display  = document.getElementById('eu-display')?.value.trim();
-    const role     = document.getElementById('eu-role')?.value;
-    const isActive = document.getElementById('eu-status')?.value === 'true';
-    const errEl    = document.getElementById('edit-user-error');
-    const saveBtn  = document.getElementById('eu-save');
+  async function _doEditUser(m, q, qf, userId) {
+    const display  = q('[data-field="display"]')?.value.trim();
+    const isActive = q('[data-field="status"]')?.value === 'true';
+    const errEl    = q('[data-field="error"]');
+    const saveBtn  = qf('[data-action="save"]');
     const showErr  = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
 
     if (!display) return showErr('Display name is required.');
-    errEl.style.display = 'none';
+    if (errEl) errEl.style.display = 'none';
     Loading.btn(saveBtn, true);
     try {
-      await API.updateUser(membershipId, { display_name: display, role, is_active: isActive });
+      await API.updateUser(userId, { display_name: display, is_active: isActive });
       Notify.success('User updated');
       m.hide();
+      m.destroy();
       loadUsers();
     } catch (err) {
       showErr(err.message || 'Failed to save.');
@@ -449,51 +469,55 @@ const Settings = (() => {
   }
 
   /* ── Users: change password ─────────────────────────────── */
-  function _openChangePwdModal(membershipId) {
-    const user = _usersCache.find(u => u.membership_id === membershipId);
+  function _openChangePwdModal(userId) {
+    const user = _usersCache.find(u => u.user_id === userId);
     const name = Utils.escapeHtml(user?.display_name || user?.username || 'this user');
     const m    = new Modal({ title: 'Change Password', maxWidth: '400px' });
     m.setBody(`
       <p style="font-size:13px;color:var(--txt-3);margin-bottom:16px">
         Set a new password for <strong>${name}</strong>.
       </p>
-      <form id="pwd-form" autocomplete="off">
+      <form data-form="pwd" autocomplete="off">
         <div class="form-group">
           <label class="form-label">New Password <span class="req">*</span></label>
-          <input class="form-input" id="pwd-new" type="password" placeholder="Minimum 8 characters" autocomplete="new-password">
+          <input class="form-input" data-field="new" type="password" placeholder="Minimum 8 characters" autocomplete="new-password">
         </div>
         <div class="form-group">
           <label class="form-label">Confirm Password <span class="req">*</span></label>
-          <input class="form-input" id="pwd-confirm" type="password" placeholder="Re-enter password" autocomplete="new-password">
+          <input class="form-input" data-field="confirm" type="password" placeholder="Re-enter password" autocomplete="new-password">
         </div>
-        <div id="pwd-error" class="form-error" style="display:none"></div>
+        <div data-field="error" class="form-error" style="display:none"></div>
       </form>`);
     m.setFooter(`
-      <button class="btn btn-secondary btn-sm" id="pwd-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="pwd-save">Set Password</button>`);
+      <button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" data-action="save">Set Password</button>`);
     m.show();
 
-    const _save = () => _doChangePwd(m, membershipId);
-    document.getElementById('pwd-cancel')?.addEventListener('click', () => m.hide());
-    document.getElementById('pwd-save')?.addEventListener('click', _save);
-    document.getElementById('pwd-form')?.addEventListener('submit', e => { e.preventDefault(); _save(); });
+    const q  = sel => m.bodyEl.querySelector(sel);
+    const qf = sel => m.footerEl.querySelector(sel);
+    const _hideAndDestroy = () => { m.hide(); m.destroy(); };
+
+    qf('[data-action="cancel"]')?.addEventListener('click', _hideAndDestroy);
+    qf('[data-action="save"]')?.addEventListener('click', () => _doChangePwd(m, q, qf, userId));
+    q('[data-form="pwd"]')?.addEventListener('submit', e => { e.preventDefault(); _doChangePwd(m, q, qf, userId); });
   }
 
-  async function _doChangePwd(m, membershipId) {
-    const newPwd  = document.getElementById('pwd-new')?.value;
-    const confirm = document.getElementById('pwd-confirm')?.value;
-    const errEl   = document.getElementById('pwd-error');
-    const saveBtn = document.getElementById('pwd-save');
+  async function _doChangePwd(m, q, qf, userId) {
+    const newPwd  = q('[data-field="new"]')?.value;
+    const confirm = q('[data-field="confirm"]')?.value;
+    const errEl   = q('[data-field="error"]');
+    const saveBtn = qf('[data-action="save"]');
     const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
 
     if (!newPwd || newPwd.length < 8) return showErr('Password must be at least 8 characters.');
-    if (newPwd !== confirm) return showErr('Passwords do not match.');
-    errEl.style.display = 'none';
+    if (newPwd !== confirm)           return showErr('Passwords do not match.');
+    if (errEl) errEl.style.display = 'none';
     Loading.btn(saveBtn, true);
     try {
-      await API.updateUser(membershipId, { password: newPwd });
+      await API.updateUser(userId, { password: newPwd });
       Notify.success('Password changed', "The user's password has been updated.");
       m.hide();
+      m.destroy();
     } catch (err) {
       showErr(err.message || 'Failed to change password.');
     } finally {
@@ -502,17 +526,19 @@ const Settings = (() => {
   }
 
   /* ── Users: remove ──────────────────────────────────────── */
-  async function _removeUser(membershipId, name) {
+  // Global deactivation. The user cannot log in afterwards; memberships
+  // are preserved so reactivating restores all org access.
+  async function _removeUser(userId, name) {
     const confirmed = await Modal.confirm({
-      title:       'Remove User',
-      message:     `Remove "${name}" from this organization? They will lose access. You can restore access by editing their status.`,
-      confirmText: 'Remove',
+      title:       'Deactivate User',
+      message:     `Deactivate "${name}"? They will lose access to ALL organizations. You can reactivate them from the Edit dialog.`,
+      confirmText: 'Deactivate',
       danger:      true,
     });
     if (!confirmed) return;
     try {
-      await API.deleteUser(membershipId);
-      Notify.success('User removed');
+      await API.deleteUser(userId);
+      Notify.success('User deactivated');
       loadUsers();
     } catch (err) {
       Notify.apiError(err);
