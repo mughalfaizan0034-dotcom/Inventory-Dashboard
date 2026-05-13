@@ -50,9 +50,36 @@ WHERE row_uid IS NULL;
 
 
 -- ── Step D ──────────────────────────────────────────────────
--- Tighten to NOT NULL now that every row has a value.
-ALTER TABLE `patman-inventory.patman_inventory.inventory`
-ALTER COLUMN row_uid SET NOT NULL;
+-- NOT NULL enforcement.
+--
+-- BigQuery does NOT support `ALTER COLUMN … SET NOT NULL` on an
+-- existing column. Application code enforces non-null:
+--   - inventorySchema.buildRow() auto-generates row_uid on Add
+--   - inventoryImporter uses row_uid as the merge key
+--   - The backfill above populated every existing row.
+--
+-- If you want a hard schema-level constraint, run this rebuild
+-- BLOCK manually (commented out — uncomment and run as a single
+-- multi-statement script):
+--
+--   CREATE OR REPLACE TABLE `patman-inventory.patman_inventory.inventory` (
+--     row_uid          STRING    NOT NULL,
+--     organization_id  STRING    NOT NULL,
+--     sku              STRING    NOT NULL,
+--     upc              STRING    NOT NULL,
+--     part_number      STRING,
+--     box_number       STRING,
+--     quantity         INT64     NOT NULL,
+--     date_added       STRING,
+--     notes            STRING,
+--     updated_at       TIMESTAMP
+--   ) AS
+--   SELECT row_uid, organization_id, sku, upc, part_number,
+--          box_number, quantity, date_added, notes, updated_at
+--   FROM `patman-inventory.patman_inventory.inventory`;
+--
+-- Recommended: skip the rebuild for now. The application contract
+-- already guarantees the invariant.
 
 
 -- ============================================================

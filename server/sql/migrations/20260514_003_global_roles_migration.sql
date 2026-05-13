@@ -67,13 +67,38 @@ WHERE TRUE;
 
 
 -- ── Step C ──────────────────────────────────────────────────
--- Tighten users.role to NOT NULL. The backfill above guarantees
--- every active user has a role; any user with zero active
--- memberships would have role=NULL and this would fail. That
--- is correct behaviour — Check 1 already ensured no such users
--- exist, so this should never trip.
-ALTER TABLE `patman-inventory.patman_inventory.users`
-ALTER COLUMN role SET NOT NULL;
+-- NOT NULL enforcement.
+--
+-- BigQuery does NOT support `ALTER COLUMN ... SET NOT NULL` on an
+-- existing column. The only ways to make a column NOT NULL are:
+--   (a) declare it at CREATE TABLE time, or
+--   (b) rebuild the table via CREATE OR REPLACE TABLE … AS SELECT.
+--
+-- The application layer enforces non-null for users.role:
+--   - usersService.create()         validates role ∈ {admin, manager, viewer}
+--   - usersService.updateGlobalUser() rejects empty role
+--   - The backfill above populated every existing row.
+--
+-- If you want a hard schema-level constraint, run this rebuild
+-- BLOCK manually (commented out — uncomment and run as a single
+-- multi-statement script). It atomically swaps the table:
+--
+--   CREATE OR REPLACE TABLE `patman-inventory.patman_inventory.users` (
+--     user_id        STRING    NOT NULL,
+--     username       STRING    NOT NULL,
+--     password_hash  STRING    NOT NULL,
+--     display_name   STRING    NOT NULL,
+--     role           STRING    NOT NULL,
+--     is_active      BOOL      NOT NULL,
+--     created_at     TIMESTAMP NOT NULL,
+--     updated_at     TIMESTAMP
+--   ) AS
+--   SELECT user_id, username, password_hash, display_name, role,
+--          is_active, created_at, updated_at
+--   FROM `patman-inventory.patman_inventory.users`;
+--
+-- Recommended: skip the rebuild for now. The application contract
+-- already guarantees the invariant.
 
 
 -- ── Step D ──────────────────────────────────────────────────

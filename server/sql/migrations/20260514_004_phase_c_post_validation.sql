@@ -6,11 +6,22 @@
 -- ============================================================
 
 -- ── Check 1 ─────────────────────────────────────────────────
--- Confirm users.role exists, is NOT NULL, and is STRING.
--- Expected: 1 row, is_nullable = NO.
+-- Confirm users.role exists and is STRING.
+-- Expected: 1 row. is_nullable will be YES because BigQuery's
+-- ALTER ADD COLUMN cannot create a NOT NULL column on a non-empty
+-- table — the application layer enforces non-null instead. If you
+-- ran the optional rebuild block in Step C, is_nullable will be NO.
 SELECT column_name, data_type, is_nullable
 FROM `patman-inventory.patman_inventory.INFORMATION_SCHEMA.COLUMNS`
 WHERE table_name = 'users' AND column_name = 'role';
+
+
+-- ── Check 1b ────────────────────────────────────────────────
+-- Defence-in-depth: no row should actually have role = NULL.
+-- Expected: 0 rows.
+SELECT user_id, username
+FROM `patman-inventory.patman_inventory.users`
+WHERE role IS NULL;
 
 
 -- ── Check 2 ─────────────────────────────────────────────────
