@@ -449,37 +449,7 @@
   font-style: italic;
 }
 
-/* ── User org membership badges (Settings users table) ─────── */
-.user-org-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.user-org-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.3;
-  border: 1px solid;
-  white-space: nowrap;
-}
-.user-org-name { font-weight: 600; }
-.user-org-role {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .03em;
-  opacity: .8;
-}
-.user-org-badge-error   { background: var(--error-bg);   color: var(--error);   border-color: var(--error-bd); }
-.user-org-badge-warning { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-bd); }
-.user-org-badge-info    { background: var(--info-bg);    color: var(--info);    border-color: var(--info-bd); }
-.user-org-badge-success { background: var(--success-bg); color: var(--success); border-color: var(--success-bd); }
-.user-org-badge-gray    { background: var(--surface-3);  color: var(--txt-3);   border-color: var(--border); }
+/* ── Settings → Users table cells ──────────────────────────── */
 
 .user-self-tag {
   display: inline-block;
@@ -491,6 +461,102 @@
   border-radius: var(--r-xs);
   background: var(--primary-50);
   color: var(--primary-text);
+}
+
+.user-inactive-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--surface-3);
+  color: var(--txt-3);
+  border: 1px solid var(--border);
+  margin-left: 4px;
+}
+
+.user-row-inactive { opacity: .55; }
+.user-row-inactive:hover { opacity: 1; }
+
+/* Role column — clean plain-text label, no color coding. */
+.user-role-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--txt-2);
+}
+
+/* Organizations column — native <details> dropdown listing org names.
+   Browser handles open/close, no JS state to maintain. */
+.user-orgs-details {
+  display: inline-block;
+  position: relative;
+}
+.user-orgs-details > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.user-orgs-details > summary::-webkit-details-marker { display: none; }
+
+.user-orgs-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--txt-2);
+  transition: border-color var(--dur), background var(--dur);
+}
+.user-orgs-details:hover .user-orgs-summary {
+  border-color: var(--border-2);
+  background: var(--surface-3);
+}
+.user-orgs-details[open] .user-orgs-summary {
+  border-color: var(--primary);
+  background: var(--surface-3);
+}
+
+.user-orgs-chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--txt-4);
+  transition: transform var(--dur) var(--ease);
+}
+.user-orgs-details[open] .user-orgs-chevron {
+  transform: rotate(180deg);
+  color: var(--primary);
+}
+
+.user-orgs-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+}
+.user-orgs-list li {
+  padding: 6px 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--txt-1);
+  border-radius: var(--r-xs);
+  white-space: nowrap;
+}
+.user-orgs-list li:hover {
+  background: var(--surface-3);
 }
 
 /* ── Button loading state ───────────────────────────────────── */

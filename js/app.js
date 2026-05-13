@@ -566,26 +566,6 @@ const Settings = (() => {
     }
   }
 
-  /* ── Users: remove ──────────────────────────────────────── */
-  // Global deactivation. The user cannot log in afterwards; memberships
-  // are preserved so reactivating restores all org access.
-  async function _removeUser(userId, name) {
-    const confirmed = await Modal.confirm({
-      title:       'Deactivate User',
-      message:     `Deactivate "${name}"? They will lose access to ALL organizations. You can reactivate them from the Edit dialog.`,
-      confirmText: 'Deactivate',
-      danger:      true,
-    });
-    if (!confirmed) return;
-    try {
-      await API.deleteUser(userId);
-      Notify.success('User deactivated');
-      loadUsers();
-    } catch (err) {
-      Notify.apiError(err);
-    }
-  }
-
   /* ── Organizations: load ────────────────────────────────── */
   async function loadOrganizations() {
     const tbody = document.getElementById('orgs-tbody');
@@ -855,9 +835,9 @@ const Settings = (() => {
       if (!btn) return;
       const action = btn.dataset.action;
       const id     = btn.dataset.id;
-      if (action === 'edit-user')    _openEditUserModal(id);
-      else if (action === 'change-pwd')   _openChangePwdModal(id);
-      else if (action === 'remove-user')  _removeUser(id, btn.dataset.name || id);
+      if (action === 'edit-user') _openEditUserModal(id);
+      // Note: change-pwd and remove-user actions were consolidated into
+      // the Edit modal. The buttons no longer exist in the rendered row.
     });
 
     // Orgs table — event delegation
