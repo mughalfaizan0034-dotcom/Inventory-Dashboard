@@ -6,6 +6,21 @@ export function createMembershipsRepository({ bq, projectId }) {
   const orgsTable = `\`${projectId}.${TABLES.ORGANIZATIONS}\``;
   const usersTable = `\`${projectId}.${TABLES.USERS}\``;
 
+  // Every membership (active AND inactive) for a user. Used by the
+  // admin user-edit flow to sync org assignments — we may need to
+  // re-activate a previously-deactivated membership rather than
+  // insert a duplicate row.
+  async function findAllByUser(userId) {
+    const query = `
+      SELECT membership_id, user_id, organization_id, role, is_active, created_at
+      FROM ${table}
+      WHERE user_id = @userId
+      ORDER BY created_at
+    `;
+    const [rows] = await bq.query({ query, params: { userId } });
+    return rows;
+  }
+
   async function getUserMemberships(userId) {
     const query = `
       SELECT m.membership_id, m.user_id, m.organization_id, m.role, m.is_active, m.created_at,
@@ -82,7 +97,7 @@ export function createMembershipsRepository({ bq, projectId }) {
   }
 
   return {
-    getUserMemberships, getMembershipById, getMembership,
+    getUserMemberships, findAllByUser, getMembershipById, getMembership,
     getMembersByOrg, createMembership, updateMembership,
   };
 }

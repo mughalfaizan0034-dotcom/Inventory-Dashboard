@@ -11,9 +11,11 @@ const createUserSchema = z.object({
 });
 
 const updateUserSchema = z.object({
-  is_active:    z.boolean().optional(),
-  display_name: z.string().min(1).max(100).optional(),
-  password:     z.string().min(8).optional(),
+  is_active:        z.boolean().optional(),
+  display_name:     z.string().min(1).max(100).optional(),
+  password:         z.string().min(8).optional(),
+  role:             z.enum(['admin', 'manager', 'viewer']).optional(),
+  organization_ids: z.array(z.string().uuid()).min(1).optional(),
 });
 
 export async function usersRoutes(fastify, { usersService }) {

@@ -98,10 +98,13 @@ export function createUsersService({ usersRepo, membershipsRepo, usernameService
   }
 
   // Global user update (org-neutral, Settings context).
-  // Accepted fields on the user row:
-  //   display_name, password, is_active
-  // Role is currently still per-membership; per-org role editing will be
-  // surfaced by a dedicated membership endpoint in Phase C.
+  // Accepted fields:
+  //   display_name      — string, profile field on users
+  //   password          — string ≥8 chars, rehashed
+  //   is_active         — bool, deactivates platform-wide
+  //   role              — admin/manager/viewer, global on users.role
+  //   organization_ids  — non-empty array; memberships are synced to match
+  //                       (deactivate orgs not in list, add/reactivate orgs in list)
   async function updateGlobalUser(userId, updates) {
     const user = await usersRepo.findById(userId);
     if (!user) throw new AppError(404, 'User not found');
@@ -109,12 +112,65 @@ export function createUsersService({ usersRepo, membershipsRepo, usernameService
     const profile = {};
     if (updates.display_name !== undefined) profile.display_name = updates.display_name.trim();
     if (updates.is_active    !== undefined) profile.is_active    = updates.is_active;
+    if (updates.role         !== undefined) {
+      if (!VALID_ROLES.includes(updates.role)) {
+        throw new AppError(400, `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`);
+      }
+      profile.role = updates.role;
+    }
     if (Object.keys(profile).length) await usersRepo.update(userId, profile);
 
     if (updates.password !== undefined) {
       if (updates.password.length < 8) throw new AppError(400, 'Password must be at least 8 characters');
       const hash = await bcrypt.hash(updates.password, BCRYPT_ROUNDS);
       await usersRepo.updatePasswordHash(userId, hash);
+    }
+
+    if (updates.organization_ids !== undefined) {
+      const target = [...new Set((updates.organization_ids || []).filter(Boolean))];
+      if (!target.length) {
+        throw new AppError(400, 'User must belong to at least one organization');
+      }
+      const effectiveRole = updates.role ?? user.role ?? 'viewer';
+      await _syncMemberships(userId, target, effectiveRole);
+    }
+  }
+
+  // Reconcile a user's active memberships with a target list of org_ids.
+  // - Deactivate memberships not in target.
+  // - Reactivate (and re-role) existing memberships in target.
+  // - Create new memberships for orgs the user wasn't in before.
+  async function _syncMemberships(userId, targetOrgIds, role) {
+    const current = await membershipsRepo.findAllByUser(userId);
+    const targetSet = new Set(targetOrgIds);
+    const currentByOrg = new Map();
+    for (const m of current) currentByOrg.set(m.organization_id, m);
+
+    // Deactivate memberships not in target.
+    for (const m of current) {
+      if (m.is_active && !targetSet.has(m.organization_id)) {
+        await membershipsRepo.updateMembership(m.membership_id, { is_active: false });
+      }
+    }
+
+    // Add or reactivate memberships in target.
+    for (const orgId of targetOrgIds) {
+      const existing = currentByOrg.get(orgId);
+      if (existing) {
+        const patch = {};
+        if (!existing.is_active)         patch.is_active = true;
+        if (existing.role     !== role)  patch.role      = role; // mirror global role
+        if (Object.keys(patch).length) {
+          await membershipsRepo.updateMembership(existing.membership_id, patch);
+        }
+      } else {
+        await membershipsRepo.createMembership({
+          membership_id:   randomUUID(),
+          user_id:         userId,
+          organization_id: orgId,
+          role,
+        });
+      }
     }
   }
 

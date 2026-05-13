@@ -89,7 +89,7 @@ export function createUsersRepository({ bq, projectId }) {
   }
 
   async function update(userId, updates) {
-    const allowed    = ['display_name', 'is_active'];
+    const allowed    = ['display_name', 'is_active', 'role'];
     const setClauses = Object.keys(updates)
       .filter(k => allowed.includes(k))
       .map(k => `${k} = @${k}`);
