@@ -72,45 +72,43 @@ const Settings = (() => {
       Notify.apiError(err);
       return;
     }
-    // Only assignable orgs are active ones.
     const assignableOrgs = (allOrgs || []).filter(o => o.is_active);
 
     const m = new Modal({ title: 'Add New User', maxWidth: '480px' });
     m.setBody(`
-      <form id="user-form" autocomplete="off">
+      <form data-form="user" autocomplete="off">
         <div class="form-group">
           <label class="form-label">Display Name <span class="req">*</span></label>
-          <input class="form-input" id="u-display" placeholder="Full name" autocomplete="off">
+          <input class="form-input" data-field="display" placeholder="Full name" autocomplete="off">
         </div>
 
         <div class="form-group">
           <label class="form-label">Username <span class="req">*</span></label>
-          <input class="form-input" id="u-username" placeholder="login handle (e.g. john_doe)" autocomplete="off">
-          <div class="form-hint" id="u-username-hint">Unique across the platform. 2–32 chars: lowercase letters, numbers, underscores.</div>
-          <div id="u-username-status" style="margin-top:6px;font-size:12px;display:none"></div>
+          <input class="form-input" data-field="username" placeholder="login handle (e.g. john_doe)" autocomplete="off">
+          <div class="form-hint">Unique across the platform. 2–32 chars: lowercase letters, numbers, underscores.</div>
+          <div data-field="username-status" style="margin-top:6px;font-size:12px;display:none"></div>
         </div>
 
         <div class="form-group">
           <label class="form-label">Password <span class="req">*</span></label>
-          <input class="form-input" id="u-password" type="password" placeholder="Minimum 8 characters" autocomplete="new-password">
+          <input class="form-input" data-field="password" type="password" placeholder="Minimum 8 characters" autocomplete="new-password">
         </div>
 
         <div class="form-group">
           <label class="form-label">Role <span class="req">*</span></label>
-          <select class="form-select" id="u-role">${_roleOptions('viewer')}</select>
+          <select class="form-select" data-field="role">${_roleOptions('viewer')}</select>
           <div class="form-hint">Applied to every assigned organization below.</div>
         </div>
 
         <div class="form-group">
           <label class="form-label">Organizations <span class="req">*</span></label>
-          <div id="u-orgs" class="org-checklist">
+          <div data-field="orgs" class="org-checklist">
             ${assignableOrgs.map(o => {
               const isCurrent = o.organization_id === currentOrg?.organization_id;
               return `
                 <label class="org-checkbox${isCurrent ? ' org-checkbox-locked' : ''}">
                   <input type="checkbox" value="${Utils.escapeHtml(o.organization_id)}"
-                         ${isCurrent ? 'checked disabled' : ''}
-                         data-org-name="${Utils.escapeHtml(o.display_name)}">
+                         ${isCurrent ? 'checked disabled' : ''}>
                   <span class="org-checkbox-name">${Utils.escapeHtml(o.display_name)}</span>
                   ${isCurrent ? '<span class="org-checkbox-tag">Current</span>' : ''}
                 </label>`;
@@ -119,38 +117,50 @@ const Settings = (() => {
           <div class="form-hint">User must belong to at least one organization. Your current workspace is auto-assigned.</div>
         </div>
 
-        <div id="user-form-error" class="form-error" style="display:none"></div>
+        <div data-field="error" class="form-error" style="display:none"></div>
       </form>`);
     m.setFooter(`
-      <button class="btn btn-secondary btn-sm" id="u-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="u-save">Create User</button>`);
+      <button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" data-action="save">Create User</button>`);
     m.show();
 
-    const _save = () => _doCreateUser(m);
-    document.getElementById('u-cancel')?.addEventListener('click', () => m.hide());
-    document.getElementById('u-save')?.addEventListener('click', _save);
-    document.getElementById('user-form')?.addEventListener('submit', e => { e.preventDefault(); _save(); });
+    // CRITICAL: scope all lookups to the modal's body/footer. Multiple modals
+    // can coexist in the DOM (Modal.hide() doesn't remove them), so global
+    // document.getElementById would return the FIRST match — usually a stale
+    // ghost from a previous modal. Querying inside the live modal's own
+    // elements avoids that entirely.
+    const q  = sel => m.bodyEl.querySelector(sel);
+    const qf = sel => m.footerEl.querySelector(sel);
 
-    // Live username availability check (debounced).
-    _wireUsernameCheck();
+    // Destroy on hide so we don't accumulate duplicate-ID nodes.
+    const _hideAndDestroy = () => { m.hide(); m.destroy(); };
+
+    qf('[data-action="cancel"]')?.addEventListener('click', _hideAndDestroy);
+    qf('[data-action="save"]')?.addEventListener('click', () => _doCreateUser(m, q, qf));
+    q('[data-form="user"]')?.addEventListener('submit', e => { e.preventDefault(); _doCreateUser(m, q, qf); });
+
+    _wireUsernameCheck(q);
   }
 
-  // Track the last username we successfully validated as available.
-  // Submission is blocked unless the typed value matches this.
+  // Tracks the last username verified as available. Submit is blocked unless
+  // the typed value matches this exactly.
   let _validatedUsername = null;
 
-  function _wireUsernameCheck() {
-    const input    = document.getElementById('u-username');
-    const statusEl = document.getElementById('u-username-status');
-    if (!input || !statusEl) return;
+  function _wireUsernameCheck(q) {
+    const input    = q('[data-field="username"]');
+    const statusEl = q('[data-field="username-status"]');
+    if (!input || !statusEl) {
+      console.warn('[username-check] could not find input/status inside modal');
+      return;
+    }
 
     let timer = null;
     let seq   = 0;
 
     const setStatus = (html, color) => {
-      statusEl.innerHTML       = html;
-      statusEl.style.color     = color || 'var(--txt-3)';
-      statusEl.style.display   = html ? 'block' : 'none';
+      statusEl.innerHTML     = html;
+      statusEl.style.color   = color || 'var(--txt-3)';
+      statusEl.style.display = html ? 'block' : 'none';
     };
 
     const onChange = () => {
@@ -169,7 +179,7 @@ const Settings = (() => {
       timer = setTimeout(async () => {
         try {
           const res = await API.checkUsername(raw);
-          if (mySeq !== seq) return; // newer request in flight — drop this result
+          if (mySeq !== seq) return;
           if (!res.valid) {
             setStatus(`✗ Invalid: must be 2–32 chars, lowercase letters/numbers/underscores only.`, 'var(--error)');
           } else if (res.available) {
@@ -191,7 +201,10 @@ const Settings = (() => {
           }
         } catch (err) {
           if (mySeq !== seq) return;
-          setStatus(`<span style="color:var(--txt-4)">Could not verify — ${Utils.escapeHtml(err.message || 'try again')}</span>`, '');
+          const msg = err.status === 404
+            ? 'Username check endpoint not available — backend needs redeploy.'
+            : (err.message || 'try again');
+          setStatus(`<span style="color:var(--txt-4)">Could not verify — ${Utils.escapeHtml(msg)}</span>`, '');
         }
       }, 350);
     };
@@ -199,14 +212,14 @@ const Settings = (() => {
     input.addEventListener('input', onChange);
   }
 
-  async function _doCreateUser(m) {
-    const display  = document.getElementById('u-display')?.value.trim();
-    const username = document.getElementById('u-username')?.value.trim().toLowerCase();
-    const password = document.getElementById('u-password')?.value;
-    const role     = document.getElementById('u-role')?.value;
-    const orgIds   = Array.from(document.querySelectorAll('#u-orgs input[type=checkbox]:checked')).map(cb => cb.value);
-    const errEl    = document.getElementById('user-form-error');
-    const saveBtn  = document.getElementById('u-save');
+  async function _doCreateUser(m, q, qf) {
+    const display  = q('[data-field="display"]')?.value.trim();
+    const username = q('[data-field="username"]')?.value.trim().toLowerCase();
+    const password = q('[data-field="password"]')?.value;
+    const role     = q('[data-field="role"]')?.value;
+    const orgIds   = Array.from(q('[data-field="orgs"]')?.querySelectorAll('input[type=checkbox]:checked') || []).map(cb => cb.value);
+    const errEl    = q('[data-field="error"]');
+    const saveBtn  = qf('[data-action="save"]');
     const showErr  = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
 
     if (!display)                          return showErr('Display name is required.');
@@ -216,7 +229,7 @@ const Settings = (() => {
     if (!role)                             return showErr('Please select a role.');
     if (!orgIds.length)                    return showErr('Assign the user to at least one organization.');
 
-    errEl.style.display = 'none';
+    if (errEl) errEl.style.display = 'none';
     Loading.btn(saveBtn, true);
     try {
       await API.createUser({
@@ -228,9 +241,13 @@ const Settings = (() => {
       });
       Notify.success('User created', `${display} has been added to ${orgIds.length} organization${orgIds.length > 1 ? 's' : ''}.`);
       m.hide();
+      m.destroy();
       loadUsers();
     } catch (err) {
-      showErr(err.message || 'Failed to create user.');
+      const msg = err.status === 404
+        ? 'Server endpoint not found — backend needs to be redeployed.'
+        : (err.message || 'Failed to create user.');
+      showErr(msg);
     } finally {
       Loading.btn(saveBtn, false);
     }
