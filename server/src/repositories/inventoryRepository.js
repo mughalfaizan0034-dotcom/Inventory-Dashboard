@@ -1,4 +1,5 @@
 import { TABLES } from '../config/tables.js';
+import { isUndefinedRowSql } from '../utils/inventoryPatterns.js';
 
 export function createInventoryRepository({ bq, projectId }) {
   const invTable = `\`${projectId}.${TABLES.INVENTORY}\``;
@@ -16,11 +17,7 @@ export function createInventoryRepository({ bq, projectId }) {
     }
 
     if (status === 'undefined') {
-      conditions.push(`(
-        UPPER(TRIM(COALESCE(i.sku, '')))           IN ('NA','N/A','')
-        OR UPPER(TRIM(COALESCE(i.upc, '')))        IN ('NA','N/A','')
-        OR UPPER(TRIM(COALESCE(i.part_number,''))) IN ('NA','N/A','')
-      )`);
+      conditions.push(isUndefinedRowSql('i'));
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
@@ -219,11 +216,7 @@ export function createInventoryRepository({ bq, projectId }) {
     }
 
     if (status === 'undefined') {
-      conditions.push(`(
-        UPPER(TRIM(COALESCE(i.sku, '')))           IN ('NA','N/A','')
-        OR UPPER(TRIM(COALESCE(i.upc, '')))        IN ('NA','N/A','')
-        OR UPPER(TRIM(COALESCE(i.part_number,''))) IN ('NA','N/A','')
-      )`);
+      conditions.push(isUndefinedRowSql('i'));
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`;

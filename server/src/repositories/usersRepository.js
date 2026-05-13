@@ -43,24 +43,34 @@ export function createUsersRepository({ bq, projectId }) {
   // with their active memberships (org + role). Settings is admin-only and
   // org-neutral, so we never scope this to the caller's current workspace.
   //
+  // Implementation note: BigQuery rejects correlated ARRAY subqueries that
+  // reference an outer table column, so we pre-aggregate memberships into
+  // a CTE keyed by user_id, then LEFT JOIN. Users with no active memberships
+  // get a NULL memberships array (frontend treats NULL as empty).
+  //
   // Each row:
   //   { user_id, username, display_name, is_active, created_at,
-  //     memberships: [ { membership_id, organization_id, org_name, role } ] }
+  //     memberships: [ { membership_id, organization_id, org_name, role } ] | null }
   async function findAllWithMemberships() {
     const query = `
+      WITH user_memberships AS (
+        SELECT
+          m.user_id,
+          ARRAY_AGG(
+            STRUCT(m.membership_id, m.organization_id, m.role, o.display_name AS org_name)
+            ORDER BY o.display_name
+          ) AS memberships
+        FROM ${mTable} m
+        JOIN ${orgsTable} o USING (organization_id)
+        WHERE m.is_active = TRUE
+          AND o.is_active = TRUE
+        GROUP BY m.user_id
+      )
       SELECT
         u.user_id, u.username, u.display_name, u.is_active, u.created_at,
-        ARRAY(
-          SELECT AS STRUCT
-            m.membership_id, m.organization_id, m.role, o.display_name AS org_name
-          FROM ${mTable} m
-          JOIN ${orgsTable} o USING (organization_id)
-          WHERE m.user_id   = u.user_id
-            AND m.is_active = TRUE
-            AND o.is_active = TRUE
-          ORDER BY o.display_name
-        ) AS memberships
+        um.memberships
       FROM ${table} u
+      LEFT JOIN user_memberships um USING (user_id)
       ORDER BY u.display_name
     `;
     const [rows] = await bq.query({ query });

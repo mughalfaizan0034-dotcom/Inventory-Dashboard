@@ -312,9 +312,12 @@ const InventoryList = (() => {
   const COLS = ['UID', 'SKU', 'Box #', 'Part #', 'UPC', 'Initial', 'Actual Sold', 'Phantom', 'Remaining', 'Date Added', 'Notes', ''];
 
   /* ── Undefined SKU check ─────────────────────────────────── */
+  // Mirror of server/src/utils/inventoryPatterns.js. Keep in sync.
+  // An identifier is undefined when blank, a CSV-export remnant ("/""),
+  // or one of the common NA placeholders.
+  const _UNDEFINED_PATTERNS = new Set(['', '"', '""', 'NA', 'N/A', '#NA', '#N/A']);
   function _isUndefined(val) {
-    const v = (val || '').trim().toUpperCase();
-    return v === '' || v === 'NA' || v === 'N/A';
+    return _UNDEFINED_PATTERNS.has((val || '').trim().toUpperCase());
   }
 
   /* ── Sort headers ────────────────────────────────────────── */

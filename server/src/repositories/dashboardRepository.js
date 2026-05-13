@@ -9,6 +9,11 @@ export function createDashboardRepository({ bq, projectId }) {
     const pTypes = { platform: 'STRING' };
     const platCond = `AND (@platform IS NULL OR platform = @platform)`;
 
+    // Every query below must mirror the KPI engine's order filter — exclude
+    // is_ignored rows. Without this, charts show 6 orders while the KPI
+    // card shows 0 because the KPI engine filters out soft-deleted rows.
+    const notIgnored = `AND COALESCE(is_ignored, FALSE) = FALSE`;
+
     const weeklyQuery = `
       SELECT
         DATE_TRUNC(SAFE_CAST(order_date AS DATE), WEEK) AS week_start,
@@ -17,6 +22,7 @@ export function createDashboardRepository({ bq, projectId }) {
       FROM ${ordTable}
       WHERE organization_id = @organizationId
         AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        ${notIgnored}
         ${platCond}
       GROUP BY week_start
       ORDER BY week_start ASC
@@ -28,6 +34,7 @@ export function createDashboardRepository({ bq, projectId }) {
       WHERE organization_id = @organizationId
         AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
         AND platform IS NOT NULL
+        ${notIgnored}
         ${platCond}
       GROUP BY platform
       ORDER BY units_sold DESC
@@ -38,6 +45,7 @@ export function createDashboardRepository({ bq, projectId }) {
       FROM ${ordTable}
       WHERE organization_id = @organizationId
         AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        ${notIgnored}
         ${platCond}
       GROUP BY sku
       ORDER BY units_sold DESC
@@ -56,6 +64,7 @@ export function createDashboardRepository({ bq, projectId }) {
         FROM ${ordTable}
         WHERE organization_id = @organizationId
           AND SAFE_CAST(order_date AS DATE) IS NOT NULL
+          ${notIgnored}
           ${platCond}
       ),
       monthly_totals AS (

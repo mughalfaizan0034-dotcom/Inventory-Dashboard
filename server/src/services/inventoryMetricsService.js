@@ -1,4 +1,5 @@
 import { TABLES } from '../config/tables.js';
+import { isUndefinedSql, isUndefinedRowSql } from '../utils/inventoryPatterns.js';
 
 /**
  * inventoryMetricsService — single source of truth for all inventory calculations.
@@ -82,11 +83,7 @@ export function createInventoryMetricsService({ bq, projectId }) {
           SELECT COUNT(*)
           FROM ${invTable}
           WHERE organization_id = @organizationId
-            AND (
-              UPPER(TRIM(COALESCE(sku, '')))           IN ('NA','N/A','')
-              OR UPPER(TRIM(COALESCE(upc, '')))        IN ('NA','N/A','')
-              OR UPPER(TRIM(COALESCE(part_number,''))) IN ('NA','N/A','')
-            )
+            AND ${isUndefinedRowSql()}
         ) AS undefined_inventory_rows
       FROM per_sku ps
     `;
@@ -194,11 +191,7 @@ export function createInventoryMetricsService({ bq, projectId }) {
         SELECT
           GREATEST(i.quantity - COALESCE(o.ordered, 0), 0) AS remaining,
           GREATEST(COALESCE(o.ordered, 0) - i.quantity, 0) AS phantom,
-          (
-            UPPER(TRIM(COALESCE(i.sku, '')))           IN ('NA','N/A','') OR
-            UPPER(TRIM(COALESCE(i.upc, '')))           IN ('NA','N/A','') OR
-            UPPER(TRIM(COALESCE(i.part_number, '')))   IN ('NA','N/A','')
-          ) AS is_undefined
+          ${isUndefinedRowSql('i')} AS is_undefined
         FROM inv_agg i
         LEFT JOIN orders_agg o ON i.sku = o.effective_sku
       )
