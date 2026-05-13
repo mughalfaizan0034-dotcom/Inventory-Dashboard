@@ -4,22 +4,21 @@
 
 const Dashboard = (() => {
 
-  /* ── KPI metric definitions ──────────────────────────────── */
-  const INVENTORY_METRICS = [
-    { id: 'dm-total-skus',   label: 'Total SKUs',     field: 'totalSkus',              navigate: 'inventory' },
-    { id: 'dm-instock-skus', label: 'In Stock',       field: 'inStockSkus',            barOf: 'totalSkus',  barColor: '#16a34a', accent: 'green' },
-    { id: 'dm-oos-skus',     label: 'OOS',            field: 'oosSkus',                barOf: 'totalSkus',  barColor: '#ea580c', accent: 'orange' },
-    { id: 'dm-total-units',  label: 'Total Units',    field: 'totalUnits',             navigate: 'inventory' },
-    { id: 'dm-remaining',    label: 'Remaining',      field: 'physicalRemainingUnits', barOf: 'totalUnits', barColor: '#16a34a', accent: 'green', navigate: 'inventory' },
-    { id: 'dm-undef-inv',    label: 'Undefined SKUs', field: 'undefinedSkus',          navigate: 'inventory', action: 'undefined', warnIfPositive: true },
-  ];
-
-  const SALES_METRICS = [
-    { id: 'dm-total-orders', label: 'Total Orders',       field: 'totalOrders',        navigate: 'orders' },
-    { id: 'dm-units-sold',   label: 'Units Sold',         field: 'unitsSold',          navigate: 'orders' },
-    { id: 'dm-actual-sold',  label: 'Actual Sold',        field: 'actualUnitsSold',    accent: 'teal' },
-    { id: 'dm-phantom-u-s',  label: 'Phantom Units',      field: 'phantomUnits',       warnIfPositive: true },
-    { id: 'dm-undef-orders', label: 'Unknown SKU Orders', field: 'undefinedSkuOrders', navigate: 'orders', action: 'unknown_orders', warnIfPositive: true },
+  /* ── KPI card field map ──────────────────────────────────── */
+  const KPI_MAP = [
+    // [elementId,              dataField,                 colorClass or fn]
+    ['kpi-total-skus',         'totalSkus',               null],
+    ['kpi-instock-skus',       'inStockSkus',             'green'],
+    ['kpi-oos-skus',           'oosSkus',                 d => d > 0 ? 'orange' : null],
+    ['kpi-undef-skus',         'undefinedSkus',           d => d > 0 ? 'error'  : null],
+    ['kpi-total-units',        'totalUnits',              null],
+    ['kpi-units-sold',         'unitsSold',               null],
+    ['kpi-remaining',          'physicalRemainingUnits',  'green'],
+    ['kpi-total-orders',       'totalOrders',             null],
+    ['kpi-orders-units-sold',  'unitsSold',               null],
+    ['kpi-phantom',            'phantomUnits',            d => d > 0 ? 'warn'   : null],
+    ['kpi-fulfilled',          'actualUnitsSold',         'teal'],
+    ['kpi-unknown',            'undefinedSkuOrders',      d => d > 0 ? 'error'  : null],
   ];
 
   /* ── Chart + filter state ────────────────────────────────── */
@@ -60,67 +59,34 @@ const Dashboard = (() => {
     ).join('');
   }
 
-  /* ── KPI rendering ───────────────────────────────────────── */
-  function _valueColor(def, val) {
-    if (def.warnIfPositive && val > 0) return 'var(--error)';
-    if (def.accent === 'green')  return '#16a34a';
-    if (def.accent === 'orange') return '#c2410c';
-    if (def.accent === 'teal')   return '#0d9488';
-    return 'var(--txt-1)';
-  }
+  /* ── KPI card rendering ─────────────────────────────────── */
+  function _renderKPICards(data) {
+    const area = document.getElementById('dash-kpi-area');
 
-  function _metricItem(def, data) {
-    const val     = data[def.field] ?? null;
-    const display = val != null ? Utils.formatNumber(val) : '—';
-    const color   = _valueColor(def, val ?? 0);
-    const nav     = def.navigate
-      ? `data-navigate="${def.navigate}"${def.action ? ` data-action="${def.action}"` : ''}`
-      : '';
-
-    let barHtml = '';
-    if (def.barOf) {
-      const total = data[def.barOf] || 0;
-      const pct   = total > 0 ? Math.min(100, Math.round((val || 0) / total * 100)) : 0;
-      barHtml = `
-        <div class="dash-kpi-item-bar-wrap">
-          <div class="dash-kpi-item-bar" style="width:${pct}%;background:${def.barColor || 'var(--primary)'}"></div>
-        </div>`;
+    if (!data) {
+      area?.classList.add('kpi-loading');
+      return;
     }
 
-    return `
-      <div class="dash-kpi-item${def.navigate ? ' clickable' : ''}" ${nav}>
-        <div class="dash-kpi-item-label">${Utils.escapeHtml(def.label)}</div>
-        <div class="dash-kpi-item-value" id="${def.id}" style="color:${color}">${Utils.escapeHtml(String(display))}</div>
-        ${barHtml}
-      </div>`;
+    area?.classList.remove('kpi-loading');
+
+    KPI_MAP.forEach(([elId, field, colorSpec]) => {
+      const el  = document.getElementById(elId);
+      if (!el) return;
+      const val = data[field] ?? null;
+      el.textContent = val != null ? Utils.formatNumber(val) : '—';
+
+      // apply / remove color classes
+      el.classList.remove('green', 'orange', 'teal', 'warn', 'error');
+      const cls = typeof colorSpec === 'function' ? colorSpec(val ?? 0) : colorSpec;
+      if (cls) el.classList.add(cls);
+    });
   }
 
-  function _skeletonItem() {
-    return `
-      <div class="dash-kpi-item">
-        <div class="skel skel-line" style="width:72px;height:10px;margin-bottom:6px"></div>
-        <div class="skel skel-line" style="width:56px;height:22px"></div>
-      </div>`;
-  }
-
-  function _renderPanel(containerId, metrics, data) {
-    const el = document.getElementById(containerId);
-    if (!el) return;
-
-    el.innerHTML = !data
-      ? metrics.map(_skeletonItem).join('')
-      : metrics.map(def => _metricItem(def, data)).join('');
-
-    if (data) {
-      el.querySelectorAll('.dash-kpi-item[data-navigate]').forEach(item => {
-        item.addEventListener('click', () => {
-          App.navigate(item.dataset.navigate);
-          const action = item.dataset.action;
-          if (action === 'undefined')           setTimeout(() => InventoryList.setStatusFilter?.('undefined'), 60);
-          else if (action === 'unknown_orders') setTimeout(() => Orders.setStatusFilter?.('unknown'), 60);
-        });
-      });
-    }
+  function _wireKPICards() {
+    document.querySelectorAll('.kpi-card[data-navigate]').forEach(card => {
+      card.addEventListener('click', () => App.navigate(card.dataset.navigate));
+    });
   }
 
   /* ── Chart rendering ─────────────────────────────────────── */
@@ -262,17 +228,14 @@ const Dashboard = (() => {
 
   /* ── Data loaders ────────────────────────────────────────── */
   async function _loadKPIs() {
-    _renderPanel('panel-inventory-intel', INVENTORY_METRICS, null);
-    _renderPanel('panel-sales-intel',     SALES_METRICS,     null);
+    _renderKPICards(null);
     try {
       const kpiData = await MetricsEngine.load();
-      _renderPanel('panel-inventory-intel', INVENTORY_METRICS, kpiData);
-      _renderPanel('panel-sales-intel',     SALES_METRICS,     kpiData);
+      _renderKPICards(kpiData);
       const el = document.getElementById('last-sync-time');
       if (el) el.textContent = 'Updated ' + Utils.timeAgo(new Date().toISOString());
     } catch (err) {
-      const el = document.getElementById('panel-inventory-intel');
-      if (el) el.innerHTML = Loading.error('Failed to load KPI data', load);
+      document.getElementById('dash-kpi-area')?.classList.remove('kpi-loading');
       Notify.apiError(err);
     }
   }
@@ -319,6 +282,8 @@ const Dashboard = (() => {
   }
 
   function init() {
+    _wireKPICards();
+
     const platSel  = document.getElementById('dash-platform-select');
     const rangeSel = document.getElementById('dash-range-select');
     const modeWow  = document.getElementById('dash-mode-wow');

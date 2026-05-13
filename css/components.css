@@ -374,92 +374,113 @@
 .dash-platform-doughnut { width: 200px; height: 200px; flex-shrink: 0; }
 .dash-platform-legend   { flex: 1; min-width: 0; }
 
-/* ── Dashboard KPI card grid ─────────────────────────────────── */
+/* ── Dashboard 3 KPI cards ───────────────────────────────────── */
 .dash-kpi-area {
   flex-shrink: 0;
-  padding: 12px 16px 10px;
+  padding: 14px 16px 12px;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
-.dash-kpi-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.dash-kpi-section-title {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .07em;
-  color: var(--txt-3);
-}
-
-.dash-kpi-grid {
+.dash-3cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
 }
-@media (max-width: 860px) { .dash-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 480px) { .dash-kpi-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1024px) { .dash-3cards { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px)  { .dash-3cards { grid-template-columns: 1fr; } }
 
-.dash-kpi-item {
+.kpi-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-xs);
-  padding: 10px 14px 9px;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 18px 20px 16px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-height: 72px;
+  gap: 14px;
+  cursor: pointer;
   user-select: none;
   transition: box-shadow var(--dur), transform var(--dur), border-color var(--dur);
 }
-.dash-kpi-item.clickable  { cursor: pointer; }
-.dash-kpi-item.clickable:hover {
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
+.kpi-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
   border-color: var(--primary);
 }
 
-.dash-kpi-item-label {
-  font-size: 10px;
+/* Main KPI row — label + value + arrow all inline */
+.kpi-card-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kpi-card-label {
+  font-size: 13px;
   font-weight: 600;
   color: var(--txt-3);
-  text-transform: uppercase;
-  letter-spacing: .05em;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
-.dash-kpi-item-value {
-  font-size: 22px;
+.kpi-card-value {
+  font-size: 26px;
   font-weight: 700;
   color: var(--txt-1);
   font-family: var(--font-title);
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.kpi-card-arrow {
+  margin-left: auto;
+  font-size: 17px;
+  color: var(--primary);
+  opacity: .65;
+  flex-shrink: 0;
+  transition: opacity var(--dur), transform var(--dur);
+}
+.kpi-card:hover .kpi-card-arrow { opacity: 1; transform: translate(2px, -2px); }
+
+/* Secondary KPIs row */
+.kpi-card-subs {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+.kpi-sub-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.kpi-sub-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--txt-4);
+  text-transform: uppercase;
+  letter-spacing: .04em;
   white-space: nowrap;
-  line-height: 1.2;
 }
-.dash-kpi-item-bar-wrap {
-  height: 3px;
+.kpi-sub-value {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--txt-1);
+  font-family: var(--font-title);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+.kpi-sub-value.green  { color: #16a34a; }
+.kpi-sub-value.orange { color: #c2410c; }
+.kpi-sub-value.teal   { color: #0d9488; }
+.kpi-sub-value.warn   { color: var(--warning); }
+.kpi-sub-value.error  { color: var(--error); }
+
+/* Skeleton pulse while loading */
+.dash-kpi-area.kpi-loading .kpi-card-value,
+.dash-kpi-area.kpi-loading .kpi-sub-value {
+  color: transparent;
   background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-top: 3px;
-}
-.dash-kpi-item-bar {
-  height: 100%;
-  border-radius: 2px;
-  transition: width .5s var(--ease);
+  border-radius: 4px;
+  animation: skel-pulse 1.4s ease-in-out infinite;
 }
 
 

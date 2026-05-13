@@ -47,6 +47,11 @@
   50%       { opacity: .4; }
 }
 
+@keyframes skel-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .45; }
+}
+
 /* ── Utility animation classes ──────────────────────────────── */
 .anim-fade-in      { animation: fadeIn     .2s var(--ease); }
 .anim-slide-up     { animation: slideUp    .22s var(--ease); }

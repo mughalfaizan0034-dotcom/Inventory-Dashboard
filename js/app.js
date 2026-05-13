@@ -677,6 +677,21 @@ const App = (() => {
     window.location.hash = pageId;
   }
 
+  function _initSidebarToggle() {
+    const STORAGE_KEY = 'patman_sidebar_collapsed';
+    const btn = document.getElementById('sidebar-toggle');
+    if (!btn) return;
+
+    if (localStorage.getItem(STORAGE_KEY) === '1') {
+      document.body.classList.add('sidebar-collapsed');
+    }
+
+    btn.addEventListener('click', () => {
+      const collapsed = document.body.classList.toggle('sidebar-collapsed');
+      localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0');
+    });
+  }
+
   function _bindNav() {
     document.querySelectorAll('.nav-item[data-page]').forEach(item => {
       item.addEventListener('click', () => navigate(item.dataset.page));
@@ -695,6 +710,8 @@ const App = (() => {
 
     const refreshBtn = document.getElementById('topbar-refresh-btn');
     if (refreshBtn) refreshBtn.addEventListener('click', () => { if (_currentPage) PAGES[_currentPage]?.init?.(); });
+
+    _initSidebarToggle();
   }
 
   function _bindSidebarUser() {

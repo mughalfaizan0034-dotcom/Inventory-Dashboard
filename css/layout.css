@@ -116,6 +116,8 @@
   position: fixed;
   left: 0; top: 0; bottom: 0;
   z-index: 100;
+  overflow: hidden;
+  transition: width 220ms var(--ease), min-width 220ms var(--ease);
 }
 
 .sidebar-header {
@@ -125,6 +127,7 @@
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   height: var(--topbar-h);
+  flex-shrink: 0;
 }
 
 .sidebar-logo {
@@ -140,12 +143,36 @@
   flex-shrink: 0;
 }
 
-.sidebar-brand-name { font-family: var(--font-title); font-size: 13.5px; font-weight: 700; color: var(--txt-1); line-height: 1.2; }
-.sidebar-brand-sub  { font-size: 10px; color: var(--txt-4); }
+.sidebar-brand-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  transition: opacity 160ms var(--ease), max-width 220ms var(--ease);
+}
+.sidebar-brand-name { font-family: var(--font-title); font-size: 13.5px; font-weight: 700; color: var(--txt-1); line-height: 1.2; white-space: nowrap; }
+.sidebar-brand-sub  { font-size: 10px; color: var(--txt-4); white-space: nowrap; }
+
+/* ── Sidebar toggle button ──────────────────────────────────── */
+.sidebar-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--txt-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--dur), color var(--dur);
+}
+.sidebar-toggle:hover { background: var(--surface-3); color: var(--txt-1); }
 
 .sidebar-nav {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px 8px;
   display: flex;
   flex-direction: column;
@@ -163,10 +190,18 @@
   color: var(--txt-3);
   cursor: pointer;
   user-select: none;
-  transition: background var(--dur), color var(--dur);
+  position: relative;
+  white-space: nowrap;
+  transition: background var(--dur), color var(--dur), padding var(--dur), justify-content var(--dur);
 }
 .nav-item:hover  { background: var(--surface-3); color: var(--txt-1); }
 .nav-item.active { background: var(--primary-50); color: var(--primary-text); font-weight: 600; }
+
+.nav-label {
+  overflow: hidden;
+  transition: opacity 160ms var(--ease), max-width 220ms var(--ease);
+  max-width: 160px;
+}
 
 .nav-icon {
   font-size: 16px;
@@ -178,6 +213,48 @@
   opacity: .7;
 }
 .nav-item.active .nav-icon { opacity: 1; }
+
+/* ── Collapsed sidebar ──────────────────────────────────────── */
+body.sidebar-collapsed .sidebar         { width: 56px; min-width: 56px; }
+body.sidebar-collapsed .main-wrapper   { margin-left: 56px; }
+
+body.sidebar-collapsed .sidebar-header { padding: 14px 11px; justify-content: center; gap: 0; }
+body.sidebar-collapsed .sidebar-brand-text { opacity: 0; max-width: 0; }
+body.sidebar-collapsed .sidebar-toggle { margin-left: 0; }
+
+body.sidebar-collapsed .sidebar-nav    { padding: 10px 4px; }
+body.sidebar-collapsed .nav-item       { justify-content: center; padding: 9px 0; }
+body.sidebar-collapsed .nav-label      { opacity: 0; max-width: 0; }
+body.sidebar-collapsed .nav-icon       { opacity: .75; width: 20px; }
+body.sidebar-collapsed .nav-item.active .nav-icon { opacity: 1; }
+
+/* Tooltip on hover in collapsed state */
+body.sidebar-collapsed .nav-item::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--txt-1);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease);
+  z-index: 500;
+}
+body.sidebar-collapsed .nav-item:hover::after { opacity: 1; }
+
+/* Footer in collapsed state */
+body.sidebar-collapsed .sidebar-footer      { padding: 12px 4px; }
+body.sidebar-collapsed .sidebar-user        { justify-content: center; padding: 8px 0; }
+body.sidebar-collapsed .sidebar-user-info   { display: none; }
+body.sidebar-collapsed .sidebar-logout      { display: none; }
+
 
 .sidebar-footer {
   padding: 12px 8px;
@@ -217,6 +294,7 @@
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  transition: margin-left 220ms var(--ease);
 }
 
 /* ── Topbar ─────────────────────────────────────────────────── */
