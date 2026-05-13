@@ -10,11 +10,12 @@ const Settings = (() => {
   let _orgsCache  = [];
 
   // 3-tier role model: admin / manager / viewer.
+  // Clean labels — no descriptive text. Display "View" instead of "Viewer".
   const ROLE_COLOR = { admin: 'error', manager: 'warning', viewer: 'gray' };
   const ROLE_LABEL = {
-    admin:   'Admin — full access',
-    manager: 'Manager — operational actions',
-    viewer:  'Viewer — view & download only',
+    admin:   'Admin',
+    manager: 'Manager',
+    viewer:  'View',
   };
 
   function _roleOptions(selected = 'viewer') {
@@ -45,7 +46,7 @@ const Settings = (() => {
         const isSelf    = u.user_id === myUserId;
         const isActive  = u.is_active !== false;
         const role      = u.role || 'viewer';
-        const roleLabel = Utils.capitalize(role);
+        const roleLabel = ROLE_LABEL[role] || Utils.capitalize(role);
 
         const memberships = Array.isArray(u.memberships) ? u.memberships : [];
         // Native <details> dropdown — browser handles open/close, no JS.
@@ -580,104 +581,124 @@ const Settings = (() => {
       }
       const currentOrgId = Auth.getOrganization()?.organization_id;
       tbody.innerHTML = orgs.map(o => {
-        const oid    = Utils.escapeHtml(o.organization_id);
-        const oname  = Utils.escapeHtml(o.display_name);
-        const isHere = o.organization_id === currentOrgId;
-        return `<tr ${isHere ? 'style="background:var(--surface-2)"' : ''}>
+        const oid      = Utils.escapeHtml(o.organization_id);
+        const oname    = Utils.escapeHtml(o.display_name);
+        const isHere   = o.organization_id === currentOrgId;
+        const isActive = o.is_active !== false;
+        return `<tr data-org-id="${oid}"${!isActive ? ' class="user-row-inactive"' : ''}>
           <td>
             <span style="font-weight:600">${oname}</span>
             ${isHere ? '<span style="font-size:11px;color:var(--primary);margin-left:6px;font-weight:600">● current</span>' : ''}
           </td>
           <td style="font-size:12px;color:var(--txt-4);font-family:monospace">${Utils.escapeHtml(o.slug)}</td>
-          <td>${o.is_active !== false ? Utils.badgeHtml('success', 'Active') : Utils.badgeHtml('gray', 'Inactive')}</td>
+          <td>${isActive ? Utils.badgeHtml('success', 'Active') : Utils.badgeHtml('gray', 'Deactivated')}</td>
           <td>
-            <div style="display:flex;gap:4px">
-              <button class="btn btn-secondary btn-sm" data-action="edit-org" data-id="${oid}">Edit</button>
-              ${o.is_active !== false
-                ? `<button class="btn btn-danger btn-sm" data-action="toggle-org" data-id="${oid}" data-name="${oname}" data-activate="false">Deactivate</button>`
-                : `<button class="btn btn-secondary btn-sm" data-action="toggle-org" data-id="${oid}" data-name="${oname}" data-activate="true">Activate</button>`}
-            </div>
+            <button class="btn btn-secondary btn-sm" data-action="edit-org" data-id="${oid}" title="Edit organization">
+              <i data-lucide="pencil" class="icon" style="width:13px;height:13px"></i> Edit
+            </button>
           </td>
         </tr>`;
       }).join('');
+      Icons?.refresh?.();
     } catch (err) {
       tbody.innerHTML = `<tr><td colspan="4">${Loading.error('Failed to load organizations')}</td></tr>`;
       Notify.apiError(err);
     }
   }
 
-  /* ── Organizations: modal ───────────────────────────────── */
-  function _openOrgModal(orgId = null) {
-    const org    = orgId ? _orgsCache.find(o => o.organization_id === orgId) : null;
-    const isEdit = !!org;
-    const m      = new Modal({ title: isEdit ? 'Edit Organization' : 'New Organization', maxWidth: '440px' });
+  /* ── Organizations: New (create) ────────────────────────── */
+  async function _openNewOrgModal() {
+    // Load active users for the member picker.
+    let allUsers = [];
+    try {
+      allUsers = (await API.getUsers() || []).filter(u => u.is_active !== false);
+    } catch (err) {
+      Notify.apiError(err);
+      return;
+    }
+    const myUserId = Auth.getUser()?.user_id;
+
+    const m = new Modal({ title: 'New Organization', maxWidth: '480px' });
     m.setBody(`
-      <form id="org-form" autocomplete="off">
+      <form data-form="new-org" autocomplete="off">
         <div class="form-group">
           <label class="form-label">Display Name <span class="req">*</span></label>
-          <input class="form-input" id="o-name" placeholder="e.g. Patman Warehouse" value="${Utils.escapeHtml(org?.display_name || '')}">
+          <input class="form-input" data-field="name" placeholder="e.g. Patman Warehouse">
         </div>
         <div class="form-group">
           <label class="form-label">Slug <span class="req">*</span></label>
-          <input class="form-input" id="o-slug" placeholder="e.g. patman-warehouse"
-            value="${Utils.escapeHtml(org?.slug || '')}"
-            ${isEdit ? 'readonly style="background:var(--surface-2);color:var(--txt-3);cursor:default"' : 'pattern="[a-z0-9-]+"'}>
-          <div class="form-hint">${isEdit ? 'Slug is fixed after creation.' : 'Lowercase letters, numbers, hyphens only.'}</div>
+          <input class="form-input" data-field="slug" placeholder="e.g. patman-warehouse" pattern="[-a-z0-9]+">
+          <div class="form-hint">Lowercase letters, numbers, hyphens only. Cannot be changed after creation.</div>
         </div>
-        ${isEdit ? `
         <div class="form-group">
-          <label class="form-label">Status</label>
-          <select class="form-select" id="o-active">
-            <option value="true"  ${org?.is_active !== false ? 'selected' : ''}>Active</option>
-            <option value="false" ${org?.is_active === false  ? 'selected' : ''}>Inactive</option>
-          </select>
-        </div>` : ''}
-        <div id="org-form-error" class="form-error" style="display:none"></div>
+          <label class="form-label">Assign Members <span class="req">*</span></label>
+          <div class="multiselect" data-field="members">
+            <button type="button" class="multiselect-trigger" data-ms-trigger>
+              <span class="multiselect-label" data-ms-label>Select members…</span>
+              <i data-lucide="chevron-down" class="multiselect-chevron" aria-hidden="true"></i>
+            </button>
+            <div class="multiselect-panel" data-ms-panel>
+              ${allUsers.length === 0
+                ? '<div class="multiselect-empty">No active users available.</div>'
+                : allUsers.map(u => {
+                    const isMe = u.user_id === myUserId;
+                    return `
+                      <label class="multiselect-option">
+                        <input type="checkbox" value="${Utils.escapeHtml(u.user_id)}"${isMe ? ' checked' : ''}>
+                        <span class="multiselect-option-name">${Utils.escapeHtml(u.display_name || u.username)}${isMe ? ' (you)' : ''}</span>
+                      </label>`;
+                  }).join('')}
+            </div>
+          </div>
+          <div class="form-hint">At least one member is required. You're pre-selected so you keep access to manage the new org.</div>
+        </div>
+        <div data-field="error" class="form-error" style="display:none"></div>
       </form>`);
     m.setFooter(`
-      <button class="btn btn-secondary btn-sm" id="o-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="o-save">${isEdit ? 'Save Changes' : 'Create Organization'}</button>`);
+      <button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" data-action="save">Create Organization</button>`);
     m.show();
 
-    const _save = () => _doSaveOrg(m, isEdit, orgId);
-    document.getElementById('o-cancel')?.addEventListener('click', () => m.hide());
-    document.getElementById('o-save')?.addEventListener('click', _save);
-    document.getElementById('org-form')?.addEventListener('submit', e => { e.preventDefault(); _save(); });
+    const q  = sel => m.bodyEl.querySelector(sel);
+    const qf = sel => m.footerEl.querySelector(sel);
+    const _hideAndDestroy = () => { m.hide(); m.destroy(); };
 
-    if (!isEdit) {
-      document.getElementById('o-name')?.addEventListener('input', e => {
-        const slug  = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        const slugEl = document.getElementById('o-slug');
-        if (slugEl && !slugEl.dataset.edited) slugEl.value = slug;
-      });
-      document.getElementById('o-slug')?.addEventListener('input', e => { e.target.dataset.edited = '1'; });
-    }
+    // Auto-derive slug from name as user types (until they manually edit slug).
+    const nameEl = q('[data-field="name"]');
+    const slugEl = q('[data-field="slug"]');
+    nameEl?.addEventListener('input', e => {
+      const auto = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      if (slugEl && !slugEl.dataset.edited) slugEl.value = auto;
+    });
+    slugEl?.addEventListener('input', e => { e.target.dataset.edited = '1'; });
+
+    qf('[data-action="cancel"]')?.addEventListener('click', _hideAndDestroy);
+    qf('[data-action="save"]')?.addEventListener('click', () => _doCreateOrg(m, q, qf));
+    q('[data-form="new-org"]')?.addEventListener('submit', e => { e.preventDefault(); _doCreateOrg(m, q, qf); });
+    _wireMultiselect(q('[data-field="members"]'));
+    Icons?.refresh?.();
   }
 
-  async function _doSaveOrg(m, isEdit, orgId) {
-    const name    = document.getElementById('o-name')?.value.trim();
-    const slug    = document.getElementById('o-slug')?.value.trim();
-    const active  = document.getElementById('o-active')?.value;
-    const errEl   = document.getElementById('org-form-error');
-    const saveBtn = document.getElementById('o-save');
+  async function _doCreateOrg(m, q, qf) {
+    const name    = q('[data-field="name"]')?.value.trim();
+    const slug    = q('[data-field="slug"]')?.value.trim();
+    const userIds = Array.from(q('[data-field="members"]')?.querySelectorAll('input[type=checkbox]:checked') || []).map(cb => cb.value);
+    const errEl   = q('[data-field="error"]');
+    const saveBtn = qf('[data-action="save"]');
     const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
 
-    if (!name) return showErr('Display name is required.');
-    if (!isEdit && !slug) return showErr('Slug is required.');
-    if (!isEdit && !/^[a-z0-9-]+$/.test(slug)) return showErr('Slug must be lowercase letters, numbers, hyphens only.');
-    errEl.style.display = 'none';
+    if (!name)                          return showErr('Display name is required.');
+    if (!slug)                          return showErr('Slug is required.');
+    if (!/^[-a-z0-9]+$/.test(slug))     return showErr('Slug must be lowercase letters, numbers, hyphens only.');
+    if (!userIds.length)                return showErr('Assign at least one member.');
+
+    if (errEl) errEl.style.display = 'none';
     Loading.btn(saveBtn, true);
     try {
-      if (isEdit) {
-        const updates = { display_name: name };
-        if (active !== undefined) updates.is_active = active === 'true';
-        await API.updateOrganization(orgId, updates);
-        Notify.success('Organization updated');
-      } else {
-        await API.createOrganization({ display_name: name, slug });
-        Notify.success('Organization created', 'Switch to it via the org switcher to manage its members.');
-      }
+      await API.createOrganization({ display_name: name, slug, member_user_ids: userIds });
+      Notify.success('Organization created', `${name} is ready.`);
       m.hide();
+      m.destroy();
       loadOrganizations();
     } catch (err) {
       showErr(err.message || 'Save failed.');
@@ -686,20 +707,164 @@ const Settings = (() => {
     }
   }
 
-  async function _toggleOrg(orgId, name, activate) {
-    const label = activate ? 'Activate' : 'Deactivate';
+  /* ── Organizations: Edit (consolidated) ─────────────────── */
+  async function _openEditOrgModal(orgId) {
+    const org = _orgsCache.find(o => o.organization_id === orgId);
+    if (!org) return;
+    const isActive = org.is_active !== false;
+    const isHere   = orgId === Auth.getOrganization()?.organization_id;
+
+    // Build the member roster: every active user, with their current
+    // membership status in this org pre-checked. We use the global user
+    // list (org-neutral Settings) — every user is a potential member.
+    let allUsers = [];
+    try {
+      allUsers = await API.getUsers() || [];
+    } catch (err) {
+      Notify.apiError(err);
+      return;
+    }
+    const currentMemberIds = new Set(
+      allUsers
+        .filter(u => Array.isArray(u.memberships) && u.memberships.some(m => m.organization_id === orgId))
+        .map(u => u.user_id)
+    );
+
+    const m = new Modal({ title: `Edit Organization: ${org.display_name}`, maxWidth: '500px' });
+
+    // Deactivated orgs render in read-only mode with a single Activate
+    // action. Active orgs render the full editor with Save + Deactivate.
+    if (!isActive) {
+      m.setBody(`
+        <div class="org-edit-deactivated-banner">
+          <i data-lucide="alert-octagon" class="icon" style="width:18px;height:18px"></i>
+          <div>
+            <strong>This organization is deactivated.</strong>
+            <div style="font-size:12.5px;color:var(--txt-3);margin-top:2px">
+              Members cannot access it. Reactivate to resume editing details and roster.
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <div class="form-readonly">${Utils.escapeHtml(org.display_name)}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Slug</label>
+          <div class="form-readonly" style="font-family:monospace">${Utils.escapeHtml(org.slug)}</div>
+        </div>
+        <div data-field="error" class="form-error" style="display:none"></div>`);
+      m.setFooter(`
+        <button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" data-action="activate">Activate Organization</button>`);
+    } else {
+      m.setBody(`
+        <form data-form="edit-org" autocomplete="off">
+          <div class="form-group">
+            <label class="form-label">Display Name <span class="req">*</span></label>
+            <input class="form-input" data-field="name" value="${Utils.escapeHtml(org.display_name)}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Slug</label>
+            <div class="form-readonly" style="font-family:monospace">${Utils.escapeHtml(org.slug)}</div>
+            <div class="form-hint">Slug is locked after creation.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Members <span class="req">*</span></label>
+            <div class="multiselect" data-field="members">
+              <button type="button" class="multiselect-trigger" data-ms-trigger>
+                <span class="multiselect-label" data-ms-label>Select members…</span>
+                <i data-lucide="chevron-down" class="multiselect-chevron" aria-hidden="true"></i>
+              </button>
+              <div class="multiselect-panel" data-ms-panel>
+                ${allUsers.length === 0
+                  ? '<div class="multiselect-empty">No users available.</div>'
+                  : allUsers.map(u => {
+                      const checked = currentMemberIds.has(u.user_id);
+                      const inactive = u.is_active === false;
+                      return `
+                        <label class="multiselect-option"${inactive ? ' style="opacity:.55"' : ''}>
+                          <input type="checkbox" value="${Utils.escapeHtml(u.user_id)}"${checked ? ' checked' : ''}${inactive ? ' disabled' : ''}>
+                          <span class="multiselect-option-name">${Utils.escapeHtml(u.display_name || u.username)}${inactive ? ' (deactivated)' : ''}</span>
+                        </label>`;
+                    }).join('')}
+              </div>
+            </div>
+            <div class="form-hint">At least one active member is required. Removing a user deactivates their membership in this org only.</div>
+          </div>
+          <div data-field="error" class="form-error" style="display:none"></div>
+        </form>`);
+      m.setFooter(`
+        <button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
+        <button class="btn btn-danger    btn-sm" data-action="deactivate"${isHere ? ' disabled title="Switch to another workspace before deactivating this one"' : ''}>Deactivate</button>
+        <button class="btn btn-primary   btn-sm" data-action="save">Save Changes</button>`);
+    }
+    m.show();
+
+    const q  = sel => m.bodyEl.querySelector(sel);
+    const qf = sel => m.footerEl.querySelector(sel);
+    const _hideAndDestroy = () => { m.hide(); m.destroy(); };
+
+    qf('[data-action="cancel"]')?.addEventListener('click', _hideAndDestroy);
+    qf('[data-action="activate"]')?.addEventListener('click', () => _doToggleOrg(m, orgId, true));
+    qf('[data-action="deactivate"]')?.addEventListener('click', () => _doDeactivateOrg(m, orgId, org.display_name));
+    qf('[data-action="save"]')?.addEventListener('click', () => _doSaveOrg(m, q, qf, orgId));
+    q('[data-form="edit-org"]')?.addEventListener('submit', e => { e.preventDefault(); _doSaveOrg(m, q, qf, orgId); });
+
+    if (isActive) _wireMultiselect(q('[data-field="members"]'));
+    Icons?.refresh?.();
+  }
+
+  async function _doSaveOrg(m, q, qf, orgId) {
+    const name    = q('[data-field="name"]')?.value.trim();
+    const userIds = Array.from(q('[data-field="members"]')?.querySelectorAll('input[type=checkbox]:checked') || []).map(cb => cb.value);
+    const errEl   = q('[data-field="error"]');
+    const saveBtn = qf('[data-action="save"]');
+    const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+
+    if (!name)            return showErr('Display name is required.');
+    if (!userIds.length)  return showErr('At least one member is required.');
+
+    if (errEl) errEl.style.display = 'none';
+    Loading.btn(saveBtn, true);
+    try {
+      await API.updateOrganization(orgId, { display_name: name, member_user_ids: userIds });
+      Notify.success('Organization updated');
+      m.hide();
+      m.destroy();
+      loadOrganizations();
+    } catch (err) {
+      showErr(err.message || 'Save failed.');
+    } finally {
+      Loading.btn(saveBtn, false);
+    }
+  }
+
+  async function _doDeactivateOrg(m, orgId, orgName) {
     const confirmed = await Modal.confirm({
-      title:       `${label} Organization`,
-      message:     activate
-        ? `Activate "${name}"? Members will regain access.`
-        : `Deactivate "${name}"? All members will lose access. This can be reversed.`,
-      confirmText: label,
-      danger:      !activate,
+      title:       'Deactivate Organization',
+      message:     `Deactivate "${orgName}"? All members will lose access. You can reactivate it later from this Edit dialog.`,
+      confirmText: 'Deactivate',
+      danger:      true,
     });
     if (!confirmed) return;
     try {
+      await API.updateOrganization(orgId, { is_active: false });
+      Notify.success('Organization deactivated');
+      m.hide();
+      m.destroy();
+      loadOrganizations();
+    } catch (err) {
+      Notify.apiError(err);
+    }
+  }
+
+  async function _doToggleOrg(m, orgId, activate) {
+    try {
       await API.updateOrganization(orgId, { is_active: activate });
       Notify.success(`Organization ${activate ? 'activated' : 'deactivated'}`);
+      m.hide();
+      m.destroy();
       loadOrganizations();
     } catch (err) {
       Notify.apiError(err);
