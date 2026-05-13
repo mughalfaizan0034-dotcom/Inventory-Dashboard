@@ -331,6 +331,68 @@
   flex-shrink: 0;
 }
 
+/* ── Multi-org checklist (Add User modal) ───────────────────── */
+.org-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px;
+  background: var(--surface-2);
+}
+
+.org-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background var(--dur), border-color var(--dur);
+}
+.org-checkbox:hover {
+  background: var(--surface-3);
+  border-color: var(--border-2);
+}
+.org-checkbox input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.org-checkbox-name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--txt-1);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-checkbox-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--primary-50);
+  color: var(--primary-text);
+  flex-shrink: 0;
+}
+.org-checkbox-locked {
+  background: var(--primary-50);
+  border-color: var(--primary-100);
+  cursor: not-allowed;
+}
+.org-checkbox-locked:hover { background: var(--primary-50); }
+.org-checkbox-locked input[type="checkbox"] { cursor: not-allowed; }
+
 /* ── Button loading state ───────────────────────────────────── */
 .btn-loading { pointer-events: none; }
 .btn-loading::after {

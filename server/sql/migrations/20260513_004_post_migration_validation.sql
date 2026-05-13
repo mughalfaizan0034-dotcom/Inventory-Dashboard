@@ -12,7 +12,7 @@
 SELECT column_name
 FROM `patman-inventory.patman_inventory.INFORMATION_SCHEMA.COLUMNS`
 WHERE table_name = 'users'
-  AND column_name IN ('organization_id', 'role');
+  AND column_name IN ('organization_id', 'role', 'email');
 
 
 -- ── Check 2 ─────────────────────────────────────────────────
@@ -24,14 +24,6 @@ WHERE table_name = 'users' AND column_name = 'updated_at';
 
 
 -- ── Check 3 ─────────────────────────────────────────────────
--- Confirm email is now nullable.
--- Expected: 1 row, is_nullable = YES.
-SELECT column_name, is_nullable
-FROM `patman-inventory.patman_inventory.INFORMATION_SCHEMA.COLUMNS`
-WHERE table_name = 'users' AND column_name = 'email';
-
-
--- ── Check 4 ─────────────────────────────────────────────────
 -- Re-run the membership coverage check. Every user must still
 -- have at least one membership (this should not have changed).
 -- Expected: 0 rows.
@@ -42,12 +34,11 @@ LEFT JOIN `patman-inventory.patman_inventory.memberships` m
 WHERE m.membership_id IS NULL;
 
 
--- ── Check 5 ─────────────────────────────────────────────────
+-- ── Check 4 ─────────────────────────────────────────────────
 -- Confirm the full final column set matches the canonical DDL.
--- Expected: exactly these 8 rows (in this order):
+-- Expected: exactly these 7 rows (in this order):
 --   user_id        STRING    NO
 --   username       STRING    NO
---   email          STRING    YES
 --   password_hash  STRING    NO
 --   display_name   STRING    NO
 --   is_active      BOOL      NO

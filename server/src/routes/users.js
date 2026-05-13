@@ -3,10 +3,11 @@ import { AppError } from '../utils/errors.js';
 import { z } from 'zod';
 
 const createUserSchema = z.object({
-  display_name: z.string().min(1).max(100),
-  username:     z.string().min(2).max(32).optional(),
-  password:     z.string().min(8),
-  role:         z.enum(['admin', 'manager', 'staff', 'viewer']).optional().default('viewer'),
+  display_name:      z.string().min(1).max(100),
+  username:          z.string().min(2).max(32),
+  password:          z.string().min(8),
+  role:              z.enum(['admin', 'manager', 'staff', 'viewer']),
+  organization_ids:  z.array(z.string().uuid()).min(1),
 });
 
 const updateUserSchema = z.object({
@@ -17,6 +18,23 @@ const updateUserSchema = z.object({
 });
 
 export async function usersRoutes(fastify, { usersService }) {
+
+  // Live availability check for the Add User form.
+  // Returns { username, valid, available, suggestions } — suggestions[] is
+  // populated only when the requested username is unavailable.
+  fastify.get('/check-username', { preHandler: [authenticate, requireRole('admin')] }, async (request, reply) => {
+    const username = String(request.query.username || '').trim();
+    if (!username) {
+      return reply.code(400).send({ success: false, error: 'username query parameter required' });
+    }
+    try {
+      const result = await usersService.checkUsername(username);
+      return reply.send({ success: true, data: result });
+    } catch (err) {
+      request.log.error({ err }, 'Check-username error');
+      return reply.code(500).send({ success: false, error: 'Internal server error' });
+    }
+  });
 
   // Find global user by username — for assigning existing users to the current org.
   fastify.get('/search', { preHandler: [authenticate, requireRole('admin')] }, async (request, reply) => {

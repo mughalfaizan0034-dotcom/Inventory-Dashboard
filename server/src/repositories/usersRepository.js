@@ -6,7 +6,7 @@ export function createUsersRepository({ bq, projectId }) {
   // Global lookup — usernames are unique across the platform.
   async function findByUsernameGlobal(username) {
     const query = `
-      SELECT user_id, username, email, password_hash, display_name, is_active
+      SELECT user_id, username, password_hash, display_name, is_active
       FROM ${table}
       WHERE username  = @username
         AND is_active = TRUE
@@ -18,7 +18,7 @@ export function createUsersRepository({ bq, projectId }) {
 
   async function findById(userId) {
     const query = `
-      SELECT user_id, username, email, password_hash, display_name, is_active
+      SELECT user_id, username, password_hash, display_name, is_active
       FROM ${table}
       WHERE user_id = @userId
       LIMIT 1
@@ -29,7 +29,7 @@ export function createUsersRepository({ bq, projectId }) {
 
   async function findAll() {
     const query = `
-      SELECT user_id, username, email, display_name, is_active, created_at
+      SELECT user_id, username, display_name, is_active, created_at
       FROM ${table}
       ORDER BY display_name
     `;
@@ -40,12 +40,12 @@ export function createUsersRepository({ bq, projectId }) {
   async function insert(user) {
     const query = `
       INSERT INTO ${table}
-        (user_id, username, email, display_name, password_hash, is_active, created_at, updated_at)
+        (user_id, username, display_name, password_hash, is_active, created_at, updated_at)
       VALUES
-        (@user_id, @username, @email, @display_name, @password_hash,
+        (@user_id, @username, @display_name, @password_hash,
          @is_active, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
     `;
-    await bq.query({ query, params: user, types: { email: 'STRING' } });
+    await bq.query({ query, params: user });
   }
 
   async function update(userId, updates) {

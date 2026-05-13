@@ -57,11 +57,13 @@ HAVING n > 1;
 
 -- ── Check 4 ─────────────────────────────────────────────────
 -- Confirm every membership references a real user AND a real org.
+-- Uses explicit ON clauses because users.organization_id (legacy column)
+-- still exists pre-migration and would make USING(organization_id) ambiguous.
 -- Expected: 0 rows.
 SELECT m.membership_id, m.user_id, m.organization_id
 FROM `patman-inventory.patman_inventory.memberships` m
-LEFT JOIN `patman-inventory.patman_inventory.users`         u USING (user_id)
-LEFT JOIN `patman-inventory.patman_inventory.organizations` o USING (organization_id)
+LEFT JOIN `patman-inventory.patman_inventory.users`         u ON u.user_id         = m.user_id
+LEFT JOIN `patman-inventory.patman_inventory.organizations` o ON o.organization_id = m.organization_id
 WHERE u.user_id IS NULL OR o.organization_id IS NULL;
 
 

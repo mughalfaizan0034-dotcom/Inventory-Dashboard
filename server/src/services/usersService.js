@@ -24,47 +24,75 @@ export function createUsersService({ usersRepo, membershipsRepo, usernameService
     };
   }
 
-  // Create a new global user AND a membership for the given organization.
-  async function create(organizationId, { display_name, username: rawUsername, password, role }) {
+  // Create a new global user AND one or more memberships.
+  //
+  // Inputs:
+  //   display_name      — required, shown in UI
+  //   username          — required, globally unique; admin verified availability via /users/check-username
+  //   password          — required, min 8 chars
+  //   role              — required, one of VALID_ROLES (applied to every assigned org membership)
+  //   organization_ids  — required, non-empty array of org UUIDs to assign membership in
+  //
+  // The creating admin's current org is automatically included if not in the
+  // list — the new user must be visible to the admin who created them.
+  async function create(creatingOrgId, { display_name, username, password, role, organization_ids }) {
     if (!display_name?.trim()) throw new AppError(400, 'display_name is required');
+    if (!username?.trim())     throw new AppError(400, 'username is required');
     if (!password || password.length < 8) throw new AppError(400, 'Password must be at least 8 characters');
-    if (role && !VALID_ROLES.includes(role)) {
+    if (!role || !VALID_ROLES.includes(role)) {
       throw new AppError(400, `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`);
     }
 
-    const baseUsername = rawUsername || display_name;
-    const username = await (async () => {
-      const normalized = usernameService.normalize(baseUsername);
-      if (usernameService.isValid(normalized) && await usernameService.isAvailable(normalized)) {
-        return normalized;
-      }
-      const [suggestion] = await usernameService.suggest(baseUsername, 1);
-      if (!suggestion) throw new AppError(409, 'Could not generate a unique username — provide one explicitly');
-      return suggestion;
-    })();
+    const orgIds = Array.isArray(organization_ids) ? [...new Set(organization_ids.filter(Boolean))] : [];
+    if (creatingOrgId && !orgIds.includes(creatingOrgId)) orgIds.push(creatingOrgId);
+    if (!orgIds.length) throw new AppError(400, 'organization_ids must include at least one organization');
+
+    const normalized = usernameService.normalize(username);
+    if (!usernameService.isValid(normalized)) {
+      throw new AppError(400, 'Username must be 2–32 characters, lowercase letters / numbers / underscores only');
+    }
+    if (!await usernameService.isAvailable(normalized)) {
+      throw new AppError(409, `Username "${normalized}" is already taken`);
+    }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const userId       = randomUUID();
-    const membershipId = randomUUID();
-    const assignedRole = role || 'viewer';
 
     await usersRepo.insert({
       user_id:       userId,
-      username,
-      email:         null,
+      username:      normalized,
       display_name:  display_name.trim(),
       password_hash: passwordHash,
       is_active:     true,
     });
 
-    await membershipsRepo.createMembership({
-      membership_id:   membershipId,
-      user_id:         userId,
-      organization_id: organizationId,
-      role:            assignedRole,
-    });
+    const memberships = [];
+    for (const orgId of orgIds) {
+      const membershipId = randomUUID();
+      await membershipsRepo.createMembership({
+        membership_id:   membershipId,
+        user_id:         userId,
+        organization_id: orgId,
+        role,
+      });
+      memberships.push({ membership_id: membershipId, organization_id: orgId, role });
+    }
 
-    return { user_id: userId, membership_id: membershipId, username, display_name: display_name.trim(), role: assignedRole };
+    return { user_id: userId, username: normalized, display_name: display_name.trim(), role, memberships };
+  }
+
+  // Live username availability check used by the Add User form.
+  // Returns { username, valid, available, suggestions }.
+  // suggestions[] is populated only when the requested username is unavailable.
+  async function checkUsername(username) {
+    const normalized = usernameService.normalize(username || '');
+    if (!usernameService.isValid(normalized)) {
+      return { username: normalized, valid: false, available: false, suggestions: [] };
+    }
+    const available = await usernameService.isAvailable(normalized);
+    if (available) return { username: normalized, valid: true, available: true, suggestions: [] };
+    const suggestions = await usernameService.suggest(normalized, 5);
+    return { username: normalized, valid: true, available: false, suggestions };
   }
 
   // Update membership and/or user profile.
@@ -114,5 +142,5 @@ export function createUsersService({ usersRepo, membershipsRepo, usernameService
     await membershipsRepo.updateMembership(membershipId, { is_active: false });
   }
 
-  return { list, findByUsername, create, updateUser, updateMembership, deactivateMembership };
+  return { list, findByUsername, create, checkUsername, updateUser, updateMembership, deactivateMembership };
 }

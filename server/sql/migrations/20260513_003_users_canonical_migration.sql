@@ -22,22 +22,14 @@ ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP;
 
 
 -- ── Step B ──────────────────────────────────────────────────
--- Make email nullable. The runtime creates users via the admin
--- form which does NOT collect an email — `null` is sent.
--- The NOT NULL constraint on this column was a single-tenant
--- artifact and blocks user creation.
---
--- NOTE: BigQuery has no `ALTER COLUMN ... DROP NOT NULL` syntax
--- when other constraints exist; the canonical path is:
---   ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
--- which IS supported as of 2023. If your project hits a syntax
--- error here, the fallback is to recreate the column nullable:
---   ALTER TABLE users ADD COLUMN email_new STRING;
---   UPDATE users SET email_new = email WHERE TRUE;
---   ALTER TABLE users DROP COLUMN email;
---   ALTER TABLE users RENAME COLUMN email_new TO email;
+-- DROP email column entirely.
+-- Email is not a login credential and is no longer collected by
+-- the admin user-creation form. Pre-migration validation Check 3
+-- confirmed there are no email collisions to worry about, and the
+-- runtime no longer reads or writes this column after deployment
+-- of the Phase B code changes.
 ALTER TABLE `patman-inventory.patman_inventory.users`
-ALTER COLUMN email DROP NOT NULL;
+DROP COLUMN IF EXISTS email;
 
 
 -- ── Step C ──────────────────────────────────────────────────
@@ -64,14 +56,14 @@ DROP COLUMN IF EXISTS role;
 -- the canonical DDL in schema/02_users.sql.
 --
 -- Expected columns AFTER this migration:
---   user_id, username, email, password_hash, display_name,
+--   user_id, username, password_hash, display_name,
 --   is_active, created_at, updated_at
 --
 -- Expected NOT NULL columns:
 --   user_id, username, password_hash, display_name, is_active, created_at
 --
 -- Expected nullable columns:
---   email, updated_at
+--   updated_at
 -- ============================================================
 SELECT column_name, data_type, is_nullable
 FROM `patman-inventory.patman_inventory.INFORMATION_SCHEMA.COLUMNS`

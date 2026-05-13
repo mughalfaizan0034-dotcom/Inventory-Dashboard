@@ -61,27 +61,64 @@ const Settings = (() => {
   }
 
   /* ── Users: add new ─────────────────────────────────────── */
-  function _openAddNewUserModal() {
-    const m = new Modal({ title: 'Add New User', maxWidth: '440px' });
+  async function _openAddNewUserModal() {
+    const currentOrg = Auth.getOrganization();
+
+    // Fetch the full org list up-front so the multi-select renders immediately.
+    let allOrgs = [];
+    try {
+      allOrgs = await API.getOrganizations();
+    } catch (err) {
+      Notify.apiError(err);
+      return;
+    }
+    // Only assignable orgs are active ones.
+    const assignableOrgs = (allOrgs || []).filter(o => o.is_active);
+
+    const m = new Modal({ title: 'Add New User', maxWidth: '480px' });
     m.setBody(`
       <form id="user-form" autocomplete="off">
         <div class="form-group">
           <label class="form-label">Display Name <span class="req">*</span></label>
           <input class="form-input" id="u-display" placeholder="Full name" autocomplete="off">
         </div>
+
         <div class="form-group">
           <label class="form-label">Username <span class="req">*</span></label>
           <input class="form-input" id="u-username" placeholder="login handle (e.g. john_doe)" autocomplete="off">
-          <div class="form-hint">Unique across the platform. Used for login and tracking.</div>
+          <div class="form-hint" id="u-username-hint">Unique across the platform. 2–32 chars: lowercase letters, numbers, underscores.</div>
+          <div id="u-username-status" style="margin-top:6px;font-size:12px;display:none"></div>
         </div>
+
         <div class="form-group">
           <label class="form-label">Password <span class="req">*</span></label>
           <input class="form-input" id="u-password" type="password" placeholder="Minimum 8 characters" autocomplete="new-password">
         </div>
+
         <div class="form-group">
-          <label class="form-label">Role</label>
+          <label class="form-label">Role <span class="req">*</span></label>
           <select class="form-select" id="u-role">${_roleOptions('viewer')}</select>
+          <div class="form-hint">Applied to every assigned organization below.</div>
         </div>
+
+        <div class="form-group">
+          <label class="form-label">Organizations <span class="req">*</span></label>
+          <div id="u-orgs" class="org-checklist">
+            ${assignableOrgs.map(o => {
+              const isCurrent = o.organization_id === currentOrg?.organization_id;
+              return `
+                <label class="org-checkbox${isCurrent ? ' org-checkbox-locked' : ''}">
+                  <input type="checkbox" value="${Utils.escapeHtml(o.organization_id)}"
+                         ${isCurrent ? 'checked disabled' : ''}
+                         data-org-name="${Utils.escapeHtml(o.display_name)}">
+                  <span class="org-checkbox-name">${Utils.escapeHtml(o.display_name)}</span>
+                  ${isCurrent ? '<span class="org-checkbox-tag">Current</span>' : ''}
+                </label>`;
+            }).join('')}
+          </div>
+          <div class="form-hint">User must belong to at least one organization. Your current workspace is auto-assigned.</div>
+        </div>
+
         <div id="user-form-error" class="form-error" style="display:none"></div>
       </form>`);
     m.setFooter(`
@@ -93,25 +130,103 @@ const Settings = (() => {
     document.getElementById('u-cancel')?.addEventListener('click', () => m.hide());
     document.getElementById('u-save')?.addEventListener('click', _save);
     document.getElementById('user-form')?.addEventListener('submit', e => { e.preventDefault(); _save(); });
+
+    // Live username availability check (debounced).
+    _wireUsernameCheck();
+  }
+
+  // Track the last username we successfully validated as available.
+  // Submission is blocked unless the typed value matches this.
+  let _validatedUsername = null;
+
+  function _wireUsernameCheck() {
+    const input    = document.getElementById('u-username');
+    const statusEl = document.getElementById('u-username-status');
+    if (!input || !statusEl) return;
+
+    let timer = null;
+    let seq   = 0;
+
+    const setStatus = (html, color) => {
+      statusEl.innerHTML       = html;
+      statusEl.style.color     = color || 'var(--txt-3)';
+      statusEl.style.display   = html ? 'block' : 'none';
+    };
+
+    const onChange = () => {
+      clearTimeout(timer);
+      const raw = input.value.trim().toLowerCase();
+      _validatedUsername = null;
+
+      if (!raw) { setStatus('', ''); return; }
+      if (raw.length < 2) {
+        setStatus('Username must be at least 2 characters.', 'var(--warning)');
+        return;
+      }
+      setStatus(`<span style="opacity:.7">Checking availability…</span>`, 'var(--txt-3)');
+
+      const mySeq = ++seq;
+      timer = setTimeout(async () => {
+        try {
+          const res = await API.checkUsername(raw);
+          if (mySeq !== seq) return; // newer request in flight — drop this result
+          if (!res.valid) {
+            setStatus(`✗ Invalid: must be 2–32 chars, lowercase letters/numbers/underscores only.`, 'var(--error)');
+          } else if (res.available) {
+            _validatedUsername = res.username;
+            setStatus(`✓ <strong>${Utils.escapeHtml(res.username)}</strong> is available.`, 'var(--success)');
+          } else {
+            const sugs = (res.suggestions || []).slice(0, 5);
+            const sugHtml = sugs.length
+              ? ` Try: ${sugs.map(s => `<a href="#" data-suggest="${Utils.escapeHtml(s)}" style="color:var(--primary);font-weight:600;text-decoration:underline;margin-right:8px">${Utils.escapeHtml(s)}</a>`).join('')}`
+              : '';
+            setStatus(`✗ <strong>${Utils.escapeHtml(res.username)}</strong> is taken.${sugHtml}`, 'var(--error)');
+            statusEl.querySelectorAll('[data-suggest]').forEach(a => {
+              a.addEventListener('click', e => {
+                e.preventDefault();
+                input.value = a.dataset.suggest;
+                onChange();
+              });
+            });
+          }
+        } catch (err) {
+          if (mySeq !== seq) return;
+          setStatus(`<span style="color:var(--txt-4)">Could not verify — ${Utils.escapeHtml(err.message || 'try again')}</span>`, '');
+        }
+      }, 350);
+    };
+
+    input.addEventListener('input', onChange);
   }
 
   async function _doCreateUser(m) {
     const display  = document.getElementById('u-display')?.value.trim();
-    const username = document.getElementById('u-username')?.value.trim();
+    const username = document.getElementById('u-username')?.value.trim().toLowerCase();
     const password = document.getElementById('u-password')?.value;
     const role     = document.getElementById('u-role')?.value;
+    const orgIds   = Array.from(document.querySelectorAll('#u-orgs input[type=checkbox]:checked')).map(cb => cb.value);
     const errEl    = document.getElementById('user-form-error');
     const saveBtn  = document.getElementById('u-save');
     const showErr  = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
 
-    if (!display)  return showErr('Display name is required.');
-    if (!username) return showErr('Username is required.');
-    if (!password || password.length < 8) return showErr('Password must be at least 8 characters.');
+    if (!display)                          return showErr('Display name is required.');
+    if (!username)                         return showErr('Username is required.');
+    if (_validatedUsername !== username)   return showErr('Please wait for the username availability check to finish, or pick a different username.');
+    if (!password || password.length < 8)  return showErr('Password must be at least 8 characters.');
+    if (!role)                             return showErr('Please select a role.');
+    if (!orgIds.length)                    return showErr('Assign the user to at least one organization.');
+
     errEl.style.display = 'none';
     Loading.btn(saveBtn, true);
     try {
-      await API.createUser({ display_name: display, username, password, role });
-      Notify.success('User created', `${display} has been added to this organization.`);
+      await API.createUser({
+        display_name:      display,
+        username,
+        password,
+        role,
+        organization_ids:  orgIds,
+      });
+      Notify.success('User created', `${display} has been added to ${orgIds.length} organization${orgIds.length > 1 ? 's' : ''}.`);
       m.hide();
       loadUsers();
     } catch (err) {
@@ -159,7 +274,7 @@ const Settings = (() => {
     const addBtn = document.getElementById('ae-add-btn');
 
     async function _doSearch() {
-      const username = document.getElementById('ae-username')?.value.trim().toLowerCase();
+      const username = document.getElementById('ae-username')?.value.trim().toLowerCase().replace(/^@/, '');
       if (!username) return showErr('Enter a username to search.');
       hideErr();
       const searchBtn = document.getElementById('ae-search-btn');

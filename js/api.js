@@ -312,6 +312,7 @@ const API = (() => {
     /* Users / Memberships */
     async getUsers()                         { return _crGet('/users'); },
     async searchUser(username)               { return _crGet('/users/search', { username }); },
+    async checkUsername(username)            { return _crGet('/users/check-username', { username }); },
     async createUser(userData)               { return _crPost('/users', userData); },
     async updateUser(membershipId, updates)  { return _crPatch(`/users/${membershipId}`, updates); },
     async deleteUser(membershipId)           { return _crDelete(`/users/${membershipId}`); },
