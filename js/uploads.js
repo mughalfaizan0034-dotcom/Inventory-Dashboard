@@ -49,10 +49,10 @@ const Uploads = (() => {
     let selectedFile = null;
 
     function setFile(file) {
-      if (!file.name.toLowerCase().endsWith('.txt')) {
+      if (!ACCEPTED_EXT.test(file.name)) {
         Notify.error(
           'Invalid file type',
-          'Only UTF-8 tab-delimited .txt files are accepted. Excel/XLSX uploads are not supported.'
+          'Save your spreadsheet as Tab Separated Values (.tsv) and upload that. CSV and Excel files are not accepted.'
         );
         return;
       }
