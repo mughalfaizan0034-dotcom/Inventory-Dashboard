@@ -4,13 +4,22 @@ import { AppError } from '../utils/errors.js';
 const ALLOWED_MIME = new Set([
   'text/plain',
   'text/tab-separated-values',
-  'application/octet-stream', // some browsers send .txt as this
+  'application/octet-stream', // some browsers send TSV as this
 ]);
 
-function validateTxtFile(part) {
+// Accepted upload format is TSV (Tab Separated Values). Excel exports TSV
+// cleanly via "Save As → Tab Separated Values (.tsv)" — this avoids the
+// ambiguity that occurred when users saved as "Text (Tab delimited) .txt"
+// and Excel produced comma-separated content instead.
+//
+// .txt is still accepted as a backward-compat alias for users who already
+// have correctly tab-delimited .txt files from earlier exports.
+function validateUploadFile(part) {
   if (!part) return 'No file uploaded';
-  const name = part.filename ?? '';
-  if (!name.toLowerCase().endsWith('.txt')) return 'Only UTF-8 tab-delimited .txt files are accepted';
+  const name = (part.filename ?? '').toLowerCase();
+  if (!/\.(tsv|txt)$/.test(name)) {
+    return 'Only UTF-8 tab-separated .tsv files are accepted (use Excel → Save As → Tab Separated Values .tsv).';
+  }
   return null;
 }
 
@@ -27,7 +36,7 @@ export async function uploadsRoutes(fastify, { uploadsService, dashboardService 
         return reply.code(400).send({ success: false, error: 'Multipart upload required' });
       }
 
-      const fileErr = validateTxtFile(part);
+      const fileErr = validateUploadFile(part);
       if (fileErr) return reply.code(400).send({ success: false, error: fileErr });
 
       try {
@@ -63,7 +72,7 @@ export async function uploadsRoutes(fastify, { uploadsService, dashboardService 
         return reply.code(400).send({ success: false, error: 'Multipart upload required' });
       }
 
-      const fileErr = validateTxtFile(part);
+      const fileErr = validateUploadFile(part);
       if (fileErr) return reply.code(400).send({ success: false, error: fileErr });
 
       try {
@@ -100,7 +109,36 @@ export async function uploadsRoutes(fastify, { uploadsService, dashboardService 
         return reply.send({ success: true, data });
       } catch (err) {
         request.log.error({ err }, 'Upload history error');
-        return reply.code(500).send({ success: false, error: 'Internal server error' });
+        return reply.code(500).send({ success: false, error: err?.message || 'Internal server error' });
+      }
+    }
+  );
+
+  // Download the per-upload plain-text summary report. Returned as
+  // attachment so the browser triggers a save dialog. Org-scoped: a user
+  // can only download reports for uploads in their current organization.
+  fastify.get(
+    '/report/:upload_id',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const uploadId = request.params.upload_id;
+      try {
+        const row = await uploadsService.getReport(request.user.organization_id, uploadId);
+        if (!row) {
+          return reply.code(404).send({ success: false, error: 'Upload not found in your organization' });
+        }
+        const text = row.report || `No report available for this upload.\n`;
+        const safeName = (row.filename || `upload_${uploadId}`)
+          .replace(/\.(tsv|txt|csv)$/i, '')
+          .replace(/[^a-zA-Z0-9._-]+/g, '_');
+        const reportName = `${safeName}_report.txt`;
+
+        reply.header('Content-Type', 'text/plain; charset=utf-8');
+        reply.header('Content-Disposition', `attachment; filename="${reportName}"`);
+        return reply.send(text);
+      } catch (err) {
+        request.log.error({ err }, 'Upload report error');
+        return reply.code(500).send({ success: false, error: err?.message || 'Internal server error' });
       }
     }
   );

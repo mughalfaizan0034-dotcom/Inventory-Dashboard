@@ -11,14 +11,18 @@ export function createUploadsRepository({ bq, projectId }) {
 
     if (!type || type === 'inventory') {
       queries.push(`
-        SELECT 'inventory' AS type, upload_id, filename, row_count, status, created_at
+        SELECT 'inventory' AS type, upload_id, filename, row_count, status,
+               (report IS NOT NULL AND report != '') AS has_report,
+               created_at
         FROM ${invUploads}
         WHERE organization_id = @organizationId
       `);
     }
     if (!type || type === 'orders') {
       queries.push(`
-        SELECT 'orders' AS type, upload_id, filename, row_count, status, created_at
+        SELECT 'orders' AS type, upload_id, filename, row_count, status,
+               (report IS NOT NULL AND report != '') AS has_report,
+               created_at
         FROM ${ordUploads}
         WHERE organization_id = @organizationId
       `);
@@ -38,24 +42,53 @@ export function createUploadsRepository({ bq, projectId }) {
     }
   }
 
-  async function logInventoryUpload({ uploadId, organizationId, userId, filename, rowCount, status }) {
+  async function logInventoryUpload({ uploadId, organizationId, userId, filename, rowCount, status, report }) {
     const query = `
       INSERT INTO ${invUploads}
-        (upload_id, organization_id, user_id, filename, row_count, status, created_at)
+        (upload_id, organization_id, user_id, filename, row_count, status, report, created_at)
       VALUES
-        (@uploadId, @organizationId, @userId, @filename, @rowCount, @status, CURRENT_TIMESTAMP())
+        (@uploadId, @organizationId, @userId, @filename, @rowCount, @status, @report, CURRENT_TIMESTAMP())
     `;
-    await bq.query({ query, params: { uploadId, organizationId, userId, filename, rowCount, status } });
+    await bq.query({
+      query,
+      params: { uploadId, organizationId, userId, filename, rowCount, status, report: report ?? null },
+      types:  { report: 'STRING' },
+    });
   }
 
-  async function logOrderUpload({ uploadId, organizationId, userId, filename, rowCount, status }) {
+  async function logOrderUpload({ uploadId, organizationId, userId, filename, rowCount, status, report }) {
     const query = `
       INSERT INTO ${ordUploads}
-        (upload_id, organization_id, user_id, filename, row_count, status, created_at)
+        (upload_id, organization_id, user_id, filename, row_count, status, report, created_at)
       VALUES
-        (@uploadId, @organizationId, @userId, @filename, @rowCount, @status, CURRENT_TIMESTAMP())
+        (@uploadId, @organizationId, @userId, @filename, @rowCount, @status, @report, CURRENT_TIMESTAMP())
     `;
-    await bq.query({ query, params: { uploadId, organizationId, userId, filename, rowCount, status } });
+    await bq.query({
+      query,
+      params: { uploadId, organizationId, userId, filename, rowCount, status, report: report ?? null },
+      types:  { report: 'STRING' },
+    });
+  }
+
+  // Fetch the stored report text for a single upload (admin / member only;
+  // route enforces org scoping). Returns null if not found or no report.
+  async function getUploadReport(organizationId, uploadId) {
+    const query = `
+      SELECT report, filename, status, created_at, 'inventory' AS type
+      FROM ${invUploads}
+      WHERE organization_id = @organizationId AND upload_id = @uploadId
+      UNION ALL
+      SELECT report, filename, status, created_at, 'orders' AS type
+      FROM ${ordUploads}
+      WHERE organization_id = @organizationId AND upload_id = @uploadId
+      LIMIT 1
+    `;
+    try {
+      const [rows] = await bq.query({ query, params: { organizationId, uploadId } });
+      return rows[0] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   // Full org inventory delete (legacy — kept for potential future use).
@@ -175,7 +208,7 @@ export function createUploadsRepository({ bq, projectId }) {
   }
 
   return {
-    getHistory, logInventoryUpload, logOrderUpload,
+    getHistory, logInventoryUpload, logOrderUpload, getUploadReport,
     deleteInventory, insertInventoryBatch, insertOrdersBatch,
     getInventoryKeySet, getOrderKeySet,
     updateInventoryByRowUid, updateOrdersByOrderId,

@@ -2,8 +2,14 @@ import { randomUUID } from 'crypto';
 import { parseTxtStream } from './txtStreamParser.js';
 import { AppError } from '../../utils/errors.js';
 
-const CHUNK_SIZE = 500;
-const MAX_ERRORS = 100;
+// Per-operation chunk sizes. Removes can be much larger because the DELETE
+// payload is just a list of UIDs — BigQuery DML handles 10K-element UNNEST
+// arrays comfortably. Add/Update payloads are heavier (full row data), so
+// stay at 500 to keep individual query size reasonable.
+const CHUNK_SIZE_ADD    = 500;
+const CHUNK_SIZE_UPDATE = 500;
+const CHUNK_SIZE_REMOVE = 10000;
+const MAX_ERRORS = 200;
 
 /**
  * Feed-based CRUD upload pipeline.
@@ -107,21 +113,21 @@ export async function runUploadPipeline({ importer, uploadsRepo, organizationId,
   // ── Phase 4: execute ─────────────────────────────────────────────────────
   let added = 0, updated = 0, removed = 0;
 
-  for (let i = 0; i < validAdds.length; i += CHUNK_SIZE) {
-    const chunk = validAdds.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < validAdds.length; i += CHUNK_SIZE_ADD) {
+    const chunk = validAdds.slice(i, i + CHUNK_SIZE_ADD);
     await importer.addBatch(uploadsRepo, chunk);
     added += chunk.length;
   }
 
-  for (let i = 0; i < validUpdates.length; i += CHUNK_SIZE) {
-    const chunk = validUpdates.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < validUpdates.length; i += CHUNK_SIZE_UPDATE) {
+    const chunk = validUpdates.slice(i, i + CHUNK_SIZE_UPDATE);
     await importer.updateBatch(uploadsRepo, organizationId, chunk);
     updated += chunk.length;
   }
 
   if (validRemoveKeys.length) {
-    for (let i = 0; i < validRemoveKeys.length; i += CHUNK_SIZE) {
-      await importer.removeBatch(uploadsRepo, organizationId, validRemoveKeys.slice(i, i + CHUNK_SIZE));
+    for (let i = 0; i < validRemoveKeys.length; i += CHUNK_SIZE_REMOVE) {
+      await importer.removeBatch(uploadsRepo, organizationId, validRemoveKeys.slice(i, i + CHUNK_SIZE_REMOVE));
     }
     removed = validRemoveKeys.length;
   }
@@ -130,15 +136,77 @@ export async function runUploadPipeline({ importer, uploadsRepo, organizationId,
     throw new AppError(400, 'No valid rows to process');
   }
 
+  // Status derivation:
+  //   - All rows OK              → 'success'
+  //   - Some OK, some failed     → 'partial'
+  //   - Zero OK, all failed      → 'failed'
+  const successCount = added + updated + removed;
+  const status = (successCount === 0 && failed > 0) ? 'failed'
+               : (failed > 0)                       ? 'partial'
+               :                                      'success';
+
   const uploadId = randomUUID();
+  const report   = _buildReportText({
+    filename, type: importer.type, status,
+    added, updated, removed, failed, errors,
+    timestamp: new Date(),
+  });
+
   await importer.logUpload(uploadsRepo, {
     uploadId,
     organizationId,
     userId,
     filename: filename || `${importer.type}.txt`,
-    rowCount: added + updated + removed,
-    status:   failed > 0 ? 'partial' : 'success',
-  }).catch(() => {});
+    rowCount: successCount,
+    status,
+    report,
+  }).catch(err => { /* non-fatal — main operation already committed */
+    // eslint-disable-next-line no-console
+    console.warn('[pipelineRunner] logUpload failed (non-fatal):', err?.message ?? err);
+  });
 
-  return { upload_id: uploadId, added, updated, removed, failed, errors, filename };
+  return { upload_id: uploadId, added, updated, removed, failed, errors, filename, status, report };
+}
+
+// Human-readable plain-text summary stored with each upload and downloadable
+// from the Upload History UI. Truncates the errors list to MAX_ERRORS.
+function _buildReportText({ filename, type, status, added, updated, removed, failed, errors, timestamp }) {
+  const total = added + updated + removed + failed;
+  const lines = [
+    'PATMAN UPLOAD SUMMARY',
+    '='.repeat(60),
+    '',
+    `File:       ${filename || `${type}.txt`}`,
+    `Type:       ${type}`,
+    `Date (UTC): ${timestamp.toISOString().replace('T', ' ').slice(0, 19)}`,
+    `Status:     ${status.toUpperCase()}`,
+    '',
+    'RESULT',
+    '-'.repeat(60),
+    `  Added:    ${added.toLocaleString().padStart(8)}`,
+    `  Updated:  ${updated.toLocaleString().padStart(8)}`,
+    `  Removed:  ${removed.toLocaleString().padStart(8)}`,
+    `  Failed:   ${failed.toLocaleString().padStart(8)}`,
+    `  ----------------`,
+    `  Total:    ${total.toLocaleString().padStart(8)}`,
+    '',
+  ];
+
+  if (errors.length) {
+    lines.push('ERRORS');
+    lines.push('-'.repeat(60));
+    for (const e of errors) {
+      const field = e.field ? `[${e.field}]` : '';
+      const val   = e.value !== undefined && e.value !== '' ? ` (value: "${e.value}")` : '';
+      lines.push(`  Row ${String(e.row ?? '?').padStart(5)}  ${field.padEnd(18)} ${e.reason}${val}`);
+    }
+    if (failed > errors.length) {
+      lines.push(`  ...and ${(failed - errors.length).toLocaleString()} more errors not shown (limit ${MAX_ERRORS}).`);
+    }
+    lines.push('');
+  }
+
+  lines.push('-'.repeat(60));
+  lines.push('Generated by Patman Inventory.');
+  return lines.join('\n');
 }

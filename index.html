@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Inventory Dashboard</title>
 
-  <!-- CSS â€” v=51: bump on every deploy to bust browser/CDN cache -->
-  <link rel="stylesheet" href="css/main.css?v=51">
-  <link rel="stylesheet" href="css/layout.css?v=51">
-  <link rel="stylesheet" href="css/components.css?v=51">
-  <link rel="stylesheet" href="css/tables.css?v=51">
-  <link rel="stylesheet" href="css/forms.css?v=51">
-  <link rel="stylesheet" href="css/animations.css?v=51">
+  <!-- CSS â€” v=53: bump on every deploy to bust browser/CDN cache -->
+  <link rel="stylesheet" href="css/main.css?v=53">
+  <link rel="stylesheet" href="css/layout.css?v=53">
+  <link rel="stylesheet" href="css/components.css?v=53">
+  <link rel="stylesheet" href="css/tables.css?v=53">
+  <link rel="stylesheet" href="css/forms.css?v=53">
+  <link rel="stylesheet" href="css/animations.css?v=53">
 
   <!-- Favicon: Lucide "package" icon in brand blue -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
@@ -426,10 +426,10 @@
                   <strong>action</strong>: <code>Add</code> / <code>Update</code> / <code>Remove</code> &nbsp;&middot;&nbsp; Add requires: sku, upc, quantity, part_number, box_number, date_added
                 </div>
                 <div class="drop-zone" id="drop-zone-inventory">
-                  <input type="file" id="file-input-inventory" accept=".txt">
+                  <input type="file" id="file-input-inventory" accept=".tsv,.txt">
                   <div class="drop-icon"><i data-lucide="package" class="icon" style="width:26px;height:26px"></i></div>
-                  <div class="drop-text">Drop .txt file here or click to browse</div>
-                  <div class="drop-sub">Tab-delimited TXT &middot; Max 10 MB / 100,000 rows</div>
+                  <div class="drop-text">Drop .tsv file here or click to browse</div>
+                  <div class="drop-sub">Tab Separated Values (.tsv) &middot; Max 10 MB / 100,000 rows</div>
                   <div class="drop-file" style="display:none"></div>
                 </div>
                 <div class="progress-wrap" id="progress-inventory" style="display:none">
@@ -454,10 +454,10 @@
                   <strong>action</strong>: <code>Add</code> / <code>Update</code> / <code>Remove</code> &nbsp;&middot;&nbsp; Add requires: order_date, sku, quantity_sold, platform
                 </div>
                 <div class="drop-zone" id="drop-zone-orders">
-                  <input type="file" id="file-input-orders" accept=".txt">
+                  <input type="file" id="file-input-orders" accept=".tsv,.txt">
                   <div class="drop-icon"><i data-lucide="clipboard-list" class="icon" style="width:26px;height:26px"></i></div>
-                  <div class="drop-text">Drop .txt file here or click to browse</div>
-                  <div class="drop-sub">Tab-delimited TXT &middot; Max 10 MB / 100,000 rows</div>
+                  <div class="drop-text">Drop .tsv file here or click to browse</div>
+                  <div class="drop-sub">Tab Separated Values (.tsv) &middot; Max 10 MB / 100,000 rows</div>
                   <div class="drop-file" style="display:none"></div>
                 </div>
                 <div class="progress-wrap" id="progress-orders" style="display:none">
@@ -492,16 +492,16 @@
                     </div>
                     <div style="display:flex;align-items:flex-start;gap:8px">
                       <span class="step-badge">4</span>
-                      <div><strong>File &rarr; Save As &rarr; Tab delimited Text (.txt)</strong></div>
+                      <div><strong>File &rarr; Save As &rarr; Tab Separated Values (.tsv)</strong></div>
                     </div>
                     <div style="display:flex;align-items:flex-start;gap:8px">
                       <span class="step-badge">5</span>
-                      <div>Upload the <strong>.txt file</strong> using the form</div>
+                      <div>Upload the <strong>.tsv file</strong> using the form</div>
                     </div>
                   </div>
                   <div style="display:flex;align-items:flex-start;gap:7px;padding:8px 10px;background:rgba(220,38,38,.05);border:1px solid rgba(220,38,38,.15);border-radius:5px">
                     <i data-lucide="alert-triangle" class="icon" style="width:13px;height:13px;color:#dc2626;flex-shrink:0;margin-top:1px"></i>
-                    <div style="font-size:11px;color:var(--txt-3)"><strong>Excel / XLSX not supported.</strong> UTF-8 tab-delimited TXT only. Quantities must be whole numbers. Dates must be valid format.</div>
+                    <div style="font-size:11px;color:var(--txt-3)"><strong>Excel / XLSX not supported.</strong> Save as <strong>Tab Separated Values (.tsv)</strong>, not CSV. Quantities must be whole numbers. Dates must be valid format.</div>
                   </div>
                 </div>
               </div>
@@ -532,6 +532,7 @@
                       <th>File</th>
                       <th class="num">Rows</th>
                       <th>Status</th>
+                      <th style="width:120px">Summary</th>
                     </tr>
                   </thead>
                   <tbody id="upload-history-tbody"></tbody>
@@ -673,19 +674,19 @@
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 
   <!-- App modules â€” order matters: utilities first, then API/auth, then features, app last -->
-  <!-- v=51 â€” bump this number on every deploy to bust browser/CDN cache -->
-  <script src="js/utilities.js?v=51"></script>
-  <script src="js/icons.js?v=51"></script>
-  <script src="js/notifications.js?v=51"></script>
-  <script src="js/loading.js?v=51"></script>
-  <script src="js/api.js?v=51"></script>
-  <script src="js/metricsEngine.js?v=51"></script>
-  <script src="js/auth.js?v=51"></script>
-  <script src="js/dashboard.js?v=51"></script>
-  <script src="js/inventory.js?v=51"></script>
-  <script src="js/orders.js?v=51"></script>
-  <script src="js/uploads.js?v=51"></script>
-  <script src="js/app.js?v=51"></script>
+  <!-- v=53 â€” bump this number on every deploy to bust browser/CDN cache -->
+  <script src="js/utilities.js?v=53"></script>
+  <script src="js/icons.js?v=53"></script>
+  <script src="js/notifications.js?v=53"></script>
+  <script src="js/loading.js?v=53"></script>
+  <script src="js/api.js?v=53"></script>
+  <script src="js/metricsEngine.js?v=53"></script>
+  <script src="js/auth.js?v=53"></script>
+  <script src="js/dashboard.js?v=53"></script>
+  <script src="js/inventory.js?v=53"></script>
+  <script src="js/orders.js?v=53"></script>
+  <script src="js/uploads.js?v=53"></script>
+  <script src="js/app.js?v=53"></script>
 
 </body>
 </html>

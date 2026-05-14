@@ -212,6 +212,13 @@ const API = (() => {
   /* ── MULTIPART (file upload) ─────────────────────────────── */
   // Sends a File object as multipart/form-data.
   // Do NOT set Content-Type — the browser sets it with the boundary automatically.
+  //
+  // Uploads use a much longer timeout than regular API calls because bulk
+  // Add/Update/Remove pipelines run against BigQuery DML which can take
+  // minutes for tens of thousands of rows. 5 minutes covers the typical
+  // worst case (100K-row removes ≈ 2–3 minutes server-side).
+  const UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+
   async function _crMultipartRaw(path, file) {
     const tok      = getToken();
     const formData = new FormData();
@@ -220,7 +227,7 @@ const API = (() => {
       method:  'POST',
       headers: tok ? { Authorization: `Bearer ${tok}` } : {},
       body:    formData,
-    }, CONFIG.TIMEOUT_MS);
+    }, UPLOAD_TIMEOUT_MS);
     return _parseResponse(res);
   }
 

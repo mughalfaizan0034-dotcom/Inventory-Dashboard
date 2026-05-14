@@ -22,5 +22,9 @@ export function createUploadsService({ uploadsRepo }) {
     return uploadsRepo.getHistory(organizationId, type);
   }
 
-  return { processInventoryUpload, processOrdersUpload, getHistory };
+  async function getReport(organizationId, uploadId) {
+    return uploadsRepo.getUploadReport(organizationId, uploadId);
+  }
+
+  return { processInventoryUpload, processOrdersUpload, getHistory, getReport };
 }

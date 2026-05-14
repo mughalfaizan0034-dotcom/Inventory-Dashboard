@@ -258,7 +258,7 @@ const Uploads = (() => {
       const list = Array.isArray(rows) ? rows : (rows.rows || []);
 
       if (!list.length) {
-        tbody.innerHTML = `<tr><td colspan="5" style="padding:0">${Loading.empty('upload', 'No uploads yet')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="padding:0">${Loading.empty('upload', 'No uploads yet')}</td></tr>`;
         return;
       }
 
@@ -269,16 +269,62 @@ const Uploads = (() => {
           failed:  'error', error: 'error',
         }[row.status?.toLowerCase()] || 'gray';
 
+        // Summary cell — links to the per-upload plain-text report.
+        // Server returns has_report=true for uploads that stored a report;
+        // legacy uploads from before the report column was added show "—".
+        const summaryCell = row.has_report
+          ? `<button class="btn btn-ghost btn-sm" data-report-id="${Utils.escapeHtml(row.upload_id || '')}" title="Download .txt summary report">
+               <i data-lucide="download" class="icon" style="width:13px;height:13px"></i> Report
+             </button>`
+          : '<span style="color:var(--txt-4);font-size:12px">—</span>';
+
         return `<tr>
           <td>${Utils.formatDatetime(row.created_at)}</td>
           <td>${Utils.badgeHtml(row.type === 'inventory' ? 'info' : 'warning', row.type || '—')}</td>
           <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(row.filename || '—')}</td>
           <td class="num">${Utils.formatNumber(row.row_count)}</td>
           <td>${Utils.badgeHtml(statusVariant, row.status || '—')}</td>
+          <td>${summaryCell}</td>
         </tr>`;
       }).join('');
+
+      // Wire report download buttons. Each click hits the streaming
+      // /uploads/report/:id endpoint which returns text/plain with
+      // a Content-Disposition: attachment header — the browser saves
+      // it directly without any client-side blob construction.
+      tbody.querySelectorAll('[data-report-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id  = btn.dataset.reportId;
+          const tok = sessionStorage.getItem(CONFIG.SESSION_KEY) || '';
+          if (!id || !tok) return;
+          // Use fetch + blob so we can attach the bearer token; a plain
+          // <a href> would not include the Authorization header.
+          fetch(`${CONFIG.CLOUD_RUN_URL}/uploads/report/${encodeURIComponent(id)}`, {
+            headers: { Authorization: `Bearer ${tok}` },
+          })
+            .then(res => {
+              if (!res.ok) throw new Error(`Report download failed: ${res.status}`);
+              const disposition = res.headers.get('Content-Disposition') || '';
+              const match = disposition.match(/filename="([^"]+)"/);
+              return res.blob().then(blob => ({ blob, name: match?.[1] || `upload_${id}_report.txt` }));
+            })
+            .then(({ blob, name }) => {
+              const url = URL.createObjectURL(blob);
+              const a   = document.createElement('a');
+              a.href     = url;
+              a.download = name;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 0);
+            })
+            .catch(err => Notify.error('Report download failed', err.message));
+        });
+      });
+
+      Icons?.refresh?.();
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="5">${Loading.error('Failed to load history')}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6">${Loading.error('Failed to load history')}</td></tr>`;
     }
   }
 
