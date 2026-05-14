@@ -474,6 +474,18 @@ body.sidebar-collapsed .sidebar-logout      { display: none; }
   padding: 16px 24px 24px;
 }
 
+/* Sticky table headers across scrollable page sections.
+   .table-wrap's default `overflow-x: auto` makes it a sticky-containing-block,
+   which breaks header sticking when the OUTER element is the actual scroll
+   container (the header would move with the page scroll instead of pinning).
+   Override to `overflow: visible` so the sticky header pins to the page-level
+   scroll container (.uploads-history, .tab-panel.active, .blookup-body). */
+.uploads-history .table-wrap,
+#page-settings .tab-panel .table-wrap,
+.blookup-body .table-wrap {
+  overflow: visible;
+}
+
 /* ── Section header ─────────────────────────────────────────── */
 .section-header {
   display: flex;
