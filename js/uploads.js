@@ -412,10 +412,11 @@ const Uploads = (() => {
       maxWidth: '460px',
       body: `
         <div class="drop-zone" id="${zoneId}" style="margin-bottom:12px">
-          <input type="file" id="${inputId}" accept=".txt">
-          <div class="drop-icon"><i data-lucide="${fileType === 'inventory' ? 'package' : 'clipboard-list'}" class="icon" style="width:32px;height:32px" aria-hidden="true"></i></div>
-          <div class="drop-text">Drop .txt file here or click to browse</div>
-          <div class="drop-sub">UTF-8 tab-delimited TXT (.txt) · Max 10 MB / 100,000 rows</div>
+          <input type="file" id="${inputId}" accept=".tsv,.txt">
+          <div class="drop-icon"><i data-lucide="${fileType === 'inventory' ? 'package' : 'clipboard-list'}" class="icon" style="width:32px;height:32px" aria-hidden="true"></i>
+          </div>
+          <div class="drop-text">Drop .tsv file here or click to browse</div>
+          <div class="drop-sub">Tab Separated Values (.tsv) · Max 10 MB / 100,000 rows</div>
           <div class="drop-file" style="display:none"></div>
         </div>
         <div class="progress-wrap" id="progress-modal-${fileType}" style="display:none"><div class="progress-bar"></div></div>
