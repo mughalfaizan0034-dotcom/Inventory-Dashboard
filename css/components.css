@@ -388,40 +388,42 @@
   color: var(--primary);
 }
 
-/* Panel flows inline within the form — expands the form vertically
-   when opened rather than overlaying, so the modal scrolls naturally
-   and the footer (Cancel / Create User) stays visible below.
-   The panel is hard-capped at 220px tall regardless of list length:
-   when the org/user roster grows past ~6 entries, the internal scroll
-   kicks in instead of pushing the form past the viewport. */
+/* Panel uses position:fixed so it overlays content (modal footers,
+   adjacent form fields) instead of growing the form. JS in _wireMultiselect
+   computes the trigger's bounding rect and sets top/left on open. This
+   prevents the panel from being clipped by the modal's overflow:auto
+   while also keeping the form layout stable when the dropdown opens. */
 .multiselect-panel {
-  max-height: 0;
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  margin-top: 0;
-  padding: 0 4px;
-  transition: max-height 220ms var(--ease),
-              margin-top var(--dur) var(--ease),
-              padding var(--dur) var(--ease),
-              border-color var(--dur) var(--ease);
-}
-.multiselect.is-open .multiselect-panel {
-  /* Hard cap — never grows beyond this regardless of how many items. */
-  max-height: 220px;
-  /* Always scroll internally when content exceeds cap. */
+  position: fixed;
+  /* JS supplies top/left/width; these are starting values only. */
+  top: 0;
+  left: 0;
+  width: 260px;
+  max-height: 260px;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Smoother scrolling on touch devices */
   -webkit-overflow-scrolling: touch;
-  /* iOS / older browsers can lose the overflow context on transitioning
-     elements — overscroll-behavior keeps scroll trapped inside the panel. */
   overscroll-behavior: contain;
-  margin-top: 6px;
   padding: 4px;
-  border-color: var(--border);
-  box-shadow: var(--shadow-xs);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-lg);
+  z-index: 5000;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity var(--dur) var(--ease),
+              transform var(--dur) var(--ease),
+              visibility 0s linear var(--dur);
+}
+.multiselect.is-open .multiselect-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity var(--dur) var(--ease),
+              transform var(--dur) var(--ease),
+              visibility 0s;
 }
 
 .multiselect-option {

@@ -842,7 +842,7 @@ const Settings = (() => {
           </div>
           <div class="form-group">
             <label class="form-label">Members <span class="req">*</span></label>
-            <div class="multiselect" data-field="members">
+            <div class="multiselect" data-field="members" data-ms-noun="members" data-ms-placeholder="Select members…">
               <button type="button" class="multiselect-trigger" data-ms-trigger>
                 <span class="multiselect-label" data-ms-label>Select members…</span>
                 <i data-lucide="chevron-down" class="multiselect-chevron" aria-hidden="true"></i>
