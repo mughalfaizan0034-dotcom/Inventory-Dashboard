@@ -174,10 +174,13 @@ const Settings = (() => {
     _wireMultiselect(q('[data-field="orgs"]'));
   }
 
-  // Multi-select dropdown: click-to-open panel with checkboxes.
-  // Trigger label updates with selected count / first names.
-  // Noun for the label is taken from `data-ms-noun` on the root, defaults to
-  // 'items'. Pluralised by appending 's' for count > 1.
+  // Multi-select dropdown: click-to-open, position:fixed panel with checkboxes.
+  // The panel overlays surrounding content (does NOT grow the form), so opening
+  // it never reflows the modal layout. JS computes the trigger's viewport
+  // coordinates and anchors the panel below it (or flipped above if it'd run
+  // off the viewport).
+  //
+  // Noun for the label is taken from `data-ms-noun` on the root.
   function _wireMultiselect(root) {
     if (!root) return;
     const trigger = root.querySelector('[data-ms-trigger]');
@@ -202,8 +205,28 @@ const Settings = (() => {
         : `${checked.length} ${noun} selected`;
     };
 
+    // Position the panel using fixed coordinates derived from the trigger's
+    // viewport rect. Re-run on every open + on scroll/resize while open.
+    const positionPanel = () => {
+      const rect = trigger.getBoundingClientRect();
+      const panelWidth = rect.width;             // match trigger width
+      panel.style.width = `${panelWidth}px`;
+      const panelHeight = Math.min(260, panel.scrollHeight || 260);
+      let top = rect.bottom + 6;
+      // Flip above if it would clip the viewport bottom.
+      if (top + panelHeight > window.innerHeight - 8) {
+        top = Math.max(8, rect.top - panelHeight - 6);
+      }
+      panel.style.top  = `${top}px`;
+      panel.style.left = `${rect.left}px`;
+    };
+
+    const open  = () => {
+      positionPanel();
+      root.classList.add('is-open');
+    };
     const close = () => root.classList.remove('is-open');
-    const toggle = () => root.classList.toggle('is-open');
+    const toggle = () => (root.classList.contains('is-open') ? close() : open());
 
     trigger.addEventListener('click', e => { e.stopPropagation(); toggle(); });
     panel.addEventListener('click', e => e.stopPropagation());
@@ -211,13 +234,18 @@ const Settings = (() => {
       if (e.target?.matches('input[type=checkbox]')) updateLabel();
     });
 
-    // Close on outside click or Esc
+    // Close on outside click or Esc.
     document.addEventListener('click', e => {
-      if (!root.contains(e.target)) close();
+      if (!root.contains(e.target) && !panel.contains(e.target)) close();
     });
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') close();
     });
+
+    // Reposition (or close) on viewport changes while open so the panel
+    // stays anchored to its trigger.
+    window.addEventListener('scroll',  () => { if (root.classList.contains('is-open')) positionPanel(); }, true);
+    window.addEventListener('resize',  () => { if (root.classList.contains('is-open')) positionPanel(); });
 
     updateLabel();
   }
