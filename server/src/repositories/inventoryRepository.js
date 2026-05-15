@@ -135,7 +135,12 @@ export function createInventoryRepository({ bq, projectId }) {
     if (!match) return { originalBox: null, alternatives: [] };
 
     const [, boxNum, partNumber, upc] = match;
-    const originalBox = `ARA${boxNum}`;
+    // CANONICAL: bare digits, matching the form used by alternatives[].box_number
+    // below and by the database column shipped_from_box / box_number. Returning
+    // "ARA667" here caused the popover's .find() to miss the original row
+    // (Original showed Qty 0) AND the !== filter to fail (original SKU
+    // appeared a second time at the bottom of the list).
+    const originalBox = boxNum;
 
     const query = `
       WITH inv_agg AS (
