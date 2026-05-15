@@ -70,9 +70,12 @@ export async function runUploadPipeline({ importer, uploadsRepo, organizationId,
   const existingKeys = await importer.fetchKeySet(uploadsRepo, organizationId, allKeys);
 
   // ── Phase 3: validate ────────────────────────────────────────────────────
-  const validAdds       = [];
-  const validUpdates    = [];
-  const validRemoveKeys = [];
+  // We track lineNum alongside the row / key so that per-row failures
+  // returned from Phase 4 (e.g. streaming-buffer-blocked) can be attributed
+  // back to the source file row in the validation report.
+  const validAdds          = [];     // rows (no lineNum tracking needed — adds rarely fail per-row)
+  const validUpdates       = [];     // [{ row, lineNum }]
+  const validRemoves       = [];     // [{ key, lineNum }]
 
   for (const { row, lineNum } of adds) {
     const key = importer.getKey(row);
@@ -94,7 +97,7 @@ export async function runUploadPipeline({ importer, uploadsRepo, organizationId,
         errors.push({ row: lineNum, field: importer.keyField, reason: `${key} not found — use action Add to create it` });
       }
     } else {
-      validUpdates.push(row);
+      validUpdates.push({ row, lineNum });
     }
   }
 
@@ -106,54 +109,53 @@ export async function runUploadPipeline({ importer, uploadsRepo, organizationId,
         errors.push({ row: lineNum, field: importer.keyField, reason: `${key} not found` });
       }
     } else {
-      validRemoveKeys.push(key);
+      validRemoves.push({ key, lineNum });
     }
   }
 
   // ── Phase 4: execute ─────────────────────────────────────────────────────
-  // BigQuery's streaming buffer prevents UPDATE/DELETE on rows added via
-  // streaming insert for up to ~90 minutes. New inserts now go through DML
-  // (see uploadsRepository.insertInventoryBatch / insertOrdersBatch) so the
-  // problem is bounded to LEGACY rows from before that change. If we see
-  // the specific BQ error here, surface a clear AppError instead of a raw
-  // 500 so the user understands the cause and the wait window.
-  const _wrapBqError = (op) => async () => {
-    try { return await op(); }
-    catch (err) {
-      const msg = String(err?.message ?? '');
-      if (/streaming buffer/i.test(msg)) {
-        throw new AppError(
-          409,
-          'Some rows were added via streaming insert recently and cannot be ' +
-          'updated or removed yet. BigQuery holds them in a streaming buffer for ' +
-          'up to ~90 minutes. Wait for the buffer to flush and retry, or split ' +
-          'the file so older rows process first.',
-        );
-      }
-      throw err;
-    }
-  };
-
+  // BigQuery's streaming buffer prevents UPDATE/DELETE on rows that were
+  // inserted via streaming for up to ~90 min. New inserts now use DML so
+  // they are immediately UPDATE/DELETE-able, but legacy rows from before
+  // that change can still be in the buffer. Per-row failure tolerance:
+  // updateBatch / removeBatch return { failures: [{ key, reason }] } and
+  // we attribute each failure back to the source line via the maps below.
+  // The rest of the chunk continues to succeed.
   let added = 0, updated = 0, removed = 0;
 
   for (let i = 0; i < validAdds.length; i += CHUNK_SIZE_ADD) {
     const chunk = validAdds.slice(i, i + CHUNK_SIZE_ADD);
-    await _wrapBqError(() => importer.addBatch(uploadsRepo, chunk))();
+    await importer.addBatch(uploadsRepo, chunk);
     added += chunk.length;
+  }
+
+  function _recordFailures(failureList, lineByKey) {
+    for (const f of failureList) {
+      failed++;
+      if (errors.length < MAX_ERRORS) {
+        errors.push({
+          row:    lineByKey.get(f.key) ?? null,
+          field:  importer.keyField,
+          reason: f.reason,
+        });
+      }
+    }
   }
 
   for (let i = 0; i < validUpdates.length; i += CHUNK_SIZE_UPDATE) {
     const chunk = validUpdates.slice(i, i + CHUNK_SIZE_UPDATE);
-    await _wrapBqError(() => importer.updateBatch(uploadsRepo, organizationId, chunk))();
-    updated += chunk.length;
+    const lineByKey = new Map(chunk.map(({ row, lineNum }) => [importer.getKey(row), lineNum]));
+    const { failures = [] } = (await importer.updateBatch(uploadsRepo, organizationId, chunk.map(c => c.row))) ?? {};
+    updated += chunk.length - failures.length;
+    _recordFailures(failures, lineByKey);
   }
 
-  if (validRemoveKeys.length) {
-    for (let i = 0; i < validRemoveKeys.length; i += CHUNK_SIZE_REMOVE) {
-      const chunkKeys = validRemoveKeys.slice(i, i + CHUNK_SIZE_REMOVE);
-      await _wrapBqError(() => importer.removeBatch(uploadsRepo, organizationId, chunkKeys))();
-    }
-    removed = validRemoveKeys.length;
+  for (let i = 0; i < validRemoves.length; i += CHUNK_SIZE_REMOVE) {
+    const chunk = validRemoves.slice(i, i + CHUNK_SIZE_REMOVE);
+    const lineByKey = new Map(chunk.map(({ key, lineNum }) => [key, lineNum]));
+    const { failures = [] } = (await importer.removeBatch(uploadsRepo, organizationId, chunk.map(c => c.key))) ?? {};
+    removed += chunk.length - failures.length;
+    _recordFailures(failures, lineByKey);
   }
 
   if (added + updated + removed === 0 && failed === 0) {

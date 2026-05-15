@@ -20,11 +20,11 @@ export const ordersImporter = {
   },
 
   async updateBatch(uploadsRepo, organizationId, rows) {
-    await uploadsRepo.updateOrdersByOrderId(organizationId, rows);
+    return uploadsRepo.updateOrdersByOrderId(organizationId, rows);
   },
 
   async removeBatch(uploadsRepo, organizationId, keys) {
-    await uploadsRepo.deleteOrdersByOrderIds(organizationId, keys);
+    return uploadsRepo.deleteOrdersByOrderIds(organizationId, keys);
   },
 
   async logUpload(uploadsRepo, meta) {

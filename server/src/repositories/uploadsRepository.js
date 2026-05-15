@@ -215,10 +215,26 @@ export function createUploadsRepository({ bq, projectId }) {
     return new Set(rows.map(r => r.order_row_id));
   }
 
+  // BigQuery's streaming buffer rejects UPDATE/DELETE against rows that
+  // were recently streamed (it can hold rows for ~90 min). New inserts now
+  // use DML so they don't suffer — but legacy rows already in the buffer
+  // do. We detect that specific error and surface it as a per-row failure
+  // so the rest of the batch can still succeed.
+  const STREAMING_BUFFER_REASON =
+    'row is in BigQuery streaming buffer (added recently via streaming insert) — wait up to ~90 minutes for the buffer to flush, then retry';
+
+  function _isStreamingBufferError(err) {
+    return /streaming buffer/i.test(String(err?.message ?? ''));
+  }
+
   // Partial update of inventory rows, keyed by row_uid. Each row may contain
   // a different subset of mutable columns (sku is now mutable — only row_uid
   // identifies the row).
+  //
+  // Returns { failures: [{ key, reason }] } for rows that could not be
+  // updated (e.g. blocked by the streaming buffer). Other errors propagate.
   async function updateInventoryByRowUid(organizationId, rows) {
+    const failures = [];
     for (const row of rows) {
       const sets   = [];
       const params = { organizationId, row_uid: row.row_uid };
@@ -240,12 +256,23 @@ export function createUploadsRepository({ bq, projectId }) {
         SET ${sets.join(', ')}
         WHERE organization_id = @organizationId AND row_uid = @row_uid
       `;
-      await bq.query({ query, params });
+      try {
+        await bq.query({ query, params });
+      } catch (err) {
+        if (_isStreamingBufferError(err)) {
+          failures.push({ key: row.row_uid, reason: STREAMING_BUFFER_REASON });
+        } else {
+          throw err;
+        }
+      }
     }
+    return { failures };
   }
 
   // Partial update of order rows — each row may contain a different subset of columns.
+  // Same per-row buffer tolerance as updateInventoryByRowUid above.
   async function updateOrdersByOrderId(organizationId, rows) {
+    const failures = [];
     for (const row of rows) {
       const sets   = [];
       const params = { organizationId, order_row_id: row.order_row_id };
@@ -263,28 +290,84 @@ export function createUploadsRepository({ bq, projectId }) {
         SET ${sets.join(', ')}
         WHERE organization_id = @organizationId AND order_row_id = @order_row_id
       `;
-      await bq.query({ query, params });
+      try {
+        await bq.query({ query, params });
+      } catch (err) {
+        if (_isStreamingBufferError(err)) {
+          failures.push({ key: row.order_row_id, reason: STREAMING_BUFFER_REASON });
+        } else {
+          throw err;
+        }
+      }
     }
+    return { failures };
   }
 
+  // Returns { failures: [{ key, reason }] }. Tries one batch DELETE first
+  // (fast path). If BQ rejects on streaming buffer, falls back to per-row
+  // DELETE so the non-buffered keys still succeed and only the buffered
+  // ones are flagged as failures.
   async function deleteInventoryByRowUids(organizationId, rowUids) {
-    if (!rowUids.length) return;
-    const query = `
+    if (!rowUids.length) return { failures: [] };
+    const batchQuery = `
       DELETE FROM ${invTable}
       WHERE organization_id = @organizationId
         AND row_uid IN UNNEST(@rowUids)
     `;
-    await bq.query({ query, params: { organizationId, rowUids } });
+    try {
+      await bq.query({ query: batchQuery, params: { organizationId, rowUids } });
+      return { failures: [] };
+    } catch (err) {
+      if (!_isStreamingBufferError(err)) throw err;
+      // Buffer-tainted batch — split into per-row deletes.
+      const failures = [];
+      for (const uid of rowUids) {
+        try {
+          await bq.query({
+            query: `DELETE FROM ${invTable} WHERE organization_id = @organizationId AND row_uid = @uid`,
+            params: { organizationId, uid },
+          });
+        } catch (err2) {
+          if (_isStreamingBufferError(err2)) {
+            failures.push({ key: uid, reason: STREAMING_BUFFER_REASON });
+          } else {
+            throw err2;
+          }
+        }
+      }
+      return { failures };
+    }
   }
 
   async function deleteOrdersByOrderIds(organizationId, orderIds) {
-    if (!orderIds.length) return;
-    const query = `
+    if (!orderIds.length) return { failures: [] };
+    const batchQuery = `
       DELETE FROM ${ordTable}
       WHERE organization_id = @organizationId
         AND order_row_id IN UNNEST(@orderIds)
     `;
-    await bq.query({ query, params: { organizationId, orderIds } });
+    try {
+      await bq.query({ query: batchQuery, params: { organizationId, orderIds } });
+      return { failures: [] };
+    } catch (err) {
+      if (!_isStreamingBufferError(err)) throw err;
+      const failures = [];
+      for (const id of orderIds) {
+        try {
+          await bq.query({
+            query: `DELETE FROM ${ordTable} WHERE organization_id = @organizationId AND order_row_id = @id`,
+            params: { organizationId, id },
+          });
+        } catch (err2) {
+          if (_isStreamingBufferError(err2)) {
+            failures.push({ key: id, reason: STREAMING_BUFFER_REASON });
+          } else {
+            throw err2;
+          }
+        }
+      }
+      return { failures };
+    }
   }
 
   return {

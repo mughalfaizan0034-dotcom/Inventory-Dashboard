@@ -20,11 +20,11 @@ export const inventoryImporter = {
   },
 
   async updateBatch(uploadsRepo, organizationId, rows) {
-    await uploadsRepo.updateInventoryByRowUid(organizationId, rows);
+    return uploadsRepo.updateInventoryByRowUid(organizationId, rows);
   },
 
   async removeBatch(uploadsRepo, organizationId, keys) {
-    await uploadsRepo.deleteInventoryByRowUids(organizationId, keys);
+    return uploadsRepo.deleteInventoryByRowUids(organizationId, keys);
   },
 
   async logUpload(uploadsRepo, meta) {
