@@ -227,146 +227,163 @@ export function createUploadsRepository({ bq, projectId }) {
     return /streaming buffer/i.test(String(err?.message ?? ''));
   }
 
-  // Partial update of inventory rows, keyed by row_uid. Each row may contain
-  // a different subset of mutable columns (sku is now mutable — only row_uid
-  // identifies the row).
+  // Bulk partial-update via a single MERGE statement per chunk.
   //
-  // Returns { failures: [{ key, reason }] } for rows that could not be
-  // updated (e.g. blocked by the streaming buffer). Other errors propagate.
+  // Why MERGE (not a per-row UPDATE loop):
+  //   500 separate UPDATEs × ~0.5s each = ~4 minutes per chunk; on Cloud Run
+  //   this exceeds the 5-min request budget, the container is killed before
+  //   it can return, and the browser sees a CORS error (no headers returned).
+  //   A single MERGE applies the whole chunk in one query.
+  //
+  // COALESCE(s.X, t.X) preserves the existing target value when the source
+  // column is NULL — i.e. when the user left that cell blank in the feed.
+  // Each schema only populates row.X when the user provided a non-empty
+  // value, so NULL = "don't touch this field".
+  //
+  // Returns { failures: [{ key, reason }] }. On streaming-buffer rejection
+  // the whole chunk is reported as failed (per-row retry is too slow for
+  // big chunks and would just blow the same timeout).
   async function updateInventoryByRowUid(organizationId, rows) {
-    const failures = [];
-    for (const row of rows) {
-      const sets   = [];
-      const params = { organizationId, row_uid: row.row_uid };
-
-      if (row.sku         !== undefined) { sets.push('sku = @sku');                   params.sku         = row.sku; }
-      if (row.upc         !== undefined) { sets.push('upc = @upc');                   params.upc         = row.upc; }
-      if (row.part_number !== undefined) { sets.push('part_number = @part_number');   params.part_number = row.part_number; }
-      if (row.box_number  !== undefined) { sets.push('box_number = @box_number');     params.box_number  = row.box_number; }
-      if (row.quantity    !== undefined) { sets.push('quantity = @quantity');         params.quantity    = row.quantity; }
-      if (row.date_added  !== undefined) { sets.push('date_added = @date_added');     params.date_added  = row.date_added; }
-      if (row.notes       !== undefined) { sets.push('notes = @notes');               params.notes       = row.notes; }
-
-      if (!sets.length) continue;
-      sets.push('updated_at = @updated_at');
-      params.updated_at = row.updated_at ?? new Date().toISOString();
-
-      const query = `
-        UPDATE ${invTable}
-        SET ${sets.join(', ')}
-        WHERE organization_id = @organizationId AND row_uid = @row_uid
-      `;
-      try {
-        await bq.query({ query, params });
-      } catch (err) {
-        if (_isStreamingBufferError(err)) {
-          failures.push({ key: row.row_uid, reason: STREAMING_BUFFER_REASON });
-        } else {
-          throw err;
-        }
+    if (!rows.length) return { failures: [] };
+    const now = new Date().toISOString();
+    const params = {
+      organizationId,
+      rows: rows.map(r => ({
+        row_uid:     r.row_uid,
+        sku:         r.sku         ?? null,
+        upc:         r.upc         ?? null,
+        part_number: r.part_number ?? null,
+        box_number:  r.box_number  ?? null,
+        quantity:    r.quantity    ?? null,
+        date_added:  r.date_added  ?? null,
+        notes:       r.notes       ?? null,
+        updated_at:  r.updated_at  ?? now,
+      })),
+    };
+    const types = {
+      rows: [{
+        row_uid:     'STRING',
+        sku:         'STRING',
+        upc:         'STRING',
+        part_number: 'STRING',
+        box_number:  'STRING',
+        quantity:    'INT64',
+        date_added:  'STRING',
+        notes:       'STRING',
+        updated_at:  'STRING',
+      }],
+    };
+    const query = `
+      MERGE INTO ${invTable} AS t
+      USING (SELECT * FROM UNNEST(@rows)) AS s
+      ON t.organization_id = @organizationId AND t.row_uid = s.row_uid
+      WHEN MATCHED THEN
+        UPDATE SET
+          sku         = COALESCE(s.sku,         t.sku),
+          upc         = COALESCE(s.upc,         t.upc),
+          part_number = COALESCE(s.part_number, t.part_number),
+          box_number  = COALESCE(s.box_number,  t.box_number),
+          quantity    = COALESCE(s.quantity,    t.quantity),
+          date_added  = COALESCE(s.date_added,  t.date_added),
+          notes       = COALESCE(s.notes,       t.notes),
+          updated_at  = TIMESTAMP(s.updated_at)
+    `;
+    try {
+      await bq.query({ query, params, types });
+      return { failures: [] };
+    } catch (err) {
+      if (_isStreamingBufferError(err)) {
+        return { failures: rows.map(r => ({ key: r.row_uid, reason: STREAMING_BUFFER_REASON })) };
       }
+      throw err;
     }
-    return { failures };
   }
 
-  // Partial update of order rows — each row may contain a different subset of columns.
-  // Same per-row buffer tolerance as updateInventoryByRowUid above.
   async function updateOrdersByOrderId(organizationId, rows) {
-    const failures = [];
-    for (const row of rows) {
-      const sets   = [];
-      const params = { organizationId, order_row_id: row.order_row_id };
-
-      if (row.order_date      !== undefined) { sets.push('order_date = @order_date');             params.order_date      = row.order_date; }
-      if (row.sku             !== undefined) { sets.push('sku = @sku');                           params.sku             = row.sku; }
-      if (row.quantity_sold   !== undefined) { sets.push('quantity_sold = @quantity_sold');       params.quantity_sold   = row.quantity_sold; }
-      if (row.platform        !== undefined) { sets.push('platform = @platform');                 params.platform        = row.platform; }
-      if (row.shipped_from_box !== undefined){ sets.push('shipped_from_box = @shipped_from_box'); params.shipped_from_box = row.shipped_from_box; }
-
-      if (!sets.length) continue;
-
-      const query = `
-        UPDATE ${ordTable}
-        SET ${sets.join(', ')}
-        WHERE organization_id = @organizationId AND order_row_id = @order_row_id
-      `;
-      try {
-        await bq.query({ query, params });
-      } catch (err) {
-        if (_isStreamingBufferError(err)) {
-          failures.push({ key: row.order_row_id, reason: STREAMING_BUFFER_REASON });
-        } else {
-          throw err;
-        }
+    if (!rows.length) return { failures: [] };
+    const params = {
+      organizationId,
+      rows: rows.map(r => ({
+        order_row_id:     r.order_row_id,
+        order_date:       r.order_date       ?? null,
+        sku:              r.sku              ?? null,
+        quantity_sold:    r.quantity_sold    ?? null,
+        platform:         r.platform         ?? null,
+        shipped_from_box: r.shipped_from_box ?? null,
+      })),
+    };
+    const types = {
+      rows: [{
+        order_row_id:     'STRING',
+        order_date:       'STRING',
+        sku:              'STRING',
+        quantity_sold:    'INT64',
+        platform:         'STRING',
+        shipped_from_box: 'STRING',
+      }],
+    };
+    const query = `
+      MERGE INTO ${ordTable} AS t
+      USING (SELECT * FROM UNNEST(@rows)) AS s
+      ON t.organization_id = @organizationId AND t.order_row_id = s.order_row_id
+      WHEN MATCHED THEN
+        UPDATE SET
+          order_date       = COALESCE(s.order_date,       t.order_date),
+          sku              = COALESCE(s.sku,              t.sku),
+          quantity_sold    = COALESCE(s.quantity_sold,    t.quantity_sold),
+          platform         = COALESCE(s.platform,         t.platform),
+          shipped_from_box = COALESCE(s.shipped_from_box, t.shipped_from_box)
+    `;
+    try {
+      await bq.query({ query, params, types });
+      return { failures: [] };
+    } catch (err) {
+      if (_isStreamingBufferError(err)) {
+        return { failures: rows.map(r => ({ key: r.order_row_id, reason: STREAMING_BUFFER_REASON })) };
       }
+      throw err;
     }
-    return { failures };
   }
 
-  // Returns { failures: [{ key, reason }] }. Tries one batch DELETE first
-  // (fast path). If BQ rejects on streaming buffer, falls back to per-row
-  // DELETE so the non-buffered keys still succeed and only the buffered
-  // ones are flagged as failures.
+  // Single batch DELETE per chunk. No per-row fallback — for big chunks
+  // (CHUNK_SIZE_REMOVE = 10000) a per-row loop would dwarf Cloud Run's
+  // 5-min request budget, killing the container and producing a CORS
+  // error in the browser. On buffer rejection we report all keys in the
+  // chunk as failures so the rest of the upload (other chunks, other
+  // operations) still completes and the user knows exactly what to retry.
   async function deleteInventoryByRowUids(organizationId, rowUids) {
     if (!rowUids.length) return { failures: [] };
-    const batchQuery = `
+    const query = `
       DELETE FROM ${invTable}
       WHERE organization_id = @organizationId
         AND row_uid IN UNNEST(@rowUids)
     `;
     try {
-      await bq.query({ query: batchQuery, params: { organizationId, rowUids } });
+      await bq.query({ query, params: { organizationId, rowUids } });
       return { failures: [] };
     } catch (err) {
-      if (!_isStreamingBufferError(err)) throw err;
-      // Buffer-tainted batch — split into per-row deletes.
-      const failures = [];
-      for (const uid of rowUids) {
-        try {
-          await bq.query({
-            query: `DELETE FROM ${invTable} WHERE organization_id = @organizationId AND row_uid = @uid`,
-            params: { organizationId, uid },
-          });
-        } catch (err2) {
-          if (_isStreamingBufferError(err2)) {
-            failures.push({ key: uid, reason: STREAMING_BUFFER_REASON });
-          } else {
-            throw err2;
-          }
-        }
+      if (_isStreamingBufferError(err)) {
+        return { failures: rowUids.map(id => ({ key: id, reason: STREAMING_BUFFER_REASON })) };
       }
-      return { failures };
+      throw err;
     }
   }
 
   async function deleteOrdersByOrderIds(organizationId, orderIds) {
     if (!orderIds.length) return { failures: [] };
-    const batchQuery = `
+    const query = `
       DELETE FROM ${ordTable}
       WHERE organization_id = @organizationId
         AND order_row_id IN UNNEST(@orderIds)
     `;
     try {
-      await bq.query({ query: batchQuery, params: { organizationId, orderIds } });
+      await bq.query({ query, params: { organizationId, orderIds } });
       return { failures: [] };
     } catch (err) {
-      if (!_isStreamingBufferError(err)) throw err;
-      const failures = [];
-      for (const id of orderIds) {
-        try {
-          await bq.query({
-            query: `DELETE FROM ${ordTable} WHERE organization_id = @organizationId AND order_row_id = @id`,
-            params: { organizationId, id },
-          });
-        } catch (err2) {
-          if (_isStreamingBufferError(err2)) {
-            failures.push({ key: id, reason: STREAMING_BUFFER_REASON });
-          } else {
-            throw err2;
-          }
-        }
+      if (_isStreamingBufferError(err)) {
+        return { failures: orderIds.map(id => ({ key: id, reason: STREAMING_BUFFER_REASON })) };
       }
-      return { failures };
+      throw err;
     }
   }
 
