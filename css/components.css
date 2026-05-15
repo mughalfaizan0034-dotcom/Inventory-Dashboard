@@ -817,6 +817,15 @@
   border-bottom: 1px solid var(--border);
 }
 
+.dash-2cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (max-width: 640px) { .dash-2cards { grid-template-columns: 1fr; } }
+
+/* Legacy 3-card grid — kept for any in-flight cached HTML; safe to remove
+   once no client still has the v=56 dashboard markup loaded. */
 .dash-3cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
