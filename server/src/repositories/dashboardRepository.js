@@ -4,7 +4,16 @@ export function createDashboardRepository({ bq, projectId }) {
   const ordTable = `\`${projectId}.${TABLES.ORDERS}\``;
 
   async function getPerformance(organizationId, weeks = 12, platform = null) {
-    const safeWeeks = Math.min(Math.max(parseInt(weeks, 10) || 12, 1), 52);
+    // weeks = 0 → "All time" (no date window). Otherwise clamp to 1..520
+    // (520 weeks ≈ 10 years — generous upper bound for All-time-ish ranges).
+    const rawWeeks = parseInt(weeks, 10);
+    const isAllTime = rawWeeks === 0;
+    const safeWeeks = isAllTime ? 0 : Math.min(Math.max(rawWeeks || 12, 1), 520);
+    // When isAllTime, the date filter is empty — orders of every age are
+    // included. Otherwise we use trailing-N-weeks via DATE_SUB.
+    const dateCond = isAllTime
+      ? ''
+      : `AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)`;
     const p      = { organizationId, platform: platform ?? null };
     const pTypes = { platform: 'STRING' };
     const platCond = `AND (@platform IS NULL OR platform = @platform)`;
@@ -20,7 +29,7 @@ export function createDashboardRepository({ bq, projectId }) {
         COUNT(*)           AS orders
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        ${dateCond}
         ${notIgnored}
         ${platCond}
       GROUP BY week_start
@@ -31,7 +40,7 @@ export function createDashboardRepository({ bq, projectId }) {
       SELECT platform, SUM(quantity_sold) AS units_sold, COUNT(*) AS order_count
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        ${dateCond}
         AND platform IS NOT NULL
         ${notIgnored}
         ${platCond}
@@ -43,7 +52,7 @@ export function createDashboardRepository({ bq, projectId }) {
       SELECT sku, SUM(quantity_sold) AS units_sold
       FROM ${ordTable}
       WHERE organization_id = @organizationId
-        AND SAFE_CAST(order_date AS DATE) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${safeWeeks} WEEK)
+        ${dateCond}
         ${notIgnored}
         ${platCond}
       GROUP BY sku
@@ -90,7 +99,7 @@ export function createDashboardRepository({ bq, projectId }) {
       FROM monthly_totals t
       LEFT JOIN top_platform p USING (month)
       ORDER BY t.month DESC
-      LIMIT 12
+      LIMIT ${isAllTime ? 240 : 12}
     `;
 
     const run = (query, label) =>

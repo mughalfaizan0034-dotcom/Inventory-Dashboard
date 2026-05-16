@@ -46,22 +46,28 @@ const Dashboard = (() => {
 
   const PLATFORM_COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#64748b'];
 
+  // value:0 = "All time" sentinel — backend route accepts weeks=0 and
+  // drops the trailing-N-weeks date filter entirely.
   const WOW_RANGES = [
     { value: 4,  label: 'Last 4 weeks'  },
     { value: 8,  label: 'Last 8 weeks'  },
     { value: 12, label: 'Last 12 weeks' },
     { value: 24, label: 'Last 24 weeks' },
     { value: 52, label: 'Last 52 weeks' },
+    { value: 0,  label: 'All time'      },
   ];
   const MOM_RANGES = [
     { value: 2,  label: 'Last 2 months'  },
     { value: 4,  label: 'Last 4 months'  },
     { value: 6,  label: 'Last 6 months'  },
     { value: 12, label: 'Last 12 months' },
+    { value: 0,  label: 'All time'       },
   ];
 
   function _weeksParam() {
-    return _mode === 'wow' ? _weeks : Math.round(_months * 4.33);
+    if (_mode === 'wow') return _weeks;       // 0 → all-time sentinel
+    if (_months === 0)   return 0;            // MoM all-time
+    return Math.round(_months * 4.33);
   }
 
   function _updateRangeSelect() {
@@ -134,14 +140,22 @@ const Dashboard = (() => {
       sold   = weekly.map(w => w.units_sold  || 0);
       orders = weekly.map(w => w.order_count || 0);
     } else {
-      const monthly = [...(data.monthly || [])].slice(0, _months).reverse();
+      // _months === 0 → "All time": show every month the backend returned.
+      const monthsAll = data.monthly || [];
+      const take      = _months === 0 ? monthsAll.length : _months;
+      const monthly   = [...monthsAll].slice(0, take).reverse();
       labels = monthly.map(m => m.month_label || m.month || '');
       sold   = monthly.map(m => m.units_sold  || 0);
       orders = monthly.map(m => m.order_count || 0);
     }
 
     const titleEl = document.getElementById('chart-trend-title');
-    if (titleEl) titleEl.textContent = _mode === 'wow' ? 'Weekly Sales' : 'Monthly Sales';
+    if (titleEl) {
+      const isAll = (_mode === 'wow' && _weeks === 0) || (_mode === 'mom' && _months === 0);
+      titleEl.textContent = isAll
+        ? (_mode === 'wow' ? 'Weekly Sales — All time' : 'Monthly Sales — All time')
+        : (_mode === 'wow' ? 'Weekly Sales'             : 'Monthly Sales');
+    }
 
     _weeklyChart = new Chart(canvas, {
       type: 'bar',
@@ -331,7 +345,10 @@ const Dashboard = (() => {
     });
 
     if (rangeSel) rangeSel.addEventListener('change', e => {
-      const v = parseInt(e.target.value) || 12;
+      // value="0" is the All-time sentinel — don't fall back to 12 (the `|| 12`
+      // bug that 0 is falsy in JS would silently swallow this choice).
+      const parsed = parseInt(e.target.value, 10);
+      const v = Number.isFinite(parsed) ? parsed : 12;
       if (_mode === 'wow') _weeks = v; else _months = v;
       _loadCharts();
     });
