@@ -2,16 +2,13 @@ export function safeString(value) {
   return String(value ?? '').trim();
 }
 
-// Box number canonicalization.
+// Box number canonicalization (used by inventory uploads).
 //
-// The canonical storage form for inventory.box_number AND orders.shipped_from_box
-// is the bare digits (e.g. "20"). Downstream SQL prefixes "ARA" when constructing
-// effective SKUs:
-//     CONCAT('ARA', shipped_from_box, '-', part_number, '-', upc)
-//
-// Users sometimes paste the full SKU ("ARA20-4060915-037256018282") or the
-// "ARA20" prefix form into this column. Without normalization that produces
-// "ARAARA20-..." (the bug observed in production). Extract the bare digits.
+// The canonical storage form for inventory.box_number is the bare digits
+// (e.g. "20"). Downstream SQL prefixes "ARA" when constructing effective
+// SKUs. Users sometimes paste the full SKU ("ARA20-4060915-037256018282")
+// or the "ARA20" prefix form into this column — without normalization
+// that produces "ARAARA20-..." (the bug observed in production).
 //
 // Accepted inputs:
 //   "20"                                  → "20"
@@ -26,40 +23,33 @@ export function normalizeBoxNumber(value) {
   return m ? m[1] : str;
 }
 
-// Resolve operator-supplied "shipped SKU" into one of two storage columns:
+// Normalize the operator-supplied "shipped SKU" override into the canonical
+// storage form for the orders.shipped_sku column. Three accepted forms:
 //
-//   shipped_from_box     — bare box digits, used to rebuild the effective SKU
-//                          with the ORIGINAL part-UPC suffix (same-part override)
-//   shipped_sku_override — the full alternate SKU, used verbatim
-//                          (wrong-part override: different part and/or UPC)
+//   "20"                              → "20"          (box-only override)
+//   "ARA20"                           → "20"          (box-only override, prefix stripped)
+//   "ARA20-4060915-037256018282"      → "ARA20-..."   (full SKU override, verbatim)
+//   "" / whitespace                   → null
 //
-// Detection (operator intent):
-//   - Empty / whitespace             → both null
-//   - Bare digits ("20") / "ARA20"   → box-only path
-//   - Full SKU "ARA{n}-{part}-{upc}" → override path (status derivation happens
-//                                      in SQL by comparing the part-UPC suffix
-//                                      to the original SKU)
-//   - Anything else                  → preserved in shipped_from_box for
-//                                      legacy compatibility
-export function resolveShippedTarget(value) {
+// SQL effectiveSkuSql() and wrongPartSql() parse these forms at query time
+// (see src/utils/skuPatterns.js). Anything that doesn't match either pattern
+// is preserved as-is for forward-compatibility with future override shapes.
+export function normalizeShippedSku(value) {
   const str = safeString(value);
-  if (!str) return { shipped_from_box: null, shipped_sku_override: null };
+  if (!str) return null;
 
-  // Bare box digits or "ARA20" with no suffix → box-only override.
+  // Bare digits → store digits.
+  if (/^\d+$/.test(str)) return str;
+
+  // "ARA20" with no part-upc suffix → strip prefix, store digits.
   const boxOnly = str.match(/^ARA(\d+)$/i);
-  if (boxOnly)             return { shipped_from_box: boxOnly[1],    shipped_sku_override: null };
-  if (/^\d+$/.test(str))   return { shipped_from_box: str,           shipped_sku_override: null };
+  if (boxOnly) return boxOnly[1];
 
-  // Full ARA SKU (has a part-UPC suffix) → store as full-SKU override.
-  // Whether this counts as "wrong part" vs "same part different box" is
-  // decided in SQL at query time by comparing part-UPC suffixes against
-  // the original ordered sku — we don't need to know that here.
-  if (/^ARA\d+-.+-.+$/i.test(str)) {
-    return { shipped_from_box: null, shipped_sku_override: str };
-  }
+  // Full SKU "ARA{n}-{part}-{upc}" → verbatim.
+  if (/^ARA\d+-.+-.+$/i.test(str)) return str;
 
-  // Unknown form (e.g. "BX-001"). Preserve in legacy box column.
-  return { shipped_from_box: str, shipped_sku_override: null };
+  // Unknown form (e.g. "BX-001") — preserve so legacy uploads don't break.
+  return str;
 }
 
 export function parsePositiveInt(raw, field, rowNum) {

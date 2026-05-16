@@ -43,7 +43,7 @@ import { effectiveSkuSql } from '../utils/skuPatterns.js';
  *   Units Sold  = Sold matched + Unknown                   (orders)
  *               = Fulfilled + Phantom + Unknown            (combining)
  */
-export function createInventoryMetricsService({ bq, projectId }) {
+export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
   const invTable = `\`${projectId}.${TABLES.INVENTORY}\``;
   const ordTable = `\`${projectId}.${TABLES.ORDERS}\``;
 
@@ -58,17 +58,28 @@ export function createInventoryMetricsService({ bq, projectId }) {
       GROUP BY effective_sku
     )`;
 
-  // Inventory aggregated by SKU.
-  const _invAggCTE = () => `
+  // Inventory aggregated by SKU. When the caller passes a structure regex
+  // it is bound as @sku_regex and the placeholder check is OR'd with a
+  // REGEXP_CONTAINS test so structurally-invalid SKUs roll into the same
+  // "undefined" bucket — single source of truth for the Undefined KPI.
+  const _invAggCTE = (regexParam) => `
     inv_agg AS (
       SELECT
         sku,
         SUM(quantity)         AS sku_qty,
-        ${isUndefinedSql('sku')} AS sku_is_undefined
+        ${isUndefinedSql('sku', regexParam ? { regexParam } : {})} AS sku_is_undefined
       FROM ${invTable}
       WHERE organization_id = @organizationId
       GROUP BY sku
     )`;
+
+  // Resolve the org's compiled regex (cached in the repo). Returns null
+  // when no structure is configured — callers should skip the param.
+  async function _resolveSkuRegex(organizationId) {
+    if (!orgsRepo?.getSkuRegex) return null;
+    try { return await orgsRepo.getSkuRegex(organizationId); }
+    catch { return null; }
+  }
 
   // Per-SKU pivot row: one row per distinct SKU, with the user's pivot
   // formulas applied to (sku_qty, ordered).

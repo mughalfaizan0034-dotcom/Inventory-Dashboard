@@ -130,7 +130,7 @@ export async function buildApp() {
     const orgsRepo         = createOrganizationsRepository(deps);
     const usersRepo        = createUsersRepository(deps);
     const membershipsRepo  = createMembershipsRepository(deps);
-    const inventoryRepo    = createInventoryRepository(deps);
+    const inventoryRepo    = createInventoryRepository({ ...deps, orgsRepo });
     const ordersRepo       = createOrdersRepository(deps);
     const dashboardRepo    = createDashboardRepository(deps);
     const uploadsRepo      = createUploadsRepository(deps);
@@ -142,7 +142,7 @@ export async function buildApp() {
     const authService      = createAuthService({ usersRepo, membershipsRepo });
     const inventoryService = createInventoryService({ inventoryRepo });
     const ordersService    = createOrdersService({ ordersRepo });
-    const metricsService   = createInventoryMetricsService(deps);
+    const metricsService   = createInventoryMetricsService({ ...deps, orgsRepo });
     const dashboardService = createDashboardService({ dashboardRepo, metricsService });
     const uploadsService   = createUploadsService({ uploadsRepo });
     const usersService     = createUsersService({ usersRepo, membershipsRepo, usernameService });
