@@ -156,7 +156,7 @@ const Orders = (() => {
 
       const orderIdRaw  = row.order_id || '';
       const orderIdCell = orderIdRaw
-        ? `<span style="font-family:'Courier New',monospace;font-size:12px;color:var(--txt-1);font-weight:500" title="${Utils.escapeHtml(orderIdRaw)}">${Utils.escapeHtml(orderIdRaw)}</span>`
+        ? `<span style="font-family:var(--font-number);font-variant-numeric:tabular-nums;font-size:12px;color:var(--txt-1);font-weight:500" title="${Utils.escapeHtml(orderIdRaw)}">${Utils.escapeHtml(orderIdRaw)}</span>`
         : `<span style="color:var(--txt-4)">—</span>`;
 
       return `<tr data-row-id="${Utils.escapeHtml(id)}"
