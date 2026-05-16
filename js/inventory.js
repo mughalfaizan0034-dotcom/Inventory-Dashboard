@@ -299,17 +299,26 @@ const BoxLookup = (() => {
   return { init, search, reset };
 })();
 
-/* ── Inventory List page ────────────────────────────────────── */
+/* ── SKU View page (centralized SKU-level inventory analytics) ───────
+   Single source of truth: backend metricsService.getSkuSummary, which
+   reuses the SAME pivot CTEs that drive dashboard KPIs. The frontend is
+   a rendering layer only — no grouping, no aggregate math, no row-level
+   phantom assignment. Click a row to drill into the raw upload entries
+   behind that SKU (the one place raw rows are still surfaced). */
 const InventoryList = (() => {
   let _page          = 1;
   let _search        = '';
   let _total         = 0;
   let _loading       = false;
-  let _sortBy        = 'date_added';
-  let _sortDir       = 'desc';
+  // SKU view sorts on pivot fields, not raw row fields.
+  let _sortBy        = 'sku';
+  let _sortDir       = 'asc';
   let _statusFilter  = 'all';
 
-  const COLS = ['UID', 'SKU', 'Box #', 'Part #', 'UPC', 'Initial', 'Remaining', 'Date Added', 'Notes', ''];
+  // Header columns: chevron · SKU · Total · Sold · Phantom · Remaining · Boxes · Last Added
+  const COL_COUNT = 8;
+  // Cache of raw rows per SKU so re-expanding a row doesn't refetch.
+  const _rawCache = new Map();
 
   /* ── Undefined SKU check ─────────────────────────────────── */
   // Mirror of server/src/utils/inventoryPatterns.js. Keep in sync.
