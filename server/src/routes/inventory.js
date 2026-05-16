@@ -101,6 +101,39 @@ export async function inventoryRoutes(fastify, { inventoryService, metricsServic
     }
   });
 
+  // Raw-rows export for every SKU under the SKU View's current filter.
+  // Backs the "Inventory List" option in the export chooser modal — the
+  // operator stays in the SKU intelligence view but downloads the full
+  // audit trail (every raw upload row with its UID).
+  fastify.get('/sku-summary/export-raw', { preHandler: [authenticate] }, async (request, reply) => {
+    const rawExportSchema = z.object({
+      search: z.string().optional(),
+      status: z.enum(['all','in_stock','oos','phantom','undefined']).optional().default('all'),
+    });
+    const parsed = rawExportSchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: 'Invalid query parameters' });
+    }
+    try {
+      const rows = await metricsService.getRawRowsForFilteredSkus(request.user.organization_id, parsed.data);
+      const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const header = 'UID,SKU,Box #,Part #,UPC,Initial Stock,Date Added,Notes';
+      const lines  = rows.map(r => [
+        r.row_uid, r.sku, r.box_number, r.part_number, r.upc,
+        r.quantity, r.date_added, r.notes,
+      ].map(esc).join(','));
+      const isFiltered = parsed.data.search || parsed.data.status !== 'all';
+      const filename   = `inventory_list_${isFiltered ? 'filtered_' : ''}export_${new Date().toISOString().slice(0,10)}.csv`;
+      const csv        = '﻿' + [header, ...lines].join('\n');
+      reply.header('Content-Type', 'text/csv; charset=utf-8');
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      return reply.send(csv);
+    } catch (err) {
+      request.log.error({ err }, 'Inventory List (raw) export error');
+      return reply.code(500).send({ success: false, error: 'Internal server error' });
+    }
+  });
+
   // Raw inventory rows for a single SKU — drives the SKU-row drilldown.
   fastify.get('/by-sku', { preHandler: [authenticate] }, async (request, reply) => {
     const sku = (request.query.sku || '').trim();
