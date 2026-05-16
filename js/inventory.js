@@ -509,10 +509,7 @@ const InventoryList = (() => {
       }).join('');
 
       drillTr.querySelector('td').innerHTML = `
-        <div style="padding:6px 14px 12px 38px">
-          <div style="font-size:11px;color:var(--txt-4);text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:6px 0">
-            Raw upload rows · ${rows.length}
-          </div>
+        <div style="padding:8px 14px 12px 38px">
           <table class="data-table" style="width:100%;background:#fff;border:1px solid var(--border);border-radius:6px;overflow:hidden">${head}<tbody>${body}</tbody></table>
         </div>`;
 
