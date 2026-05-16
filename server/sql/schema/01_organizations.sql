@@ -7,6 +7,10 @@
 -- All other rows in every other table reference organization_id.
 -- ============================================================
 
+-- created_at is NOT NULL but has no column-level DEFAULT — BigQuery rejects
+-- DEFAULT CURRENT_TIMESTAMP() at parse time in some project configurations.
+-- organizationsRepository.insert() always supplies CURRENT_TIMESTAMP() in the
+-- VALUES list, so the column is effectively always populated at write time.
 CREATE TABLE IF NOT EXISTS `patman-inventory.patman_inventory.organizations` (
   organization_id  STRING    NOT NULL,
   slug             STRING    NOT NULL,
@@ -18,7 +22,7 @@ CREATE TABLE IF NOT EXISTS `patman-inventory.patman_inventory.organizations` (
   -- the compiled regex is also embedded inside the JSON so query-time SQL does
   -- not need to recompile per request.
   sku_structure    STRING,
-  created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP()
+  created_at       TIMESTAMP NOT NULL
 );
 
 -- Uniqueness contracts enforced by application code (BigQuery does not enforce):
