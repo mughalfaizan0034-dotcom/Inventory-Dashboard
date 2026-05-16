@@ -3,16 +3,37 @@ import { AppError } from '../utils/errors.js';
 import { normalizeStructureForStorage } from '../utils/skuValidator.js';
 import { z } from 'zod';
 
-// Per-org SKU structure config. All fields optional — admins can submit a
-// partial object and the validator fills sensible defaults. enabled:false
-// (or omitting prefixes) keeps validation off without removing the config.
+// Per-org SKU structure config. Two shapes are accepted:
+//
+//   v2 (segment-based, canonical going forward):
+//     { version:2, enabled, case_insensitive, separators:[…], segments:[…] }
+//
+//   v1 (legacy, still accepted for back-compat with existing clients):
+//     { enabled, prefixes, separator, box_pattern, upc_pattern, part_pattern }
+//
+// Either is normalized to v2 server-side by normalizeStructureForStorage().
+const segmentSchema = z.object({
+  id:                 z.string().optional(),
+  type:               z.enum(['identifier', 'part_number', 'upc', 'box', 'free_text', 'wildcard']),
+  required:           z.boolean().optional(),
+  values:             z.array(z.string().min(1).max(40)).max(32).nullable().optional(),
+  pattern:            z.string().max(200).nullable().optional(),
+  allow_attached_box: z.boolean().optional(),
+});
+
 const skuStructureSchema = z.object({
-  enabled:      z.boolean().optional(),
-  prefixes:     z.array(z.string().min(1).max(16)).max(16).optional(),
-  separator:    z.string().max(4).optional(),
-  box_pattern:  z.string().max(120).optional(),
-  upc_pattern:  z.string().max(120).optional(),
-  part_pattern: z.string().max(120).optional(),
+  // v2 fields
+  version:          z.literal(2).optional(),
+  enabled:          z.boolean().optional(),
+  case_insensitive: z.boolean().optional(),
+  separators:       z.array(z.string().max(4)).max(8).optional(),
+  segments:         z.array(segmentSchema).max(16).optional(),
+  // v1 legacy fields
+  prefixes:         z.array(z.string().min(1).max(16)).max(16).optional(),
+  separator:        z.string().max(4).optional(),
+  box_pattern:      z.string().max(120).optional(),
+  upc_pattern:      z.string().max(120).optional(),
+  part_pattern:     z.string().max(120).optional(),
 }).nullable().optional();
 
 const createOrgSchema = z.object({
