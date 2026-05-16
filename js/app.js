@@ -1691,6 +1691,14 @@ const App = (() => {
 
   function navigate(pageId) {
     if (!PAGES[pageId]) return;
+    // Role gate: bounce to the user's default landing page if they don't have
+    // access to the requested page. This catches bookmarked URLs as well as
+    // stale hashes left over from before a role change.
+    const required = PAGES[pageId].minRole;
+    if (required && !Auth.hasRole(required)) {
+      const fallback = _defaultLandingPage();
+      if (pageId !== fallback) { navigate(fallback); return; }
+    }
 
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -1921,7 +1929,7 @@ const App = (() => {
     Auth.startIdleWatch();
 
     const hash = window.location.hash.replace('#', '');
-    navigate(PAGES[hash] ? hash : 'dashboard');
+    navigate(PAGES[hash] ? hash : _defaultLandingPage());
   }
 
   // Full frontend state reset. Called on org switch BEFORE rendering the new org.
