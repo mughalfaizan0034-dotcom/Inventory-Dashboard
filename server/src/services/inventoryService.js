@@ -34,5 +34,11 @@ export function createInventoryService({ inventoryRepo }) {
     return inventoryRepo.exportAll({ organizationId, ...filters });
   }
 
-  return { list, exportAll, deleteRows, updateRow, findAlternatives };
+  // Raw upload rows for a single SKU (drilldown under the SKU summary).
+  async function listRawBySku(organizationId, sku) {
+    const items = await inventoryRepo.findRawRowsBySku(organizationId, sku);
+    return { items, total: items.length };
+  }
+
+  return { list, exportAll, deleteRows, updateRow, findAlternatives, listRawBySku };
 }

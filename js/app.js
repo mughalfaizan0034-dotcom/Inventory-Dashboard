@@ -1670,7 +1670,7 @@ const App = (() => {
   // only page available to viewers; everything else requires manager+.
   const PAGES = {
     dashboard:   { label: 'Dashboard',      minRole: 'manager', init: () => Dashboard.load() },
-    inventory:   { label: 'Inventory List', minRole: 'manager', init: () => InventoryList.load() },
+    inventory:   { label: 'SKU View',       minRole: 'manager', init: () => InventoryList.load() },
     orders:      { label: 'Orders',         minRole: 'manager', init: () => Orders.load() },
     uploads:     { label: 'Uploads',        minRole: 'manager', init: () => Uploads.loadHistory() },
     settings:    { label: 'Settings',       minRole: 'admin',   init: () => Settings.loadUsers() },

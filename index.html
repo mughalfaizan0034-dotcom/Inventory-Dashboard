@@ -97,9 +97,9 @@
           <span class="nav-icon"><i data-lucide="search" class="icon" style="width:18px;height:18px"></i></span>
           <span class="nav-label">Box Lookup</span>
         </div>
-        <div class="nav-item" data-page="inventory" data-min-role="manager" data-tooltip="Inventory List">
+        <div class="nav-item" data-page="inventory" data-min-role="manager" data-tooltip="SKU View">
           <span class="nav-icon"><i data-lucide="package" class="icon" style="width:18px;height:18px"></i></span>
-          <span class="nav-label">Inventory List</span>
+          <span class="nav-label">SKU View</span>
         </div>
         <div class="nav-item" data-page="orders" data-min-role="manager" data-tooltip="Orders">
           <span class="nav-icon"><i data-lucide="shopping-cart" class="icon" style="width:18px;height:18px"></i></span>
@@ -325,7 +325,10 @@
 
         </div>
 
-        <!-- â”€â”€ Inventory List page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+        <!-- â”€â”€ SKU View page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+        <!-- Canonical SKU-aggregated inventory page. One row per SKU, powered
+             by the same metrics engine that drives dashboard KPIs. Click any
+             row to drill into the raw upload entries behind that SKU. -->
         <div id="page-inventory" class="page">
           <div class="card card-table" style="padding:0">
             <div class="filter-bar" style="flex-wrap:wrap">
@@ -335,10 +338,11 @@
                 </span>
                 <input class="form-input search-input" id="inventory-search" placeholder="Search by SKU, Part #, or UPC&hellip;" style="padding-left:34px">
               </div>
-              <select class="form-select" id="filter-inventory-status" style="width:160px">
-                <option value="all">All Inventory</option>
+              <select class="form-select" id="filter-inventory-status" style="width:180px">
+                <option value="all">All SKUs</option>
                 <option value="in_stock">In Stock</option>
-                <option value="oos">OOS</option>
+                <option value="oos">Out of Stock</option>
+                <option value="phantom">Phantom (Oversold)</option>
                 <option value="undefined">Undefined SKUs</option>
               </select>
               <button class="btn btn-secondary btn-sm" id="inventory-export-btn">
@@ -349,16 +353,14 @@
               <table class="data-table" id="inventory-table">
                 <thead>
                   <tr>
-                    <th style="width:110px">UID</th>
+                    <th style="width:30px"></th>
                     <th data-sort="sku">SKU</th>
-                    <th data-sort="box_number">Box #</th>
-                    <th data-sort="part_number">Part #</th>
-                    <th data-sort="upc">UPC</th>
-                    <th class="num" data-sort="quantity">Initial</th>
-                    <th class="num" data-sort="remaining_stock">Remaining</th>
-                    <th data-sort="date_added">Date Added</th>
-                    <th data-sort="notes">Notes</th>
-                    <th style="width:36px"></th>
+                    <th class="num" data-sort="initial">Total Stock</th>
+                    <th class="num" data-sort="sold">Sold</th>
+                    <th class="num" data-sort="phantom">Phantom</th>
+                    <th class="num" data-sort="remaining">Remaining</th>
+                    <th class="num" data-sort="boxes">Boxes</th>
+                    <th data-sort="last_added">Last Added</th>
                   </tr>
                 </thead>
                 <tbody id="inventory-tbody"></tbody>

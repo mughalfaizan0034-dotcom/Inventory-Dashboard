@@ -9,6 +9,19 @@ const inventoryExportSchema = z.object({
   status:   z.enum(['all','in_stock','oos','undefined']).optional().default('all'),
 });
 
+// SKU View (canonical inventory page): one row per SKU, with the dashboard
+// engine's pivot fields. Sort/filter happen on the pivot so the per-row
+// figures stay consistent with the dashboard sums.
+const positiveInt = z.coerce.number().int().positive();
+const skuSummaryQuerySchema = z.object({
+  page:     positiveInt.optional().default(1),
+  pageSize: positiveInt.max(10000).optional().default(50),
+  search:   z.string().optional(),
+  sort_by:  z.enum(['sku','initial','sold','fulfilled','phantom','remaining','boxes','last_added']).optional().default('sku'),
+  sort_dir: z.enum(['asc','desc']).optional().default('asc'),
+  status:   z.enum(['all','in_stock','oos','phantom','undefined']).optional().default('all'),
+});
+
 const inventoryPatchSchema = z.object({
   sku:        z.string().min(1),
   upc:        z.string().min(1),
@@ -23,7 +36,47 @@ const deleteBodySchema = z.object({
   row_uids: z.array(z.string().min(1)).min(1),
 });
 
-export async function inventoryRoutes(fastify, { inventoryService, activityService, dashboardService }) {
+export async function inventoryRoutes(fastify, { inventoryService, metricsService, activityService, dashboardService }) {
+  // SKU-aggregated view — single source of truth for the Inventory page.
+  // Backed by inventoryMetricsService.getSkuSummary which reuses the
+  // SAME CTEs that drive dashboard KPI sums.
+  fastify.get('/sku-summary', { preHandler: [authenticate] }, async (request, reply) => {
+    const parsed = skuSummaryQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: 'Invalid query parameters', details: parsed.error.flatten() });
+    }
+    const { sort_by, sort_dir, ...rest } = parsed.data;
+    try {
+      const { items, total } = await metricsService.getSkuSummary(request.user.organization_id, {
+        ...rest, sortBy: sort_by, sortDir: sort_dir,
+      });
+      return reply.send({
+        success: true,
+        data: {
+          items, total,
+          page: rest.page, pageSize: rest.pageSize,
+          pages: Math.ceil(total / rest.pageSize) || 1,
+        },
+      });
+    } catch (err) {
+      request.log.error({ err }, 'Inventory SKU summary error');
+      return reply.code(500).send({ success: false, error: 'Internal server error' });
+    }
+  });
+
+  // Raw inventory rows for a single SKU — drives the SKU-row drilldown.
+  fastify.get('/by-sku', { preHandler: [authenticate] }, async (request, reply) => {
+    const sku = (request.query.sku || '').trim();
+    if (!sku) return reply.code(400).send({ success: false, error: 'sku is required' });
+    try {
+      const data = await inventoryService.listRawBySku(request.user.organization_id, sku);
+      return reply.send({ success: true, data });
+    } catch (err) {
+      request.log.error({ err }, 'Inventory by-sku error');
+      return reply.code(500).send({ success: false, error: 'Internal server error' });
+    }
+  });
+
   fastify.get('/', { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = inventoryQuerySchema.safeParse(request.query);
     if (!parsed.success) {

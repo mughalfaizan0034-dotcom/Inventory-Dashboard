@@ -275,5 +275,26 @@ export function createInventoryRepository({ bq, projectId, orgsRepo }) {
     return rows;
   }
 
-  return { findAll, exportAll, deleteByRowUids, updateRow, findAlternativeBoxes };
+  // Raw inventory rows for a single SKU — used by the Inventory (SKU View)
+  // drilldown. Returns every upload entry behind the aggregated row so the
+  // operator can audit / edit / delete individual rows. This is the ONLY
+  // surface that exposes raw rows now that the main list is SKU-aggregated.
+  async function findRawRowsBySku(organizationId, sku) {
+    if (!sku) return [];
+    const query = `
+      SELECT
+        row_uid, sku, upc, part_number, box_number, quantity,
+        date_added, notes, updated_at
+      FROM ${invTable}
+      WHERE organization_id = @organizationId AND sku = @sku
+      ORDER BY COALESCE(updated_at, TIMESTAMP('1970-01-01')) DESC, date_added DESC
+    `;
+    const [rows] = await bq.query({ query, params: { organizationId, sku } });
+    return rows.map(r => ({
+      ...r,
+      updated_at: r.updated_at?.value ?? r.updated_at ?? null,
+    }));
+  }
+
+  return { findAll, exportAll, deleteByRowUids, updateRow, findAlternativeBoxes, findRawRowsBySku };
 }

@@ -299,5 +299,126 @@ export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
     return { stockStatus, healthByMonth };
   }
 
-  return { computeSummary, getStockAnalytics };
+  // ─────────────────────────────────────────────────────────────────────────
+  // getSkuSummary — paginated SKU-level pivot rows for the Inventory List
+  // (SKU View) page. Reuses the EXACT same CTEs that drive the dashboard
+  // KPI sums, so per-row figures and per-org totals can never disagree:
+  //
+  //   row  i: SKU(i).initial / sold / fulfilled / phantom / remaining
+  //   total: SUM over all SKUs (== dashboard KPI values)
+  //
+  // Filtering / sorting / search happen AFTER the pivot so the canonical
+  // metrics are never altered by a UI request — the page is a pure read
+  // of the same dataset.
+  // ─────────────────────────────────────────────────────────────────────────
+  async function getSkuSummary(organizationId, {
+    page = 1, pageSize = 50, search = null, status = 'all',
+    sortBy = 'sku', sortDir = 'asc',
+  } = {}) {
+    const skuRegex   = await _resolveSkuRegex(organizationId);
+    const regexParam = skuRegex ? 'sku_regex' : null;
+    const params     = { organizationId, ...(skuRegex ? { sku_regex: skuRegex } : {}) };
+
+    // Status filters operate on the per-SKU pivot row, not on raw uploads.
+    const whereParts = [];
+    if (search) {
+      // Match SKU, part-UPC suffix, or any of the extras (part_number, upc).
+      whereParts.push('(LOWER(per_sku.sku) LIKE @search OR LOWER(COALESCE(extras.part_number, \'\')) LIKE @search OR LOWER(COALESCE(extras.upc, \'\')) LIKE @search)');
+      params.search = `%${String(search).toLowerCase()}%`;
+    }
+    if (status === 'in_stock')  whereParts.push('per_sku.remaining > 0 AND NOT per_sku.is_undefined');
+    if (status === 'oos')       whereParts.push('per_sku.remaining = 0 AND NOT per_sku.is_undefined');
+    if (status === 'phantom')   whereParts.push('per_sku.phantom > 0');
+    if (status === 'undefined') whereParts.push('per_sku.is_undefined');
+    const whereCond = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+
+    const sortMap = {
+      sku:        'per_sku.sku',
+      initial:    'per_sku.initial',
+      sold:       'per_sku.sold',
+      fulfilled:  'per_sku.fulfilled',
+      phantom:    'per_sku.phantom',
+      remaining:  'per_sku.remaining',
+      boxes:      'extras.boxes_count',
+      last_added: 'extras.last_added_at',
+    };
+    const col = sortMap[sortBy] || 'per_sku.sku';
+    const dir = sortDir === 'desc' ? 'DESC' : 'ASC';
+    const offset = Math.max(0, (page - 1) * pageSize);
+
+    // extras CTE: per-SKU box count + most recent upload date + canonical
+    // part/upc lookups for display. ANY_VALUE is safe here because SKU is
+    // structured as ARA{box}-{part}-{upc}; rows sharing a SKU agree on
+    // part/upc by construction.
+    const baseCTE = `
+      WITH ${_ordersAggCTE()},
+      ${_invAggCTE(regexParam)},
+      ${_perSkuCTE()},
+      extras AS (
+        SELECT
+          sku,
+          COUNT(DISTINCT box_number)        AS boxes_count,
+          MAX(date_added)                   AS last_added_at,
+          ANY_VALUE(part_number)            AS part_number,
+          ANY_VALUE(upc)                    AS upc
+        FROM ${invTable}
+        WHERE organization_id = @organizationId
+        GROUP BY sku
+      )`;
+
+    const dataQuery = `
+      ${baseCTE}
+      SELECT
+        per_sku.sku,
+        per_sku.initial      AS total_stock,
+        per_sku.sold         AS sold_units,
+        per_sku.fulfilled    AS fulfilled_units,
+        per_sku.phantom      AS phantom_units,
+        per_sku.remaining    AS remaining_units,
+        per_sku.is_undefined AS is_undefined,
+        extras.boxes_count   AS boxes_count,
+        extras.last_added_at AS last_added_at,
+        extras.part_number   AS part_number,
+        extras.upc           AS upc
+      FROM per_sku
+      LEFT JOIN extras ON per_sku.sku = extras.sku
+      ${whereCond}
+      ORDER BY ${col} ${dir}, per_sku.sku ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+
+    const countQuery = `
+      ${baseCTE}
+      SELECT COUNT(*) AS total
+      FROM per_sku
+      LEFT JOIN extras ON per_sku.sku = extras.sku
+      ${whereCond}
+    `;
+
+    try {
+      const [rows, countRows] = await Promise.all([
+        bq.query({ query: dataQuery,  params }),
+        bq.query({ query: countQuery, params }),
+      ]);
+      return {
+        items: rows[0].map(r => ({
+          ...r,
+          total_stock:     Number(r.total_stock     ?? 0),
+          sold_units:      Number(r.sold_units      ?? 0),
+          fulfilled_units: Number(r.fulfilled_units ?? 0),
+          phantom_units:   Number(r.phantom_units   ?? 0),
+          remaining_units: Number(r.remaining_units ?? 0),
+          boxes_count:     Number(r.boxes_count     ?? 0),
+          is_undefined:    !!r.is_undefined,
+          last_added_at:   r.last_added_at?.value ?? r.last_added_at ?? null,
+        })),
+        total: Number(countRows[0][0]?.total ?? 0),
+      };
+    } catch (err) {
+      console.error('[inventoryMetrics.getSkuSummary] failed:', err?.message ?? err);
+      return { items: [], total: 0 };
+    }
+  }
+
+  return { computeSummary, getStockAnalytics, getSkuSummary };
 }

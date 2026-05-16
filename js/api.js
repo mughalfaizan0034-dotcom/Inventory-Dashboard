@@ -292,6 +292,10 @@ const API = (() => {
     /* Inventory */
     async searchBox(query)                                    { return _crGet('/inventory', { search: query, pageSize: 10, page: 1 }); },
     async getInventoryList(page=1, pageSize=CONFIG.PAGE_SIZE, search='', options={}) { return _crGet('/inventory', { page, pageSize, search, ...options }); },
+    // SKU View — canonical inventory page, one row per SKU. Backed by the
+    // same metrics engine that powers dashboard KPIs.
+    async getSkuSummary(page=1, pageSize=CONFIG.PAGE_SIZE, search='', options={}) { return _crGet('/inventory/sku-summary', { page, pageSize, search, ...options }); },
+    async getRawRowsBySku(sku)                                                    { return _crGet('/inventory/by-sku', { sku }); },
     async exportInventory(filters={}) { return _crGetBlob('/inventory/export', filters); },
 
     /* Orders */
