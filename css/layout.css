@@ -244,7 +244,9 @@ body.sidebar-collapsed .nav-item:hover::after { opacity: 1; }
 body.sidebar-collapsed .sidebar-footer      { padding: 12px 4px; }
 body.sidebar-collapsed .sidebar-user        { justify-content: center; padding: 8px 0; }
 body.sidebar-collapsed .sidebar-user-info   { display: none; }
-body.sidebar-collapsed .sidebar-logout      { display: none; }
+/* Sign out collapses to icon-only and stays visible — same treatment as
+   the nav items above (.nav-item rules drive the label hide + tooltip). */
+body.sidebar-collapsed .sidebar-logout      { justify-content: center; padding: 10px 0; }
 
 
 .sidebar-footer {
@@ -276,6 +278,27 @@ body.sidebar-collapsed .sidebar-logout      { display: none; }
 
 .sidebar-user-name { font-size: 13px; font-weight: 600; color: var(--txt-1); line-height: 1.2; }
 .sidebar-user-role { font-size: 11px; color: var(--txt-4); text-transform: capitalize; }
+
+/* Sign out — reuses .nav-item styling so it aligns visually with the
+   sidebar's main nav, but it's a <button>. Reset native button defaults
+   and add a destructive-tint hover so it reads as a separate action. */
+button.nav-item.sidebar-logout {
+  width: 100%;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-family: inherit;
+  margin-top: 4px;
+}
+button.nav-item.sidebar-logout:hover {
+  background: var(--error-50, #fef2f2);
+  color: var(--error, #dc2626);
+}
+button.nav-item.sidebar-logout:hover .nav-icon { opacity: 1; color: var(--error, #dc2626); }
+button.nav-item.sidebar-logout:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 
 /* ── Main wrapper ───────────────────────────────────────────── */
 .main-wrapper {
@@ -657,7 +680,7 @@ body.sidebar-mobile-open .sidebar-backdrop {
   body.sidebar-collapsed .nav-item           { justify-content: flex-start; padding: 9px 12px; }
   body.sidebar-collapsed .nav-label          { opacity: 1; max-width: none; }
   body.sidebar-collapsed .sidebar-user-info  { display: block; }
-  body.sidebar-collapsed .sidebar-logout     { display: flex; }
+  body.sidebar-collapsed .sidebar-logout     { justify-content: flex-start; padding: 9px 12px; }
 
   /* In off-canvas mode the in-sidebar toggle hides — topbar hamburger handles open. */
   .sidebar-toggle { display: none; }
