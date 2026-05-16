@@ -257,7 +257,12 @@ const Orders = (() => {
 
   function _showSkuPopover(cell, allOptions, pendingBoxInit, onConfirm) {
     _closeBoxPopover();
-    let pendingBox = pendingBoxInit;
+    // initialBox = what the row currently uses (either the feed-file SKU or
+    // a prior popover override). Confirm stays disabled until the operator
+    // picks something different — both the "only one option" case AND the
+    // "clicked the already-selected option" case collapse to: nothing to save.
+    const initialBox = pendingBoxInit;
+    let pendingBox   = pendingBoxInit;
     const pop = document.createElement('div');
     pop.style.cssText = 'position:fixed;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.13),0 2px 8px rgba(0,0,0,.07);width:320px;display:flex;flex-direction:column;z-index:10001;font-family:inherit;font-size:13px;overflow:hidden';
 
@@ -330,7 +335,23 @@ const Orders = (() => {
       confirmBtn.className = 'btn btn-primary btn-sm';
       confirmBtn.style.fontSize = '12px';
       confirmBtn.textContent = 'Confirm';
-      confirmBtn.addEventListener('click', e => { e.stopPropagation(); _closeBoxPopover(); onConfirm(pendingBox); });
+      // No-change guard: when pendingBox equals what the row already uses,
+      // there's nothing to save — disable Confirm and explain via tooltip.
+      const noChange = pendingBox === initialBox;
+      confirmBtn.disabled = noChange;
+      if (noChange) {
+        confirmBtn.title         = allOptions.length <= 1
+          ? 'No alternative fulfillment SKUs available for this part / UPC'
+          : 'Pick a different SKU to enable Confirm';
+        confirmBtn.style.opacity = '0.5';
+        confirmBtn.style.cursor  = 'not-allowed';
+      }
+      confirmBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (confirmBtn.disabled) return;
+        _closeBoxPopover();
+        onConfirm(pendingBox);
+      });
       footer.appendChild(cancelBtn);
       footer.appendChild(confirmBtn);
       pop.appendChild(footer);
