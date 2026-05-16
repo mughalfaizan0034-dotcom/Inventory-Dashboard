@@ -1243,7 +1243,7 @@ const Settings = (() => {
     }
     const myUserId = Auth.getUser()?.user_id;
 
-    const m = new Modal({ title: 'New Organization', maxWidth: '480px' });
+    const m = new Modal({ title: 'New Organization', maxWidth: 'min(960px, 90vw)' });
     m.setBody(`
       <form data-form="new-org" autocomplete="off">
         <div class="form-group">
@@ -1361,7 +1361,7 @@ const Settings = (() => {
         .map(u => u.user_id)
     );
 
-    const m = new Modal({ title: `Edit Organization: ${org.display_name}`, maxWidth: '500px' });
+    const m = new Modal({ title: `Edit Organization: ${org.display_name}`, maxWidth: 'min(960px, 90vw)' });
 
     // Deactivated orgs render in read-only mode with a single Activate
     // action. Active orgs render the full editor with Save + Deactivate.
