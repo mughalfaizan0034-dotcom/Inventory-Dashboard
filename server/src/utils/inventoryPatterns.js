@@ -1,12 +1,17 @@
 /**
  * inventoryPatterns — single source of truth for "undefined SKU" detection.
  *
- * An inventory row is classified as undefined when ANY of its identifying
- * columns (sku, upc, part_number) contains an empty / placeholder value.
- * These values are common artifacts of CSV exports (Excel, Google Sheets,
- * Amazon Seller Central) and tab-delimited uploads.
+ * An inventory row is classified as undefined when EITHER:
  *
- * Patterns matched (case-insensitive, whitespace-trimmed):
+ *   (a) ANY of its identifying columns (sku, upc, part_number) contains an
+ *       empty / placeholder value — common artifacts of CSV exports (Excel,
+ *       Google Sheets, Amazon Seller Central) and tab-delimited uploads.
+ *
+ *   (b) The SKU fails the organization's configured structure regex (see
+ *       server/src/utils/skuValidator.js). When the org has no structure
+ *       configured, only check (a) applies — legacy behavior.
+ *
+ * Placeholder values (case-insensitive, whitespace-trimmed):
  *   ''         — empty / null
  *   '"'        — single double-quote (CSV import remnant)
  *   '""'       — double double-quote (CSV import remnant)
@@ -16,31 +21,75 @@
  *   '#N/A'     — Excel error-code variant
  *
  * IMPORTANT: every SQL query that classifies undefined rows MUST use
- * isUndefinedSql() so the rules stay consistent. The frontend mirror
- * lives in js/inventory.js — keep both lists in sync.
+ * isUndefinedSql() / isUndefinedRowSql() so the rules stay consistent
+ * across pages. Frontend mirror lives in js/inventory.js.
+ *
+ * Structure-regex param contract:
+ *   - Pass { regexParam: 'sku_regex' } to add a "OR NOT REGEXP_CONTAINS(sku, @sku_regex)"
+ *     clause that fires only when the SKU column is the one being checked AND
+ *     the regex parameter is non-empty. The caller MUST bind @sku_regex when
+ *     using this option; the SQL is COALESCE-guarded so a NULL/empty param
+ *     leaves the predicate equivalent to the placeholder-only check.
  */
 
 const UNDEFINED_PATTERN_LIST = ["''", "'\"'", "'\"\"'", "'NA'", "'N/A'", "'#NA'", "'#N/A'"];
 
 /**
  * Build the IN-clause comparison SQL fragment for a single column.
- *   isUndefinedSql('sku')  →  UPPER(TRIM(COALESCE(sku, ''))) IN ('','"','""','NA','N/A','#NA','#N/A')
+ *
+ *   isUndefinedSql('sku')
+ *     → UPPER(TRIM(COALESCE(sku, ''))) IN ('','"','""','NA','N/A','#NA','#N/A')
+ *
+ *   isUndefinedSql('sku', { regexParam: 'sku_regex' })
+ *     → (
+ *         UPPER(TRIM(COALESCE(sku, ''))) IN ('','"','""','NA','N/A','#NA','#N/A')
+ *         OR (
+ *           COALESCE(@sku_regex, '') != ''
+ *           AND NOT REGEXP_CONTAINS(IFNULL(sku, ''), @sku_regex)
+ *         )
+ *       )
+ *
+ * The regex addendum only fires for the SKU column — UPC and part-number
+ * have their own validation domain and are not subject to the SKU pattern.
+ * Caller indicates "this is the SKU column" by passing the `isSku: true`
+ * option (default true when the column literal ends with 'sku').
  */
-export function isUndefinedSql(column) {
-  return `UPPER(TRIM(COALESCE(${column}, ''))) IN (${UNDEFINED_PATTERN_LIST.join(', ')})`;
+export function isUndefinedSql(column, opts = {}) {
+  const placeholderClause = `UPPER(TRIM(COALESCE(${column}, ''))) IN (${UNDEFINED_PATTERN_LIST.join(', ')})`;
+
+  const isSku = opts.isSku !== undefined
+    ? Boolean(opts.isSku)
+    : /(^|\.)sku$/i.test(String(column));
+
+  if (!opts.regexParam || !isSku) return placeholderClause;
+
+  const param = String(opts.regexParam).replace(/[^a-zA-Z0-9_]/g, '');
+  return `(
+    ${placeholderClause}
+    OR (
+      COALESCE(@${param}, '') != ''
+      AND NOT REGEXP_CONTAINS(IFNULL(${column}, ''), @${param})
+    )
+  )`;
 }
 
 /**
  * Build the full "row is undefined" predicate across sku, upc, part_number.
- *   isUndefinedRowSql('i')  →  (i.sku IN (...) OR i.upc IN (...) OR i.part_number IN (...))
+ *
+ *   isUndefinedRowSql('i')
+ *     → (i.sku placeholder OR i.upc placeholder OR i.part_number placeholder)
+ *
+ *   isUndefinedRowSql('i', { regexParam: 'sku_regex' })
+ *     → adds the structure-regex check onto the i.sku clause only.
  *
  * @param {string} alias - table alias (e.g. 'i') or empty string for unqualified columns.
+ * @param {{ regexParam?: string }} opts
  */
-export function isUndefinedRowSql(alias = '') {
+export function isUndefinedRowSql(alias = '', opts = {}) {
   const p = alias ? `${alias}.` : '';
   return `(
-    ${isUndefinedSql(`${p}sku`)}
-    OR ${isUndefinedSql(`${p}upc`)}
-    OR ${isUndefinedSql(`${p}part_number`)}
+    ${isUndefinedSql(`${p}sku`, { ...opts, isSku: true })}
+    OR ${isUndefinedSql(`${p}upc`, { isSku: false })}
+    OR ${isUndefinedSql(`${p}part_number`, { isSku: false })}
   )`;
 }
