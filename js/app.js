@@ -141,10 +141,10 @@ const Settings = (() => {
   function _defaultSegmentForType(type) {
     const seg = { id: `seg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, type, required: true, values: null, pattern: null, prefix_separator: '-', allow_attached_box: false };
     if (type === 'identifier')  { seg.values = ['ARA']; seg.allow_attached_box = true; }
-    if (type === 'part_number') { seg.pattern = '[A-Z0-9]+'; }
-    if (type === 'upc')         { seg.pattern = '\\d+';     }
-    if (type === 'box')         { seg.pattern = '\\d+';     }
-    if (type === 'free_text')   { seg.pattern = '[^\\s\\-_]+'; }
+    if (type === 'part_number') { seg.pattern = '[A-Z0-9]+'; }      // "Letters & numbers"
+    if (type === 'upc')         { seg.pattern = '\\d+';     }       // "Numbers only"
+    if (type === 'box')         { seg.pattern = '\\d+';     }       // "Numbers only"
+    if (type === 'free_text')   { seg.pattern = '[^\\s]+';  }       // "Any (non-space)" — clean form
     if (type === 'wildcard')    { seg.required = false; }
     return seg;
   }
@@ -186,26 +186,21 @@ const Settings = (() => {
           <span>Allow attached box (ARA1 ≡ ARA-1)</span>
         </label>`;
     } else if (seg.type === 'wildcard') {
-      detail = `<div class="form-hint" style="font-size:11px;padding:8px 0">Matches anything in this position.</div>`;
+      detail = `<div class="form-hint" style="font-family:var(--font-body);font-size:11.5px;font-weight:400;padding:8px 0">Matches anything in this position.</div>`;
     } else {
       const { format, min, max } = _detectFormatFromPattern(seg.pattern);
       const fmtOpts = FORMAT_OPTIONS.map(o =>
         `<option value="${o.value}"${o.value === format ? ' selected' : ''}>${Utils.escapeHtml(o.label)}</option>`
       ).join('');
       detail = `
-        <div style="display:grid;grid-template-columns:1fr 64px 64px;gap:6px;align-items:center">
-          <select class="form-select" data-seg-format style="font-size:12px;padding:6px 8px">${fmtOpts}</select>
+        <div style="display:grid;grid-template-columns:1fr 80px 80px;gap:8px;align-items:center">
+          <select class="form-select" data-seg-format style="font-family:var(--font-body);font-size:13px;font-weight:500;padding:7px 10px">${fmtOpts}</select>
           <input class="form-input" data-seg-min type="number" min="0" placeholder="Min" value="${Utils.escapeHtml(String(min))}"
-                 style="font-size:12px;padding:6px 8px;text-align:center" title="Minimum length (optional)">
+                 style="font-family:var(--font-body);font-size:13px;font-weight:500;padding:7px 10px;text-align:center" title="Minimum length (optional)">
           <input class="form-input" data-seg-max type="number" min="0" placeholder="Max" value="${Utils.escapeHtml(String(max))}"
-                 style="font-size:12px;padding:6px 8px;text-align:center" title="Maximum length (optional)">
+                 style="font-family:var(--font-body);font-size:13px;font-weight:500;padding:7px 10px;text-align:center" title="Maximum length (optional)">
         </div>
-        <input class="form-input" data-seg-pattern
-          value="${Utils.escapeHtml(seg.pattern || '')}"
-          placeholder="e.g. [A-Z]{3}\\d+"
-          title="Custom regex — only used when Format is set to 'Custom regex…'"
-          style="font-family:monospace;font-size:11.5px;margin-top:6px;${format === 'custom' ? '' : 'display:none'}">
-        <div class="form-hint" style="font-size:10.5px;margin-top:4px;color:var(--txt-4)">
+        <div class="form-hint" style="font-family:var(--font-body);font-size:11px;font-weight:400;margin-top:6px;color:var(--txt-4)">
           Leave Min/Max empty for any length. Identical Min and Max means exact length.
         </div>`;
     }
@@ -392,16 +387,12 @@ const Settings = (() => {
       } else if (type === 'wildcard') {
         seg.pattern = null;
       } else {
-        // Friendly Format/Length pair → rebuild the regex fragment. Custom
-        // route keeps whatever the admin typed in the raw pattern field.
-        const format = row.querySelector('[data-seg-format]')?.value || 'custom';
+        // Pattern is always rebuilt from the friendly Format + Length inputs
+        // — there is no raw-regex field to read from (admins never see regex).
+        const format = row.querySelector('[data-seg-format]')?.value || 'any';
         const min    = row.querySelector('[data-seg-min]')?.value || '';
         const max    = row.querySelector('[data-seg-max]')?.value || '';
-        if (format === 'custom') {
-          seg.pattern = row.querySelector('[data-seg-pattern]')?.value || '';
-        } else {
-          seg.pattern = _patternFromFormat(format, min, max);
-        }
+        seg.pattern = _patternFromFormat(format, min, max);
       }
       return seg;
     });
@@ -484,17 +475,6 @@ const Settings = (() => {
       }
     };
 
-    // Toggle the custom-regex textbox when the Format dropdown changes.
-    // Inline so we don't have to re-render the whole segment row (which would
-    // lose focus mid-edit).
-    rootEl.addEventListener('change', (e) => {
-      if (!e.target.matches('[data-seg-format]')) return;
-      const row = e.target.closest('.sku-seg-row');
-      if (!row) return;
-      const customEl = row.querySelector('[data-seg-pattern]');
-      if (customEl) customEl.style.display = e.target.value === 'custom' ? '' : 'none';
-    });
-
     // Attach listeners on the section's inputs/buttons. Delegated so newly
     // added segment rows pick them up automatically.
     rootEl.addEventListener('input',   refresh);
@@ -532,10 +512,22 @@ const Settings = (() => {
       }
     });
 
-    // Re-render segment row when its type changes (different detail control).
+    // Re-render segment row when its type changes — and reset the pattern to
+    // the new type's default. Without the reset, a segment that switches from
+    // "Free Text" to "Box" would keep the free-text regex, which then shows
+    // up as the wrong Format preset on the next render.
     rootEl.addEventListener('change', (e) => {
       if (!e.target.matches('[data-seg-type]')) return;
+      const row = e.target.closest('.sku-seg-row');
+      if (!row) return;
+      const newType = e.target.value;
       _snapshotSegments(rootEl);
+      const segs = JSON.parse(rootEl.dataset.segments).map(s =>
+        s.id === row.dataset.segId
+          ? { ...s, ..._defaultSegmentForType(newType), id: s.id, prefix_separator: s.prefix_separator }
+          : s
+      );
+      rootEl.dataset.segments = JSON.stringify(segs);
       _renderSegmentList(rootEl);
       refresh();
     });
