@@ -687,7 +687,7 @@ const InventoryList = (() => {
 
     const optionHtml = (key, icon, title, sub, badge) => `
       <button class="export-choice" data-choice="${key}" type="button"
-        style="all:unset;display:flex;align-items:flex-start;gap:14px;width:100%;padding:14px 16px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:#fff;transition:border-color .12s, background .12s, transform .08s">
+        style="all:unset;box-sizing:border-box;display:flex;align-items:flex-start;gap:14px;width:100%;padding:14px 16px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:#fff;transition:border-color .12s, background .12s, transform .08s">
         <span style="flex-shrink:0;width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;background:var(--primary-50);color:var(--primary-text)">
           <i data-lucide="${icon}" class="icon" style="width:18px;height:18px"></i>
         </span>
