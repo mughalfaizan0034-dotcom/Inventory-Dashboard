@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { safeString, parsePositiveInt, normalizeDate, resolveShippedTarget } from '../core/rowNormalizer.js';
+import { safeString, parsePositiveInt, normalizeDate, normalizeShippedSku } from '../core/rowNormalizer.js';
 
 const VALID_ACTIONS = new Set(['Add', 'Update', 'Remove']);
 
@@ -17,10 +17,8 @@ export const ordersSchema = {
       return { error: { row: lineNum, field: 'action', reason: `action must be Add, Update, or Remove (got "${action}")` } };
     }
 
-    // Accept `shipped_sku` as the user-friendly header alongside the legacy
-    // `shipped_from_box`. resolveShippedTarget() splits the value into
-    // EITHER shipped_from_box (bare box digits) OR shipped_sku_override
-    // (full alternate SKU) depending on operator intent.
+    // Accept `shipped_sku` (canonical). Legacy `shipped_from_box` header is
+    // still tolerated for backwards-compatible feed files; the new header wins.
     const shippedRaw = (raw.shipped_sku?.trim?.() ? raw.shipped_sku : raw.shipped_from_box) ?? '';
 
     // `uid` is the INTERNAL row tracker (order_row_id) for Update/Remove.
@@ -51,15 +49,11 @@ export const ordersSchema = {
       }
       if (raw.sku?.trim())      row.sku      = safeString(raw.sku);
       if (raw.platform?.trim()) row.platform = safeString(raw.platform);
-      // Only touch shipped columns when the user actually filled the cell.
-      // Blank cells on Update must NOT wipe an existing override — the TSV
-      // parser always sets undefined columns to '' so we must compare to ''.
-      // When the cell IS filled, resolve to box-only OR full-SKU override
-      // and set BOTH columns so the MERGE clears the unused side.
+      // Only touch shipped_sku when the user actually filled the cell. Blank
+      // cells on Update must NOT wipe an existing override — the TSV parser
+      // always sets undefined columns to '' so we must compare to ''.
       if (shippedRaw && shippedRaw.trim()) {
-        const { shipped_from_box, shipped_sku_override } = resolveShippedTarget(shippedRaw);
-        row.shipped_from_box     = shipped_from_box;
-        row.shipped_sku_override = shipped_sku_override;
+        row.shipped_sku = normalizeShippedSku(shippedRaw);
       }
 
       if (raw.quantity_sold !== undefined && raw.quantity_sold !== '') {
@@ -96,20 +90,18 @@ export const ordersSchema = {
       return { error: { row: lineNum, field: 'platform', value: raw.platform, reason: 'platform is required' } };
     }
 
-    const { shipped_from_box, shipped_sku_override } = resolveShippedTarget(shippedRaw);
     return {
       action,
       row: {
-        order_row_id:         randomUUID(),
-        organization_id:      organizationId,
-        order_id:             safeString(raw.order_id),
-        order_date:           orderDate,
-        sku:                  safeString(raw.sku),
-        quantity_sold:        qty.value,
-        platform:             safeString(raw.platform),
-        shipped_from_box,
-        shipped_sku_override,
-        created_at:           new Date().toISOString(),
+        order_row_id:     randomUUID(),
+        organization_id:  organizationId,
+        order_id:         safeString(raw.order_id),
+        order_date:       orderDate,
+        sku:              safeString(raw.sku),
+        quantity_sold:    qty.value,
+        platform:         safeString(raw.platform),
+        shipped_sku:      normalizeShippedSku(shippedRaw),
+        created_at:       new Date().toISOString(),
       },
     };
   },

@@ -20,9 +20,9 @@ const Orders = (() => {
     return { box: m[1], partNumber: m[2], upc: m[3] };
   }
 
-  // shipped_from_box may arrive as "20", "ARA20", or even "ARA20-part-upc"
-  // when older rows predate the upload normalizer. Strip down to bare digits
-  // so we never render "ARAARA20-..." again.
+  // shipped_sku may arrive as bare digits ("20"), prefix-only ("ARA20"), or
+  // a full SKU ("ARA20-4060915-037256018282"). For the box-only forms we
+  // strip down to digits so we never render "ARAARA20-..." again.
   function _bareBox(v) {
     if (v == null) return '';
     const s = String(v).trim();
@@ -31,14 +31,16 @@ const Orders = (() => {
     return m ? m[1] : s;
   }
 
-  function _getEffectiveSku(sku, shippedFromBox, shippedSkuOverride) {
-    // Full-SKU override (wrong-part scenario) wins — used verbatim.
-    const override = (shippedSkuOverride ?? '').toString().trim();
-    if (override) return override;
-    if (!sku) return '';
+  // Resolve the effective shipped SKU for display. Mirrors the SQL
+  // effectiveSkuSql() logic for the single shipped_sku column.
+  function _getEffectiveSku(sku, shippedSku) {
+    const v = (shippedSku ?? '').toString().trim();
+    // Full SKU override (e.g. wrong-part scenario) → verbatim.
+    if (v && /^ARA\d+-.+-.+$/i.test(v)) return v;
+    if (!sku) return v || '';
     const parsed = _parseSku(sku);
     if (!parsed) return sku;
-    const box = _bareBox(shippedFromBox) || parsed.box;
+    const box = _bareBox(v) || parsed.box;
     return `ARA${box}-${parsed.partNumber}-${parsed.upc}`;
   }
 
@@ -119,14 +121,12 @@ const Orders = (() => {
       const isUnknown   = !!row.is_unknown;
       const isWrongPart = !!row.is_wrong_part;
 
-      const parsedSku  = _parseSku(row.sku || '');
-      const origBox    = parsedSku?.box || '';
-      const skuOverride = row.shipped_sku_override || '';
-      const effectiveShippedSku = _getEffectiveSku(row.sku || '', row.shipped_from_box || '', skuOverride);
-      const shipped    = row.shipped_from_box || '';
+      const parsedSku   = _parseSku(row.sku || '');
+      const origBox     = parsedSku?.box || '';
+      const shippedSku  = row.shipped_sku || '';
+      const effectiveShippedSku = _getEffectiveSku(row.sku || '', shippedSku);
       // "Override" badge: box differs from the ordered SKU's box but the
-      // part-UPC matches (server's is_wrong_part = false). Works for either
-      // column the override landed in: shipped_from_box OR shipped_sku_override.
+      // part-UPC matches (server's is_wrong_part = false).
       const effectiveBox = _parseSku(effectiveShippedSku)?.box || '';
       const isBoxOverride = !isWrongPart && !!origBox && !!effectiveBox && effectiveBox !== origBox;
       let rowClass = isUnknown ? 'row-unknown' : '';
@@ -164,8 +164,7 @@ const Orders = (() => {
                 data-order-id="${Utils.escapeHtml(orderIdRaw)}"
                 data-sku="${Utils.escapeHtml(row.sku || '')}"
                 data-qty="${Utils.escapeHtml(String(row.quantity_sold ?? ''))}"
-                data-shipped="${Utils.escapeHtml(shipped)}"
-                data-sku-override="${Utils.escapeHtml(skuOverride)}"
+                data-shipped-sku="${Utils.escapeHtml(shippedSku)}"
                 data-platform="${Utils.escapeHtml(row.platform || '')}"${trAttr}>
         <td>${uidCell}</td>
         <td>${orderIdCell}</td>
@@ -223,12 +222,12 @@ const Orders = (() => {
     if (_popoverListeners.keydown) { document.removeEventListener('keydown',   _popoverListeners.keydown);  _popoverListeners.keydown  = null; }
   }
 
-  function _restoreShippedCell(cell, boxValue) {
+  function _restoreShippedCell(cell, shippedSkuValue) {
     const sku = cell.closest('tr')?.dataset.sku || '';
     const origBox    = _parseSku(sku)?.box || '';
-    const shippedSku = _getEffectiveSku(sku, boxValue || '');
-    const shipped    = boxValue || '';
-    const isOverride = !!(shipped && shipped !== origBox);
+    const shippedSku = _getEffectiveSku(sku, shippedSkuValue || '');
+    const effBox     = _parseSku(shippedSku)?.box || '';
+    const isOverride = !!effBox && !!origBox && effBox !== origBox;
     cell.innerHTML   = '';
 
     if (isOverride) {
@@ -348,11 +347,13 @@ const Orders = (() => {
   }
 
   async function _openInlineSkuSelector(tr) {
-    const rowId      = tr.dataset.rowId;
-    const sku        = tr.dataset.sku;
-    const parsed     = _parseSku(sku);
-    const currentBox = tr.dataset.shipped || '';
-    const cell       = tr.querySelector('td.shipped-cell');
+    const rowId       = tr.dataset.rowId;
+    const sku         = tr.dataset.sku;
+    const parsed      = _parseSku(sku);
+    // Current stored value is the canonical shipped_sku (bare box for legacy /
+    // popover-driven overrides, full SKU only for wrong-part rows from feed).
+    const currentBox  = _bareBox(tr.dataset.shippedSku || '');
+    const cell        = tr.querySelector('td.shipped-cell');
     if (!cell) return;
 
     if (_activePopover?.dataset?.rowId === rowId) { _closeBoxPopover(); return; }
@@ -393,16 +394,13 @@ const Orders = (() => {
         _restoreShippedCell(cell, newShipped);
         try {
           await API.updateOrder(rowId, {
-            order_date:       tr.dataset.orderDate,
-            quantity_sold:    parseInt(tr.dataset.qty, 10),
-            platform:         tr.dataset.platform,
-            shipped_from_box: newShipped,
-            original_sku:     tr.dataset.sku || '',
+            order_date:    tr.dataset.orderDate,
+            quantity_sold: parseInt(tr.dataset.qty, 10),
+            platform:      tr.dataset.platform,
+            shipped_sku:   newShipped,
+            original_sku:  tr.dataset.sku || '',
           });
-          tr.dataset.shipped = newShipped;
-          // Popover only writes box-only overrides; any prior wrong-part
-          // override is cleared by the backend MERGE — sync the dataset.
-          tr.dataset.skuOverride = '';
+          tr.dataset.shippedSku = newShipped;
           // Reassignment changes inventory deductions → invalidate canonical KPIs.
           MetricsEngine.invalidate();
           Notify.success('Saved', `Fulfillment SKU: ${prevLabel} → ${nextLabel}`);

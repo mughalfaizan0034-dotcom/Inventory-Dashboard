@@ -1,34 +1,25 @@
 import { authenticate, requireRole } from '../middleware/authenticate.js';
 import { z } from 'zod';
-import { resolveShippedTarget } from '../uploads/core/rowNormalizer.js';
+import { normalizeShippedSku } from '../uploads/core/rowNormalizer.js';
 
 const positiveInt = z.coerce.number().int().positive();
 
 const STATUS_VALUES = z.enum(['all', 'normal', 'unknown', 'wrong_part']).optional().default('all');
 
-// Canonical shipped_from_box is bare digits (e.g. "20"). Defensive in case a
-// row already in BigQuery from before the normalization fix holds "ARA20" or
-// "ARA20-part-upc" — strip back to digits before constructing effective SKU.
-const _digitsOnly = (boxRaw) => {
-  if (boxRaw == null) return '';
-  const s = String(boxRaw).trim();
-  if (!s) return '';
-  const m = s.match(/^ARA(\d+)(?:-.*)?$/i);
-  return m ? m[1] : s;
-};
-
-// Build the effective shipped SKU for CSV export.
-// 1. Full-SKU override wins (wrong-part scenario).
-// 2. Box override → rebuild ARA{box}-{part-upc-suffix-of-original}.
-// 3. Otherwise the original SKU is the effective SKU.
-const effectiveShippedSku = (sku, shippedFromBox, shippedSkuOverride) => {
-  const override = String(shippedSkuOverride ?? '').trim();
-  if (override) return override;
-  if (!sku) return '';
-  const m = sku.match(/^ARA(\d+)(-.+)$/);
+// Reconstruct the effective shipped SKU for display / CSV export.
+// Mirrors the SQL effectiveSkuSql logic for the single shipped_sku column:
+//   - empty / null            → original ordered SKU
+//   - full SKU "ARA{n}-..."   → verbatim
+//   - bare digits / "ARA{n}"  → ARA{n}-{original part-upc}
+const effectiveShippedSku = (sku, shippedSku) => {
+  const v = String(shippedSku ?? '').trim();
+  if (!v) return sku || '';
+  if (/^ARA\d+-.+-.+$/i.test(v)) return v;
+  const box = v.match(/^(?:ARA)?(\d+)$/i)?.[1];
+  if (!box || !sku) return sku || v;
+  const m = sku.match(/^ARA\d+(-.+)$/);
   if (!m) return sku;
-  const box = _digitsOnly(shippedFromBox);
-  return box ? `ARA${box}${m[2]}` : sku;
+  return `ARA${box}${m[1]}`;
 };
 
 const ordersExportSchema = z.object({
@@ -36,7 +27,7 @@ const ordersExportSchema = z.object({
   start_date: z.string().optional(),
   end_date:   z.string().optional(),
   search:     z.string().optional(),
-  sort_by:    z.enum(['order_date','sku','quantity_sold','platform','shipped_from_box']).optional().default('order_date'),
+  sort_by:    z.enum(['order_date','sku','quantity_sold','platform','shipped_sku']).optional().default('order_date'),
   sort_dir:   z.enum(['asc','desc']).optional().default('desc'),
   status:     STATUS_VALUES,
 });
@@ -48,7 +39,7 @@ const ordersQuerySchema = z.object({
   start_date: z.string().optional(),
   end_date:   z.string().optional(),
   search:     z.string().optional(),
-  sort_by:    z.enum(['order_date', 'sku', 'quantity_sold', 'platform', 'shipped_from_box']).optional().default('order_date'),
+  sort_by:    z.enum(['order_date', 'sku', 'quantity_sold', 'platform', 'shipped_sku']).optional().default('order_date'),
   sort_dir:   z.enum(['asc', 'desc']).optional().default('desc'),
   status:     STATUS_VALUES,
 });
@@ -69,10 +60,13 @@ const deleteBodySchema = z.object({
 );
 
 const patchSchema = z.object({
-  order_date:       z.string().min(1),
-  quantity_sold:    z.coerce.number().int().positive(),
-  platform:         z.string().min(1),
-  shipped_from_box: z.string().optional().default(''),
+  order_date:    z.string().min(1),
+  quantity_sold: z.coerce.number().int().positive(),
+  platform:      z.string().min(1),
+  // Accepts the canonical `shipped_sku` field, with `shipped_from_box` kept
+  // as a fallback for any in-flight clients still on the v=66 dashboard.
+  shipped_sku:      z.string().optional(),
+  shipped_from_box: z.string().optional(),
   original_sku:     z.string().optional().default(''),
 });
 
@@ -101,7 +95,7 @@ export async function ordersRoutes(fastify, { ordersService, activityService, da
         r.order_date,
         r.sku,
         r.quantity_sold,
-        effectiveShippedSku(r.sku, r.shipped_from_box, r.shipped_sku_override),
+        effectiveShippedSku(r.sku, r.shipped_sku),
         r.is_wrong_part ? 'Shipped Wrong Part Number' : (r.is_unknown ? 'Unknown' : 'Normal'),
         r.platform,
       ].map(esc).join(','));
@@ -159,31 +153,29 @@ export async function ordersRoutes(fastify, { ordersService, activityService, da
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: 'Invalid body', details: parsed.error.flatten() });
     }
-    const { original_sku, shipped_from_box: shippedInput, ...rowUpdates } = parsed.data;
-    // The PATCH `shipped_from_box` field accepts either a bare box number
-    // ("352") or a full alternate SKU ("ARA352-4060537-037256090684").
-    // resolveShippedTarget() splits that into the right column.
-    const { shipped_from_box, shipped_sku_override } = resolveShippedTarget(shippedInput || '');
-    const updates = {
-      ...rowUpdates,
-      shipped_from_box,
-      shipped_sku_override,
-    };
+    const { original_sku, shipped_sku, shipped_from_box, ...rowUpdates } = parsed.data;
+    // Canonical input is `shipped_sku`. `shipped_from_box` is accepted as a
+    // legacy alias from any in-flight clients pre-rename.
+    const shippedInput = (shipped_sku ?? '') || (shipped_from_box ?? '');
+    const normalizedShippedSku = normalizeShippedSku(shippedInput);
+    const updates = { ...rowUpdates, shipped_sku: normalizedShippedSku };
+
     try {
       await ordersService.updateRow(request.user.organization_id, rowId, updates);
       dashboardService?.invalidateKPICache(request.user.organization_id);
-      const originalLabel  = original_sku || rowId;
-      const reassignedDesc = shipped_sku_override
-        ? `Reassigned fulfillment (wrong part): ${originalLabel} → shipped ${shipped_sku_override} (order ${rowId})`
-        : shipped_from_box
-          ? `Reassigned fulfillment: ${originalLabel} → shipped from box ${shipped_from_box} (order ${rowId})`
-          : `Reverted to original fulfillment SKU for ${originalLabel} (order ${rowId})`;
+      const originalLabel = original_sku || rowId;
+      const isFullSku     = normalizedShippedSku && /^ARA\d+-.+-.+$/i.test(normalizedShippedSku);
+      const desc = !normalizedShippedSku
+        ? `Reverted to original fulfillment SKU for ${originalLabel} (order ${rowId})`
+        : isFullSku
+          ? `Reassigned fulfillment SKU: ${originalLabel} → shipped ${normalizedShippedSku} (order ${rowId})`
+          : `Reassigned fulfillment box: ${originalLabel} → box ${normalizedShippedSku} (order ${rowId})`;
       activityService?.log({
         organizationId: request.user.organization_id,
         userId:         request.user.user_id,
         actionType:     'reassign_fulfillment_sku',
         entityType:     'orders',
-        description:    reassignedDesc,
+        description:    desc,
       }).catch(() => {});
       return reply.send({ success: true });
     } catch (err) {

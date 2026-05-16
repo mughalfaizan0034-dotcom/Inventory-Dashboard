@@ -2,9 +2,18 @@ import { TABLES } from '../config/tables.js';
 import { isUndefinedRowSql } from '../utils/inventoryPatterns.js';
 import { effectiveSkuSql } from '../utils/skuPatterns.js';
 
-export function createInventoryRepository({ bq, projectId }) {
+export function createInventoryRepository({ bq, projectId, orgsRepo }) {
   const invTable = `\`${projectId}.${TABLES.INVENTORY}\``;
   const ordTable = `\`${projectId}.${TABLES.ORDERS}\``;
+
+  // Same regex resolver pattern as inventoryMetricsService — the Inventory
+  // List page's "Undefined SKUs" filter must use the SAME structure-aware
+  // classification as the dashboard so the two never disagree.
+  async function _resolveSkuRegex(organizationId) {
+    if (!orgsRepo?.getSkuRegex) return null;
+    try { return await orgsRepo.getSkuRegex(organizationId); }
+    catch { return null; }
+  }
 
   async function findAll({ organizationId, page, pageSize, search, sortBy, sortDir, status = 'all' }) {
     const offset = (page - 1) * pageSize;
@@ -18,7 +27,9 @@ export function createInventoryRepository({ bq, projectId }) {
     }
 
     if (status === 'undefined') {
-      conditions.push(isUndefinedRowSql('i'));
+      const skuRegex = await _resolveSkuRegex(organizationId);
+      if (skuRegex) params.sku_regex = skuRegex;
+      conditions.push(isUndefinedRowSql('i', skuRegex ? { regexParam: 'sku_regex' } : {}));
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
@@ -220,7 +231,9 @@ export function createInventoryRepository({ bq, projectId }) {
     }
 
     if (status === 'undefined') {
-      conditions.push(isUndefinedRowSql('i'));
+      const skuRegex = await _resolveSkuRegex(organizationId);
+      if (skuRegex) params.sku_regex = skuRegex;
+      conditions.push(isUndefinedRowSql('i', skuRegex ? { regexParam: 'sku_regex' } : {}));
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`;

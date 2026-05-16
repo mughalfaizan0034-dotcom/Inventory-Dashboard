@@ -1,6 +1,6 @@
 import { TABLES } from '../config/tables.js';
 import { isUndefinedSql, isUndefinedRowSql } from '../utils/inventoryPatterns.js';
-import { effectiveSkuSql } from '../utils/skuPatterns.js';
+import { effectiveSkuSql, wrongPartSql } from '../utils/skuPatterns.js';
 
 /**
  * inventoryMetricsService — single source of truth for dashboard KPI math.
@@ -11,7 +11,7 @@ import { effectiveSkuSql } from '../utils/skuPatterns.js';
  *   ──────────────────  ────────────────────────────────────────────────
  *   Initial Stock       SUM(quantity)             over inventory rows
  *   Sold                SUM(quantity_sold)        over matched orders
- *                       (joined by effective_sku — shipped_from_box
+ *                       (joined by effective_sku — shipped_sku
  *                        override applied)
  *   Fulfilled           LEAST(Sold, Initial)      capped to stock
  *   Phantom             GREATEST(Sold − Initial, 0)  oversold beyond stock
@@ -47,7 +47,7 @@ export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
   const invTable = `\`${projectId}.${TABLES.INVENTORY}\``;
   const ordTable = `\`${projectId}.${TABLES.ORDERS}\``;
 
-  // Orders aggregated by effective SKU (shipped_from_box override applied).
+  // Orders aggregated by effective SKU (shipped_sku override applied).
   const _ordersAggCTE = () => `
     orders_agg AS (
       SELECT
@@ -101,13 +101,15 @@ export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
   // computeSummary — ALL dashboard KPIs in one query
   // ─────────────────────────────────────────────────────────────────────────
   async function computeSummary(organizationId) {
-    const p = { organizationId };
+    const skuRegex = await _resolveSkuRegex(organizationId);
+    const regexParam = skuRegex ? 'sku_regex' : null;
+    const p = { organizationId, ...(skuRegex ? { sku_regex: skuRegex } : {}) };
 
     // Mirror of the user's Google Sheets pivot: one row per distinct SKU,
     // then SUM/COUNTIF across SKUs for the dashboard KPIs.
     const summaryQuery = `
       WITH ${_ordersAggCTE()},
-      ${_invAggCTE()},
+      ${_invAggCTE(regexParam)},
       ${_perSkuCTE()}
       SELECT
         COUNT(*)                       AS total_skus,                  -- distinct SKUs
@@ -136,13 +138,7 @@ export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
       SELECT
         COUNT(*)                                                       AS total_orders,
         SUM(quantity_sold)                                             AS units_sold_raw,
-        SUM(CASE
-              WHEN shipped_sku_override IS NOT NULL
-               AND TRIM(shipped_sku_override) != ''
-               AND COALESCE(REGEXP_EXTRACT(shipped_sku_override, r'^ARA[0-9]+(.+)$'), shipped_sku_override)
-                != COALESCE(REGEXP_EXTRACT(sku, r'^ARA[0-9]+(.+)$'), sku)
-              THEN quantity_sold ELSE 0
-            END)                                                       AS wrong_part_units,
+        SUM(IF(${wrongPartSql({ skuCol: 'sku', shippedCol: 'shipped_sku' })}, quantity_sold, 0)) AS wrong_part_units,
         COUNT(DISTINCT CASE WHEN platform IS NOT NULL THEN platform END) AS active_platforms,
         0                                                              AS ignored_orders
       FROM ${ordTable}
@@ -216,7 +212,9 @@ export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
   // All formulas use GREATEST/LEAST for correct physical stock math
   // ─────────────────────────────────────────────────────────────────────────
   async function getStockAnalytics(organizationId) {
-    const p = { organizationId };
+    const skuRegex   = await _resolveSkuRegex(organizationId);
+    const regexParam = skuRegex ? 'sku_regex' : null;
+    const p = { organizationId, ...(skuRegex ? { sku_regex: skuRegex } : {}) };
 
     // Per-ROW classification, identical to computeSummary above. We slice
     // OOS into phantom and non-phantom so the chart can show both.
@@ -226,7 +224,7 @@ export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
         SELECT
           GREATEST(i.quantity - COALESCE(o.ordered, 0), 0) AS remaining,
           GREATEST(COALESCE(o.ordered, 0) - i.quantity, 0) AS phantom,
-          ${isUndefinedRowSql('i')} AS is_undefined
+          ${isUndefinedRowSql('i', regexParam ? { regexParam } : {})} AS is_undefined
         FROM ${invTable} i
         LEFT JOIN orders_agg o ON i.sku = o.effective_sku
         WHERE i.organization_id = @organizationId

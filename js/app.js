@@ -24,6 +24,155 @@ const Settings = (() => {
     ).join('');
   }
 
+  /* ── SKU Structure builder (Organizations tab) ────────────── */
+  // Renders the same admin-only structure builder used by both the
+  // "New Organization" and "Edit Organization" modals. Three responsibilities:
+  //
+  //   _renderSkuStructureSection(struct)
+  //       → HTML for the form section, with sensible defaults when struct is null.
+  //   _wireSkuStructureSection(rootEl)
+  //       → attaches input listeners that re-compile the regex preview live and
+  //         re-test the "Test SKU" field after every keystroke.
+  //   _readSkuStructureSection(rootEl)
+  //       → harvests the current field values into a structure object suitable
+  //         for sending to the org create/update endpoints. Returns null when
+  //         the section is disabled or has no prefixes (server treats null as
+  //         "no structure configured" — legacy placeholder-only check).
+
+  const SKU_DEFAULTS = Object.freeze({
+    enabled:      false,
+    prefixes:     [],
+    separator:    '-',
+    box_pattern:  '\\d+',
+    upc_pattern:  '\\d+',
+    part_pattern: '[A-Z0-9-]+',
+  });
+
+  function _renderSkuStructureSection(struct) {
+    const s = (struct && typeof struct === 'object') ? struct : SKU_DEFAULTS;
+    const prefixes = Array.isArray(s.prefixes) ? s.prefixes.join(', ') : '';
+    const enabled  = s.enabled !== false && (Array.isArray(s.prefixes) ? s.prefixes.length > 0 : false);
+    return `
+      <div class="form-group" data-sku-structure>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <label class="form-label" style="margin:0">SKU Structure</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--txt-3);cursor:pointer">
+            <input type="checkbox" data-sku-enabled${enabled ? ' checked' : ''} style="accent-color:var(--primary)">
+            <span>Enable validation</span>
+          </label>
+        </div>
+        <div class="form-hint" style="margin-bottom:6px">
+          Define the SKU pattern. Any inventory row whose SKU does not match counts as <strong>Undefined</strong> across the whole app. Leave empty to keep the legacy placeholder-only check.
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 90px;gap:8px">
+          <div>
+            <label class="form-label" style="font-size:11px;font-weight:600">Allowed prefixes</label>
+            <input class="form-input" data-sku-prefixes value="${Utils.escapeHtml(prefixes)}" placeholder="ARA, BX">
+            <div class="form-hint" style="font-size:10.5px">Comma-separated. Match literally.</div>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11px;font-weight:600">Separator</label>
+            <input class="form-input" data-sku-separator value="${Utils.escapeHtml(s.separator ?? '-')}" maxlength="4" style="text-align:center;font-family:monospace">
+            <div class="form-hint" style="font-size:10.5px">Default: -</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px">
+          <div>
+            <label class="form-label" style="font-size:11px;font-weight:600">Box pattern</label>
+            <input class="form-input" data-sku-box value="${Utils.escapeHtml(s.box_pattern || '\\d+')}" placeholder="\\d+" style="font-family:monospace">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11px;font-weight:600">UPC pattern</label>
+            <input class="form-input" data-sku-upc value="${Utils.escapeHtml(s.upc_pattern || '\\d+')}" placeholder="\\d{6,14}" style="font-family:monospace">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11px;font-weight:600">Part pattern</label>
+            <input class="form-input" data-sku-part value="${Utils.escapeHtml(s.part_pattern || '[A-Z0-9-]+')}" placeholder="[A-Z0-9-]+" style="font-family:monospace">
+          </div>
+        </div>
+
+        <div style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm)">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--txt-4);margin-bottom:6px">Compiled pattern</div>
+          <div data-sku-preview style="font-family:monospace;font-size:12px;color:var(--txt-2);word-break:break-all;min-height:18px">—</div>
+
+          <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+            <input class="form-input" data-sku-test placeholder="Paste a SKU to test, e.g. ARA1-123456-ABC123" style="flex:1">
+            <span data-sku-test-result style="font-size:12px;font-weight:600;white-space:nowrap;min-width:88px;text-align:right">—</span>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function _wireSkuStructureSection(rootEl) {
+    if (!rootEl) return;
+    const get = sel => rootEl.querySelector(sel);
+    const enabledEl  = get('[data-sku-enabled]');
+    const previewEl  = get('[data-sku-preview]');
+    const testEl     = get('[data-sku-test]');
+    const resultEl   = get('[data-sku-test-result]');
+
+    const refresh = () => {
+      const struct = _readSkuStructureFromInputs(rootEl);
+      const compiled = SkuValidator.compileStructureRegex(struct);
+      if (!struct?.enabled) {
+        previewEl.textContent = 'Validation disabled — only empty / NA placeholders count as undefined.';
+        previewEl.style.color = 'var(--txt-4)';
+      } else if (!compiled) {
+        previewEl.textContent = 'Add at least one prefix to compile the pattern.';
+        previewEl.style.color = 'var(--warning)';
+      } else {
+        previewEl.textContent = compiled;
+        previewEl.style.color = 'var(--txt-2)';
+      }
+      // Re-run the test SKU
+      const sku = testEl?.value || '';
+      if (!sku.trim()) {
+        resultEl.textContent = '—';
+        resultEl.style.color = 'var(--txt-4)';
+      } else {
+        const res = SkuValidator.validateSku(sku, compiled);
+        if (res.valid) {
+          resultEl.textContent = '✓ Valid';
+          resultEl.style.color = 'var(--success)';
+        } else {
+          resultEl.textContent = res.reason === 'empty_or_placeholder' ? '✗ Placeholder' : '✗ Mismatch';
+          resultEl.style.color = 'var(--error)';
+        }
+      }
+    };
+
+    rootEl.querySelectorAll('input').forEach(el => el.addEventListener('input', refresh));
+    enabledEl?.addEventListener('change', refresh);
+    refresh();
+  }
+
+  // Read just the raw fragment fields without normalization — used for the
+  // live preview where partial input is expected.
+  function _readSkuStructureFromInputs(rootEl) {
+    if (!rootEl) return null;
+    const get = sel => rootEl.querySelector(sel);
+    const prefixes = (get('[data-sku-prefixes]')?.value || '')
+      .split(',').map(p => p.trim()).filter(Boolean);
+    return {
+      enabled:      Boolean(get('[data-sku-enabled]')?.checked),
+      prefixes,
+      separator:    get('[data-sku-separator]')?.value ?? '-',
+      box_pattern:  get('[data-sku-box]')?.value      || '\\d+',
+      upc_pattern:  get('[data-sku-upc]')?.value      || '\\d+',
+      part_pattern: get('[data-sku-part]')?.value     || '[A-Z0-9-]+',
+    };
+  }
+
+  // Read + normalize for sending to the API. Returns null when section is
+  // disabled / empty so the server clears any stored config.
+  function _readSkuStructureSection(rootEl) {
+    const struct = _readSkuStructureFromInputs(rootEl);
+    if (!struct?.enabled || !struct.prefixes.length) return null;
+    return SkuValidator.normalizeStructureForStorage(struct);
+  }
+
   /* ── Users: load ────────────────────────────────────────── */
   // Global list (Settings is org-neutral). Columns:
   //   Name | Username | Role (global) | Organizations (dropdown) | Actions (Edit)
@@ -751,6 +900,7 @@ const Settings = (() => {
           </div>
           <div class="form-hint">At least one member is required. You're pre-selected so you keep access to manage the new org.</div>
         </div>
+        ${_renderSkuStructureSection(null)}
         <div data-field="error" class="form-error" style="display:none"></div>
       </form>`);
     m.setFooter(`
@@ -775,6 +925,7 @@ const Settings = (() => {
     qf('[data-action="save"]')?.addEventListener('click', () => _doCreateOrg(m, q, qf));
     q('[data-form="new-org"]')?.addEventListener('submit', e => { e.preventDefault(); _doCreateOrg(m, q, qf); });
     _wireMultiselect(q('[data-field="members"]'));
+    _wireSkuStructureSection(q('[data-sku-structure]'));
     Icons?.refresh?.();
   }
 
@@ -782,6 +933,7 @@ const Settings = (() => {
     const name    = q('[data-field="name"]')?.value.trim();
     const slug    = q('[data-field="slug"]')?.value.trim();
     const userIds = Array.from(q('[data-field="members"]')?.querySelectorAll('input[type=checkbox]:checked') || []).map(cb => cb.value);
+    const sku_structure = _readSkuStructureSection(q('[data-sku-structure]'));
     const errEl   = q('[data-field="error"]');
     const saveBtn = qf('[data-action="save"]');
     const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
@@ -794,7 +946,7 @@ const Settings = (() => {
     if (errEl) errEl.style.display = 'none';
     Loading.btn(saveBtn, true);
     try {
-      await API.createOrganization({ display_name: name, slug, member_user_ids: userIds });
+      await API.createOrganization({ display_name: name, slug, member_user_ids: userIds, sku_structure });
       Notify.success('Organization created', `${name} is ready.`);
       m.hide();
       m.destroy();
@@ -891,6 +1043,7 @@ const Settings = (() => {
             </div>
             <div class="form-hint">At least one active member is required. Removing a user deactivates their membership in this org only.</div>
           </div>
+          ${_renderSkuStructureSection(SkuValidator.parseStructure(org.sku_structure))}
           <div data-field="error" class="form-error" style="display:none"></div>
         </form>`);
       m.setFooter(`
@@ -910,13 +1063,17 @@ const Settings = (() => {
     qf('[data-action="save"]')?.addEventListener('click', () => _doSaveOrg(m, q, qf, orgId));
     q('[data-form="edit-org"]')?.addEventListener('submit', e => { e.preventDefault(); _doSaveOrg(m, q, qf, orgId); });
 
-    if (isActive) _wireMultiselect(q('[data-field="members"]'));
+    if (isActive) {
+      _wireMultiselect(q('[data-field="members"]'));
+      _wireSkuStructureSection(q('[data-sku-structure]'));
+    }
     Icons?.refresh?.();
   }
 
   async function _doSaveOrg(m, q, qf, orgId) {
     const name    = q('[data-field="name"]')?.value.trim();
     const userIds = Array.from(q('[data-field="members"]')?.querySelectorAll('input[type=checkbox]:checked') || []).map(cb => cb.value);
+    const sku_structure = _readSkuStructureSection(q('[data-sku-structure]'));
     const errEl   = q('[data-field="error"]');
     const saveBtn = qf('[data-action="save"]');
     const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
@@ -927,7 +1084,7 @@ const Settings = (() => {
     if (errEl) errEl.style.display = 'none';
     Loading.btn(saveBtn, true);
     try {
-      await API.updateOrganization(orgId, { display_name: name, member_user_ids: userIds });
+      await API.updateOrganization(orgId, { display_name: name, member_user_ids: userIds, sku_structure });
       Notify.success('Organization updated');
       m.hide();
       m.destroy();

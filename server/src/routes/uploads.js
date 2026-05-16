@@ -168,10 +168,11 @@ export async function uploadsRoutes(fastify, { uploadsService, dashboardService 
         //                  paste from a previous export for Update / Remove.
         //   order_id     — EXTERNAL marketplace order number (Amazon order ID,
         //                  eBay sale ID, etc.). Required on Add.
-        //   shipped_sku  — Fulfillment override. Accepts the bare box number
-        //                  ("20"), the prefixed form ("ARA20"), or the full
-        //                  reassigned SKU ("ARA20-4060915-037256018282"). The
-        //                  server normalizes all three to a bare box.
+        //   shipped_sku  — Fulfillment override. Accepts three forms:
+        //                  "20" or "ARA20"  → same-part box override
+        //                  "ARA20-4060915-037256018282"
+        //                                  → full alternate SKU (wrong-part allowed)
+        //                  blank           → no override
         //                  Legacy header `shipped_from_box` is still accepted.
         orders: [
           'action,uid,order_id,order_date,sku,quantity_sold,platform,shipped_sku',

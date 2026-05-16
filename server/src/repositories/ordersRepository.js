@@ -1,27 +1,25 @@
 import { TABLES } from '../config/tables.js';
-import { effectiveSkuSql } from '../utils/skuPatterns.js';
+import { effectiveSkuSql, wrongPartSql } from '../utils/skuPatterns.js';
 
-// Canonical shipped_from_box is bare digits (e.g. "20"). Legacy rows may hold
-// "ARA20" or even "ARA20-part-upc" — strip both back to "20" before returning
-// so downstream consumers (Orders table, exports, popovers) all see one form.
-function _bareBox(v) {
+// Storage form for orders.shipped_sku is whatever normalizeShippedSku() decided:
+//   "20" / "352"                       — bare box digits
+//   "ARA20-4060915-037256018282"       — full SKU
+//   ""                                 — never; we store NULL instead
+// Legacy "ARA20" or "ARA20-part-upc" can still appear (rows from before the
+// upload normalizer). Strip back to bare digits for display only when the
+// stored value is recognizably a "box-only" form; otherwise pass through.
+function _displayShippedSku(v) {
   const s = String(v ?? '').trim();
   if (!s) return null;
-  const m = s.match(/^ARA(\d+)(?:-.*)?$/i);
-  return m ? m[1] : s;
+  // Full SKU? Keep as-is.
+  if (/^ARA\d+-.+-.+$/i.test(s)) return s;
+  // "ARA20" → "20".
+  const m = s.match(/^ARA(\d+)$/i);
+  if (m) return m[1];
+  return s;
 }
 
-// A row is "wrong_part" when shipped_sku_override is populated AND its
-// part-UPC suffix differs from the ordered SKU's. Same-part-different-box
-// overrides land in shipped_from_box (not shipped_sku_override), so the
-// presence of a non-null override already strongly implies wrong-part — but
-// we re-check in SQL to be safe (legacy data, inline-edit edge cases).
-const WRONG_PART_SQL = `
-  o.shipped_sku_override IS NOT NULL
-  AND TRIM(o.shipped_sku_override) != ''
-  AND COALESCE(REGEXP_EXTRACT(o.shipped_sku_override, r'^ARA[0-9]+(.+)$'), o.shipped_sku_override)
-      != COALESCE(REGEXP_EXTRACT(o.sku, r'^ARA[0-9]+(.+)$'), o.sku)
-`.trim();
+const WRONG_PART_SQL = wrongPartSql({ skuCol: 'o.sku', shippedCol: 'o.shipped_sku' });
 
 export function createOrdersRepository({ bq, projectId }) {
   const table    = `\`${projectId}.${TABLES.ORDERS}\``;
@@ -35,7 +33,7 @@ export function createOrdersRepository({ bq, projectId }) {
     switch (status) {
       case 'unknown':    return `AND inv.sku IS NULL`;
       case 'normal':     return `AND inv.sku IS NOT NULL`;
-      case 'wrong_part': return `AND (${WRONG_PART_SQL})`;
+      case 'wrong_part': return `AND ${WRONG_PART_SQL}`;
       default:           return '';
     }
   }
@@ -53,11 +51,11 @@ export function createOrdersRepository({ bq, projectId }) {
     const baseWhere  = conditions.join(' AND ');
     const statusCond = _statusCondition(status || 'all');
 
-    const ALLOWED_SORT = ['order_date', 'sku', 'quantity_sold', 'platform', 'shipped_from_box'];
+    const ALLOWED_SORT = ['order_date', 'sku', 'quantity_sold', 'platform', 'shipped_sku'];
     const col = ALLOWED_SORT.includes(sortBy) ? `o.${sortBy}` : 'o.order_date';
     const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
-    // "Unknown" = effective_sku (with shipped overrides applied) does NOT
+    // "Unknown" = effective_sku (with shipped_sku override applied) does NOT
     // exist in inventory. mapped_inventory_sku rescues a few rows.
     // This MUST match the dashboard's Unknown UNITS calculation so totals
     // line up between the Orders page filter and the dashboard KPI.
@@ -68,14 +66,14 @@ export function createOrdersRepository({ bq, projectId }) {
       o_eff AS (
         SELECT
           o.*,
-          ${effectiveSkuSql({ skuCol: 'o.sku', shippedCol: 'o.shipped_from_box', overrideCol: 'o.shipped_sku_override' })} AS effective_sku
+          ${effectiveSkuSql({ skuCol: 'o.sku', shippedCol: 'o.shipped_sku' })} AS effective_sku
         FROM ${table} o
       )
       SELECT
-        o.order_row_id, o.order_id, o.order_date, o.sku, o.quantity_sold, o.shipped_from_box, o.shipped_sku_override, o.platform, o.created_at,
+        o.order_row_id, o.order_id, o.order_date, o.sku, o.quantity_sold, o.shipped_sku, o.platform, o.created_at,
         COALESCE(o.mapped_inventory_sku, '') AS mapped_inventory_sku,
         (inv.sku IS NULL)                    AS is_unknown,
-        (${WRONG_PART_SQL})                  AS is_wrong_part
+        ${WRONG_PART_SQL}                    AS is_wrong_part
       FROM o_eff o
       LEFT JOIN inv_skus inv ON COALESCE(o.mapped_inventory_sku, o.effective_sku) = inv.sku
       WHERE ${baseWhere} ${statusCond}
@@ -90,7 +88,7 @@ export function createOrdersRepository({ bq, projectId }) {
       o_eff AS (
         SELECT
           o.*,
-          ${effectiveSkuSql({ skuCol: 'o.sku', shippedCol: 'o.shipped_from_box', overrideCol: 'o.shipped_sku_override' })} AS effective_sku
+          ${effectiveSkuSql({ skuCol: 'o.sku', shippedCol: 'o.shipped_sku' })} AS effective_sku
         FROM ${table} o
       )
       SELECT COUNT(*) AS total
@@ -107,8 +105,8 @@ export function createOrdersRepository({ bq, projectId }) {
     return {
       items: rows[0].map(r => ({
         ...r,
-        shipped_from_box: _bareBox(r.shipped_from_box),
-        created_at:       r.created_at?.value ?? r.created_at ?? null,
+        shipped_sku: _displayShippedSku(r.shipped_sku),
+        created_at: r.created_at?.value ?? r.created_at ?? null,
       })),
       total: Number(countRows[0][0]?.total ?? 0),
     };
@@ -126,7 +124,7 @@ export function createOrdersRepository({ bq, projectId }) {
     const baseWhere  = conditions.join(' AND ');
     const statusCond = _statusCondition(status || 'all');
 
-    const ALLOWED_SORT = ['order_date', 'sku', 'quantity_sold', 'platform', 'shipped_from_box'];
+    const ALLOWED_SORT = ['order_date', 'sku', 'quantity_sold', 'platform', 'shipped_sku'];
     const col = ALLOWED_SORT.includes(sortBy) ? `o.${sortBy}` : 'o.order_date';
     const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
@@ -137,14 +135,14 @@ export function createOrdersRepository({ bq, projectId }) {
       o_eff AS (
         SELECT
           o.*,
-          ${effectiveSkuSql({ skuCol: 'o.sku', shippedCol: 'o.shipped_from_box', overrideCol: 'o.shipped_sku_override' })} AS effective_sku
+          ${effectiveSkuSql({ skuCol: 'o.sku', shippedCol: 'o.shipped_sku' })} AS effective_sku
         FROM ${table} o
       )
       SELECT
-        o.order_row_id, o.order_id, o.order_date, o.sku, o.quantity_sold, o.shipped_from_box, o.shipped_sku_override, o.platform, o.created_at,
+        o.order_row_id, o.order_id, o.order_date, o.sku, o.quantity_sold, o.shipped_sku, o.platform, o.created_at,
         COALESCE(o.mapped_inventory_sku, '') AS mapped_inventory_sku,
         (inv.sku IS NULL)                    AS is_unknown,
-        (${WRONG_PART_SQL})                  AS is_wrong_part
+        ${WRONG_PART_SQL}                    AS is_wrong_part
       FROM o_eff o
       LEFT JOIN inv_skus inv ON COALESCE(o.mapped_inventory_sku, o.effective_sku) = inv.sku
       WHERE ${baseWhere} ${statusCond}
@@ -154,8 +152,8 @@ export function createOrdersRepository({ bq, projectId }) {
     const [rows] = await bq.query({ query, params });
     return rows.map(r => ({
       ...r,
-      shipped_from_box: _bareBox(r.shipped_from_box),
-      created_at:       r.created_at?.value ?? r.created_at ?? null,
+      shipped_sku: _displayShippedSku(r.shipped_sku),
+      created_at: r.created_at?.value ?? r.created_at ?? null,
     }));
   }
 
@@ -205,24 +203,22 @@ export function createOrdersRepository({ bq, projectId }) {
     const query = `
       UPDATE ${table}
       SET
-        order_date           = @orderDate,
-        quantity_sold        = @quantitySold,
-        platform             = @platform,
-        shipped_from_box     = @shippedFromBox,
-        shipped_sku_override = @shippedSkuOverride
+        order_date    = @orderDate,
+        quantity_sold = @quantitySold,
+        platform      = @platform,
+        shipped_sku   = @shippedSku
       WHERE order_row_id = @rowId AND organization_id = @organizationId
     `;
     await bq.query({
       query,
       params: {
         organizationId, rowId,
-        orderDate:          updates.order_date,
-        quantitySold:       updates.quantity_sold,
-        platform:           updates.platform,
-        shippedFromBox:     updates.shipped_from_box     ?? null,
-        shippedSkuOverride: updates.shipped_sku_override ?? null,
+        orderDate:    updates.order_date,
+        quantitySold: updates.quantity_sold,
+        platform:     updates.platform,
+        shippedSku:   updates.shipped_sku ?? null,
       },
-      types: { shippedFromBox: 'STRING', shippedSkuOverride: 'STRING' },
+      types: { shippedSku: 'STRING' },
     });
   }
 

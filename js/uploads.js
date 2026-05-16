@@ -344,9 +344,10 @@ const Uploads = (() => {
   //   • uid: INTERNAL row tracker. Blank on Add. Required on Update / Remove.
   //   • order_id: EXTERNAL marketplace order number. Required on Add.
   //   • shipped_sku: fulfillment override. Accepts a bare box number ("20"),
-  //     an ARA-prefixed box ("ARA20"), or the full reassigned SKU
-  //     ("ARA20-4060915-037256018282") — the server normalizes all three to
-  //     a bare box. Header `shipped_from_box` is still accepted (alias).
+  //     an ARA-prefixed box ("ARA20"), or a full alternate SKU
+  //     ("ARA20-4060915-037256018282"). The full-SKU form supports shipping
+  //     a different part/UPC (surfaces as "Shipped Wrong Part Number").
+  //     Legacy header `shipped_from_box` is still accepted (alias).
   const _templates = {
     inventory: {
       filename: 'inventory_template.csv',
