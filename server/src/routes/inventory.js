@@ -4,9 +4,9 @@ import { z } from 'zod';
 
 const inventoryExportSchema = z.object({
   search:   z.string().optional(),
-  sort_by:  z.enum(['sku','upc','box_number','quantity','date_added','part_number','notes','units_sold','remaining_stock']).optional().default('date_added'),
+  sort_by:  z.enum(['sku','upc','box_number','quantity','date_added','part_number','notes','remaining_stock']).optional().default('date_added'),
   sort_dir: z.enum(['asc','desc']).optional().default('desc'),
-  status:   z.enum(['all','in_stock','oos','phantom','undefined']).optional().default('all'),
+  status:   z.enum(['all','in_stock','oos','undefined']).optional().default('all'),
 });
 
 const inventoryPatchSchema = z.object({
@@ -57,13 +57,11 @@ export async function inventoryRoutes(fastify, { inventoryService, activityServi
       });
 
       const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-      const header = 'UID,SKU,Box #,Part #,UPC,Initial Qty,Fulfilled,Phantom Units,Actual Remaining,Date Added,Notes';
+      const header = 'UID,SKU,Box #,Part #,UPC,Initial Qty,Remaining,Date Added,Notes';
       const lines  = rows.map(r => [
         r.row_uid,
         r.sku, r.box_number, r.part_number, r.upc,
         r.quantity,
-        r.fulfilled_units ?? Math.min(Number(r.units_sold ?? 0), Number(r.quantity ?? 0)),
-        r.phantom_units   ?? Math.max(Number(r.units_sold ?? 0) - Number(r.quantity ?? 0), 0),
         r.remaining_stock,
         r.date_added, r.notes,
       ].map(esc).join(','));

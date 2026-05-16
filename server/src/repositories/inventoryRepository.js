@@ -42,20 +42,17 @@ export function createInventoryRepository({ bq, projectId, orgsRepo }) {
       date_added:      'i.date_added',
       part_number:     'i.part_number',
       notes:           'i.notes',
-      units_sold:      'units_sold',
       remaining_stock: 'remaining_stock',
     };
     const col = sortMap[sortBy] || 'i.date_added';
     const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
-    // Stock-based filters require joining orders to compute remaining_stock
-    const needsStockFilter = status === 'in_stock' || status === 'oos' || status === 'phantom';
+    // Inventory List shows only Initial + Remaining for inventory count.
+    // Stock-based filters still need the JOIN to compute remaining_stock,
+    // but we no longer surface fulfilled / phantom values to the client.
+    const needsStockFilter = status === 'in_stock' || status === 'oos';
     const stockCond = needsStockFilter
-      ? `AND (i.quantity - COALESCE(o.units_sold, 0)) ${
-          status === 'in_stock' ? '> 0' :
-          status === 'oos'      ? '= 0' :
-          '< 0'
-        }`
+      ? `AND (i.quantity - COALESCE(o.units_sold, 0)) ${status === 'in_stock' ? '> 0' : '= 0'}`
       : '';
 
     const cte = `
@@ -72,10 +69,7 @@ export function createInventoryRepository({ bq, projectId, orgsRepo }) {
       ${cte}
       SELECT
         i.row_uid, i.sku, i.upc, i.part_number, i.box_number, i.quantity, i.date_added, i.notes,
-        COALESCE(o.units_sold, 0)                                    AS units_sold,
-        LEAST(COALESCE(o.units_sold, 0), i.quantity)                 AS fulfilled_units,
-        GREATEST(COALESCE(o.units_sold, 0) - i.quantity, 0)         AS phantom_units,
-        GREATEST(i.quantity - COALESCE(o.units_sold, 0), 0)         AS remaining_stock
+        GREATEST(i.quantity - COALESCE(o.units_sold, 0), 0) AS remaining_stock
       FROM ${invTable} i
       LEFT JOIN ord_summary o ON i.sku = o.effective_sku
       ${where} ${stockCond}
@@ -246,19 +240,14 @@ export function createInventoryRepository({ bq, projectId, orgsRepo }) {
       date_added:      'i.date_added',
       part_number:     'i.part_number',
       notes:           'i.notes',
-      units_sold:      'units_sold',
       remaining_stock: 'remaining_stock',
     };
     const col = sortMap[sortBy] || 'i.date_added';
     const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
 
-    const needsStockFilter = status === 'in_stock' || status === 'oos' || status === 'phantom';
+    const needsStockFilter = status === 'in_stock' || status === 'oos';
     const stockCond = needsStockFilter
-      ? `AND (i.quantity - COALESCE(o.units_sold, 0)) ${
-          status === 'in_stock' ? '> 0' :
-          status === 'oos'      ? '= 0' :
-          '< 0'
-        }`
+      ? `AND (i.quantity - COALESCE(o.units_sold, 0)) ${status === 'in_stock' ? '> 0' : '= 0'}`
       : '';
 
     const cte = `
@@ -275,10 +264,7 @@ export function createInventoryRepository({ bq, projectId, orgsRepo }) {
       ${cte}
       SELECT
         i.row_uid, i.sku, i.upc, i.part_number, i.box_number, i.quantity, i.date_added, i.notes,
-        COALESCE(o.units_sold, 0)                                    AS units_sold,
-        LEAST(COALESCE(o.units_sold, 0), i.quantity)                 AS fulfilled_units,
-        GREATEST(COALESCE(o.units_sold, 0) - i.quantity, 0)         AS phantom_units,
-        GREATEST(i.quantity - COALESCE(o.units_sold, 0), 0)         AS remaining_stock
+        GREATEST(i.quantity - COALESCE(o.units_sold, 0), 0) AS remaining_stock
       FROM ${invTable} i
       LEFT JOIN ord_summary o ON i.sku = o.effective_sku
       ${where} ${stockCond}
