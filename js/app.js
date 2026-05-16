@@ -43,6 +43,76 @@ const Settings = (() => {
     wildcard:    'Wildcard',
   });
 
+  // Friendly "Format" options shown to admins instead of raw regex fragments.
+  // Each maps to a base regex character class — the segment's stored `pattern`
+  // is rebuilt as `<base>+` or `<base>{min,max}` based on the Length inputs.
+  // 'custom' is the escape hatch for power users who need a literal regex.
+  const FORMAT_OPTIONS = Object.freeze([
+    { value: 'numeric',      label: 'Numbers only',      base: '\\d'      },
+    { value: 'letters',      label: 'Letters only',      base: '[A-Z]'    },
+    { value: 'alphanumeric', label: 'Letters & numbers', base: '[A-Z0-9]' },
+    { value: 'any',          label: 'Any (non-space)',   base: '[^\\s]'   },
+    { value: 'custom',       label: 'Custom regex…',     base: null       },
+  ]);
+
+  // Friendly placeholders shown in the template preview (e.g. "{Part Number}").
+  const SEGMENT_TEMPLATE_PLACEHOLDER = Object.freeze({
+    identifier:  '{Identifier}',
+    part_number: '{Part Number}',
+    upc:         '{UPC}',
+    box:         '{Box}',
+    free_text:   '{Free Text}',
+    wildcard:    '{anything}',
+  });
+
+  // Concrete sample values used to render the "Example SKU" line. Identifier
+  // pulls from its admin-defined values list; the rest use sensible defaults.
+  const SEGMENT_SAMPLE_VALUE = Object.freeze({
+    identifier:  'ARA',
+    part_number: 'ABC123',
+    upc:         '998877',
+    box:         '1',
+    free_text:   'TEXT',
+    wildcard:    'x',
+  });
+
+  // Round-trip helper: detect the friendly Format + Length from a stored
+  // regex pattern. Lets the segment editor show the right preset when an
+  // admin re-opens an existing structure for editing.
+  function _detectFormatFromPattern(pattern) {
+    if (!pattern) return { format: 'numeric', min: '', max: '' };
+    const tryMatch = (baseEscaped, format) => {
+      let m;
+      if ((m = pattern.match(new RegExp(`^${baseEscaped}\\+$`))))                  return { format, min: '',   max: '' };
+      if ((m = pattern.match(new RegExp(`^${baseEscaped}\\{(\\d+)\\}$`))))        return { format, min: m[1], max: m[1] };
+      if ((m = pattern.match(new RegExp(`^${baseEscaped}\\{(\\d+),(\\d+)\\}$`)))) return { format, min: m[1], max: m[2] };
+      if ((m = pattern.match(new RegExp(`^${baseEscaped}\\{(\\d+),\\}$`))))       return { format, min: m[1], max: '' };
+      return null;
+    };
+    for (const opt of FORMAT_OPTIONS) {
+      if (!opt.base) continue;
+      // Escape the base for inclusion in a meta-regex.
+      const esc = opt.base.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+      const hit = tryMatch(esc, opt.value);
+      if (hit) return hit;
+    }
+    return { format: 'custom', min: '', max: '' };
+  }
+
+  // Build a regex fragment from the friendly Format + Length inputs.
+  function _patternFromFormat(format, min, max) {
+    const opt = FORMAT_OPTIONS.find(o => o.value === format);
+    if (!opt || !opt.base) return ''; // custom → caller uses raw pattern
+    const minN = parseInt(min, 10);
+    const maxN = parseInt(max, 10);
+    const hasMin = Number.isFinite(minN) && minN >= 0;
+    const hasMax = Number.isFinite(maxN) && maxN >= 0;
+    if (hasMin && hasMax) return minN === maxN ? `${opt.base}{${minN}}` : `${opt.base}{${minN},${maxN}}`;
+    if (hasMin)           return `${opt.base}{${minN},}`;
+    if (hasMax)           return `${opt.base}{1,${maxN}}`;
+    return `${opt.base}+`;
+  }
+
   function _defaultSegmentForType(type) {
     const seg = { id: `seg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, type, required: true, values: null, pattern: null, allow_attached_box: false };
     if (type === 'identifier')  { seg.values = ['ARA']; seg.allow_attached_box = true; }
@@ -73,7 +143,11 @@ const Settings = (() => {
       `<option value="${t}"${t === seg.type ? ' selected' : ''}>${Utils.escapeHtml(SEGMENT_LABEL[t] || t)}</option>`
     ).join('');
 
-    // Per-type detail input (values for identifier, pattern for everything else)
+    // Per-type detail control.
+    //   identifier → comma-separated values + attached-box toggle
+    //   wildcard   → no extra inputs (matches anything by definition)
+    //   other      → friendly Format dropdown + Length min/max, regex hidden
+    //                behind Format = "Custom regex…"
     let detail = '';
     if (seg.type === 'identifier') {
       detail = `
@@ -87,13 +161,28 @@ const Settings = (() => {
           <span>Allow attached box (ARA1 ≡ ARA-1)</span>
         </label>`;
     } else if (seg.type === 'wildcard') {
-      detail = `<div class="form-hint" style="font-size:11px">Matches anything.</div>`;
+      detail = `<div class="form-hint" style="font-size:11px;padding:8px 0">Matches anything in this position.</div>`;
     } else {
-      detail = `<input class="form-input" data-seg-pattern
-        value="${Utils.escapeHtml(seg.pattern || '')}"
-        placeholder="\\d+ / [A-Z0-9]+ / …"
-        title="Regex fragment for this segment"
-        style="font-family:monospace">`;
+      const { format, min, max } = _detectFormatFromPattern(seg.pattern);
+      const fmtOpts = FORMAT_OPTIONS.map(o =>
+        `<option value="${o.value}"${o.value === format ? ' selected' : ''}>${Utils.escapeHtml(o.label)}</option>`
+      ).join('');
+      detail = `
+        <div style="display:grid;grid-template-columns:1fr 64px 64px;gap:6px;align-items:center">
+          <select class="form-select" data-seg-format style="font-size:12px;padding:6px 8px">${fmtOpts}</select>
+          <input class="form-input" data-seg-min type="number" min="0" placeholder="Min" value="${Utils.escapeHtml(String(min))}"
+                 style="font-size:12px;padding:6px 8px;text-align:center" title="Minimum length (optional)">
+          <input class="form-input" data-seg-max type="number" min="0" placeholder="Max" value="${Utils.escapeHtml(String(max))}"
+                 style="font-size:12px;padding:6px 8px;text-align:center" title="Maximum length (optional)">
+        </div>
+        <input class="form-input" data-seg-pattern
+          value="${Utils.escapeHtml(seg.pattern || '')}"
+          placeholder="e.g. [A-Z]{3}\\d+"
+          title="Custom regex — only used when Format is set to 'Custom regex…'"
+          style="font-family:monospace;font-size:11.5px;margin-top:6px;${format === 'custom' ? '' : 'display:none'}">
+        <div class="form-hint" style="font-size:10.5px;margin-top:4px;color:var(--txt-4)">
+          Leave Min/Max empty for any length. Identical Min and Max means exact length.
+        </div>`;
     }
 
     return `
@@ -114,6 +203,41 @@ const Settings = (() => {
           <button type="button" class="btn btn-ghost btn-sm" data-seg-del   title="Remove"      style="padding:2px 6px;color:var(--error)">×</button>
         </div>
       </div>`;
+  }
+
+  // Build the friendly "ARA · {Box} · {Part Number} · {UPC}" template line.
+  function _buildStructureTemplate(structure) {
+    const segs = Array.isArray(structure.segments) ? structure.segments : [];
+    if (!segs.length) return '';
+    const seps = (structure.separators || []).filter(s => s !== '');
+    const sep  = seps[0] || '';
+    return segs.map(seg => {
+      const open = seg.required === false ? '[' : '';
+      const close = seg.required === false ? ']' : '';
+      if (seg.type === 'identifier') {
+        const vals = (seg.values || []).filter(Boolean);
+        if (vals.length === 1) return `${open}${vals[0]}${close}`;
+        if (vals.length > 1)   return `${open}(${vals.join('|')})${close}`;
+        return `${open}${SEGMENT_TEMPLATE_PLACEHOLDER.identifier}${close}`;
+      }
+      return `${open}${SEGMENT_TEMPLATE_PLACEHOLDER[seg.type] || '{?}'}${close}`;
+    }).join(sep ? ` ${sep} ` : ' · ');
+  }
+
+  // Build a concrete example SKU: "ARA1-12345-998877"-style. Identifier uses
+  // its first allowed value; other segments use SEGMENT_SAMPLE_VALUE defaults.
+  function _buildStructureSample(structure) {
+    const segs = Array.isArray(structure.segments) ? structure.segments : [];
+    if (!segs.length) return '';
+    const seps = (structure.separators || []).filter(s => s !== '');
+    const sep  = seps[0] || '';
+    return segs.map(seg => {
+      if (seg.type === 'identifier') {
+        const vals = (seg.values || []).filter(Boolean);
+        return vals[0] || SEGMENT_SAMPLE_VALUE.identifier;
+      }
+      return SEGMENT_SAMPLE_VALUE[seg.type] || 'X';
+    }).join(sep);
   }
 
   function _renderSkuStructureSection(struct, { required = false } = {}) {
@@ -160,10 +284,19 @@ const Settings = (() => {
         <div data-sku-segments style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
         <button type="button" class="btn btn-secondary btn-sm" data-sku-add-seg style="font-size:11.5px">+ Add segment</button>
 
-        <div style="margin-top:12px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm)">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--txt-4);margin-bottom:6px">Compiled pattern</div>
-          <div data-sku-preview style="font-family:monospace;font-size:12px;color:var(--txt-2);word-break:break-all;min-height:18px">—</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+        <div style="margin-top:14px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm)">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--txt-4);margin-bottom:6px">Your SKU structure</div>
+          <div data-sku-template style="font-family:monospace;font-size:14px;font-weight:600;color:var(--primary-text);word-break:break-all;min-height:20px">—</div>
+
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--txt-4);margin:12px 0 6px">Example</div>
+          <div data-sku-sample style="font-family:monospace;font-size:13px;color:var(--txt-2);min-height:18px">—</div>
+
+          <details style="margin-top:12px;border-top:1px dashed var(--border);padding-top:10px">
+            <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--txt-4);user-select:none">Advanced — compiled regex</summary>
+            <div data-sku-preview style="margin-top:6px;font-family:monospace;font-size:11px;color:var(--txt-4);word-break:break-all">—</div>
+          </details>
+
+          <div style="display:flex;align-items:center;gap:8px;margin-top:14px">
             <input class="form-input" data-sku-test placeholder="Paste a SKU to test, e.g. ARA1-12345-998877" style="flex:1">
             <span data-sku-test-result style="font-size:12px;font-weight:600;white-space:nowrap;min-width:96px;text-align:right">—</span>
           </div>
