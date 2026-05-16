@@ -487,7 +487,7 @@ const InventoryList = (() => {
         const uid     = r.row_uid || '';
         const shortId = uid ? uid.slice(0, 8) : '—';
         const uidCell = uid
-          ? `<span class="row-uid" title="Click to copy full UID&#10;${Utils.escapeHtml(uid)}" style="font-family:'Courier New',monospace;font-size:11px;color:var(--txt-3);cursor:pointer;user-select:all">${Utils.escapeHtml(shortId)}</span>`
+          ? `<span class="row-uid" title="Click to copy full UID&#10;${Utils.escapeHtml(uid)}" style="font-family:var(--font-number);font-variant-numeric:tabular-nums;font-size:11px;color:var(--txt-3);cursor:pointer;user-select:all">${Utils.escapeHtml(shortId)}</span>`
           : `<span style="color:var(--txt-4)">—</span>`;
         return `<tr data-uid="${Utils.escapeHtml(uid)}"
                     data-sku="${Utils.escapeHtml(r.sku || '')}"
@@ -499,8 +499,8 @@ const InventoryList = (() => {
                     data-date="${Utils.escapeHtml(r.date_added || '')}">
           <td>${uidCell}</td>
           <td>${Utils.escapeHtml(r.box_number || '—')}</td>
-          <td style="font-family:'Courier New',monospace;font-size:12px;color:var(--txt-2)">${Utils.escapeHtml(r.part_number || '—')}</td>
-          <td style="font-family:'Courier New',monospace;font-size:12px;color:var(--txt-2)">${Utils.escapeHtml(r.upc || '—')}</td>
+          <td style="font-family:var(--font-number);font-variant-numeric:tabular-nums;font-size:12px;color:var(--txt-2)">${Utils.escapeHtml(r.part_number || '—')}</td>
+          <td style="font-family:var(--font-number);font-variant-numeric:tabular-nums;font-size:12px;color:var(--txt-2)">${Utils.escapeHtml(r.upc || '—')}</td>
           <td style="text-align:center;font-weight:600">${Utils.formatNumber(r.quantity ?? 0)}</td>
           <td style="white-space:nowrap;color:var(--txt-3)">${Utils.formatDate(r.date_added)}</td>
           <td style="font-size:12px;color:var(--txt-4)">${Utils.escapeHtml(r.notes || '—')}</td>

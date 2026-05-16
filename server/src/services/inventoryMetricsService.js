@@ -420,5 +420,67 @@ export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
     }
   }
 
-  return { computeSummary, getStockAnalytics, getSkuSummary };
+  // ─────────────────────────────────────────────────────────────────────────
+  // getRawRowsForFilteredSkus — raw upload rows for every SKU that matches
+  // the SAME filter criteria as getSkuSummary. Powers the "Inventory List"
+  // export option in the SKU View export chooser: operator sees an
+  // aggregated table but wants to download every raw upload entry behind
+  // those SKUs (UID, box, qty, dates, notes — the full audit trail).
+  // ─────────────────────────────────────────────────────────────────────────
+  async function getRawRowsForFilteredSkus(organizationId, {
+    search = null, status = 'all',
+  } = {}) {
+    const skuRegex   = await _resolveSkuRegex(organizationId);
+    const regexParam = skuRegex ? 'sku_regex' : null;
+    const params     = { organizationId, ...(skuRegex ? { sku_regex: skuRegex } : {}) };
+
+    const whereParts = [];
+    if (search) {
+      whereParts.push('(LOWER(per_sku.sku) LIKE @search OR LOWER(COALESCE(extras.part_number, \'\')) LIKE @search OR LOWER(COALESCE(extras.upc, \'\')) LIKE @search)');
+      params.search = `%${String(search).toLowerCase()}%`;
+    }
+    if (status === 'in_stock')  whereParts.push('per_sku.remaining > 0 AND NOT per_sku.is_undefined');
+    if (status === 'oos')       whereParts.push('per_sku.remaining = 0 AND NOT per_sku.is_undefined');
+    if (status === 'phantom')   whereParts.push('per_sku.phantom > 0');
+    if (status === 'undefined') whereParts.push('per_sku.is_undefined');
+    const whereCond = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+
+    const query = `
+      WITH ${_ordersAggCTE()},
+      ${_invAggCTE(regexParam)},
+      ${_perSkuCTE()},
+      extras AS (
+        SELECT sku, ANY_VALUE(part_number) AS part_number, ANY_VALUE(upc) AS upc
+        FROM ${invTable}
+        WHERE organization_id = @organizationId
+        GROUP BY sku
+      ),
+      filtered_skus AS (
+        SELECT per_sku.sku
+        FROM per_sku
+        LEFT JOIN extras ON per_sku.sku = extras.sku
+        ${whereCond}
+      )
+      SELECT
+        i.row_uid, i.sku, i.upc, i.part_number, i.box_number,
+        i.quantity, i.date_added, i.notes, i.updated_at
+      FROM ${invTable} i
+      WHERE i.organization_id = @organizationId
+        AND i.sku IN (SELECT sku FROM filtered_skus)
+      ORDER BY i.sku ASC, COALESCE(i.updated_at, TIMESTAMP('1970-01-01')) DESC, i.date_added DESC
+    `;
+
+    try {
+      const [rows] = await bq.query({ query, params });
+      return rows.map(r => ({
+        ...r,
+        updated_at: r.updated_at?.value ?? r.updated_at ?? null,
+      }));
+    } catch (err) {
+      console.error('[inventoryMetrics.getRawRowsForFilteredSkus] failed:', err?.message ?? err);
+      return [];
+    }
+  }
+
+  return { computeSummary, getStockAnalytics, getSkuSummary, getRawRowsForFilteredSkus };
 }
