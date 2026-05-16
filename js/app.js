@@ -1175,16 +1175,57 @@ const App = (() => {
 
   function _initSidebarToggle() {
     const STORAGE_KEY = 'patman_sidebar_collapsed';
-    const btn = document.getElementById('sidebar-toggle');
-    if (!btn) return;
+    const toggleBtn   = document.getElementById('sidebar-toggle');
+    const logoBtn     = document.getElementById('sidebar-logo-btn');
+    const mobileBtn   = document.getElementById('topbar-menu-btn');
+    const backdrop    = document.getElementById('sidebar-backdrop');
+    const MOBILE_BREAKPOINT = 768;
+
+    const isMobile = () => window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches;
 
     if (localStorage.getItem(STORAGE_KEY) === '1') {
       document.body.classList.add('sidebar-collapsed');
     }
 
-    btn.addEventListener('click', () => {
+    // Desktop/tablet collapse toggle — collapses to icon-only rail.
+    const toggleDesktopCollapse = () => {
       const collapsed = document.body.classList.toggle('sidebar-collapsed');
       localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0');
+    };
+
+    // Mobile off-canvas open/close — slides the sidebar in over the page.
+    const openMobile  = () => document.body.classList.add('sidebar-mobile-open');
+    const closeMobile = () => document.body.classList.remove('sidebar-mobile-open');
+
+    toggleBtn?.addEventListener('click', () => {
+      if (isMobile()) closeMobile();
+      else            toggleDesktopCollapse();
+    });
+
+    logoBtn?.addEventListener('click', () => {
+      if (isMobile()) closeMobile();
+      else            toggleDesktopCollapse();
+    });
+
+    mobileBtn?.addEventListener('click', openMobile);
+    backdrop?.addEventListener('click', closeMobile);
+
+    // Close offcanvas after navigating on mobile so the page is visible.
+    document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+      item.addEventListener('click', () => { if (isMobile()) closeMobile(); });
+    });
+
+    // Escape closes the mobile offcanvas.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.body.classList.contains('sidebar-mobile-open')) {
+        closeMobile();
+      }
+    });
+
+    // If the viewport crosses the breakpoint, drop the mobile-open state so the
+    // sidebar doesn't get stuck in an inappropriate visibility on resize.
+    window.addEventListener('resize', () => {
+      if (!isMobile()) closeMobile();
     });
   }
 

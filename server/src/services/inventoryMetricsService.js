@@ -116,10 +116,22 @@ export function createInventoryMetricsService({ bq, projectId }) {
     // derived in JS as (units_sold_raw − sold_units_matched) using the
     // per-SKU summary above (which already filters to inventory-matched
     // effective SKUs).
+    //
+    // wrong_part_units = SUM(quantity_sold) for rows where the operator
+    // shipped a SKU with a different part-UPC than the ordered SKU.
+    // Mirrors the WRONG_PART_SQL in ordersRepository (single source of
+    // truth lives in this query — keep them in lockstep).
     const ordersQuery = `
       SELECT
         COUNT(*)                                                       AS total_orders,
         SUM(quantity_sold)                                             AS units_sold_raw,
+        SUM(CASE
+              WHEN shipped_sku_override IS NOT NULL
+               AND TRIM(shipped_sku_override) != ''
+               AND COALESCE(REGEXP_EXTRACT(shipped_sku_override, r'^ARA[0-9]+(.+)$'), shipped_sku_override)
+                != COALESCE(REGEXP_EXTRACT(sku, r'^ARA[0-9]+(.+)$'), sku)
+              THEN quantity_sold ELSE 0
+            END)                                                       AS wrong_part_units,
         COUNT(DISTINCT CASE WHEN platform IS NOT NULL THEN platform END) AS active_platforms,
         0                                                              AS ignored_orders
       FROM ${ordTable}
@@ -149,6 +161,7 @@ export function createInventoryMetricsService({ bq, projectId }) {
       // because Sold(matched) = Fulfilled + Phantom by the per-SKU pivot.
       const unitsSoldRaw     = Number(ordRow.units_sold_raw ?? 0);
       const unknownUnitsSold = Math.max(unitsSoldRaw - soldMatched, 0);
+      const wrongPartUnits   = Number(ordRow.wrong_part_units ?? 0);
       const actualUnitsSold  = fulfilledUnits;
 
       return {
@@ -167,6 +180,7 @@ export function createInventoryMetricsService({ bq, projectId }) {
         // Sales KPIs
         unitsSold:              unitsSoldRaw,
         unknownUnitsSold,
+        wrongPartUnits,
         totalOrders:            Number(ordRow.total_orders             ?? 0),
         activePlatforms:        Number(ordRow.active_platforms         ?? 0),
         ignoredOrders:          Number(ordRow.ignored_orders           ?? 0),
@@ -179,7 +193,7 @@ export function createInventoryMetricsService({ bq, projectId }) {
         totalSkus: 0, totalUnits: 0, soldUnitsMatched: 0, actualUnitsSold: 0,
         fulfilledUnits: 0, physicalRemainingUnits: 0,
         phantomUnits: 0, inStockSkus: 0, oosSkus: 0, phantomSkus: 0, undefinedSkus: 0,
-        unitsSold: 0, unknownUnitsSold: 0,
+        unitsSold: 0, unknownUnitsSold: 0, wrongPartUnits: 0,
         totalOrders: 0, activePlatforms: 0, ignoredOrders: 0,
         remainingStock: 0,
       };
