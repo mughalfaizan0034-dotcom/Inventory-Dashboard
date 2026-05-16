@@ -31,7 +31,10 @@ const Orders = (() => {
     return m ? m[1] : s;
   }
 
-  function _getEffectiveSku(sku, shippedFromBox) {
+  function _getEffectiveSku(sku, shippedFromBox, shippedSkuOverride) {
+    // Full-SKU override (wrong-part scenario) wins — used verbatim.
+    const override = (shippedSkuOverride ?? '').toString().trim();
+    if (override) return override;
     if (!sku) return '';
     const parsed = _parseSku(sku);
     if (!parsed) return sku;
@@ -112,23 +115,34 @@ const Orders = (() => {
     }
 
     tbody.innerHTML = rows.map(row => {
-      const id        = row.order_row_id || '';
-      const isUnknown = !!row.is_unknown;
+      const id          = row.order_row_id || '';
+      const isUnknown   = !!row.is_unknown;
+      const isWrongPart = !!row.is_wrong_part;
 
       const parsedSku  = _parseSku(row.sku || '');
       const origBox    = parsedSku?.box || '';
-      const effectiveShippedSku = _getEffectiveSku(row.sku || '', row.shipped_from_box || '');
+      const skuOverride = row.shipped_sku_override || '';
+      const effectiveShippedSku = _getEffectiveSku(row.sku || '', row.shipped_from_box || '', skuOverride);
       const shipped    = row.shipped_from_box || '';
-      const isOverride = !!(shipped && shipped !== origBox);
+      // "Override" badge: same-part-different-box. "Wrong Part" badge:
+      // operator shipped a different part/UPC entirely (server flag).
+      const isBoxOverride = !!(shipped && shipped !== origBox) && !isWrongPart;
       let rowClass = isUnknown ? 'row-unknown' : '';
-      if (isOverride) rowClass = rowClass ? `${rowClass} row-override` : 'row-override';
+      if (isWrongPart) rowClass = rowClass ? `${rowClass} row-wrong-part` : 'row-wrong-part';
+      else if (isBoxOverride) rowClass = rowClass ? `${rowClass} row-override` : 'row-override';
       const trAttr = rowClass ? ` class="${rowClass}"` : '';
+
+      const badgeHtml = isWrongPart
+        ? '<span style="font-size:10px;background:#fee2e2;color:#b91c1c;padding:1px 5px;border-radius:3px;font-weight:700;margin-left:5px;vertical-align:middle">Wrong Part</span>'
+        : (isBoxOverride
+          ? '<span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span>'
+          : '');
 
       let shippedHtml;
       if (!canEdit) {
-        shippedHtml = `<span style="font-weight:500">${Utils.escapeHtml(effectiveShippedSku || '—')}</span>${isOverride ? '<span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span>' : ''}`;
-      } else if (isOverride) {
-        shippedHtml = `<span style="font-weight:500">${Utils.escapeHtml(effectiveShippedSku)}</span><span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 5px;border-radius:3px;font-weight:600;margin-left:5px;vertical-align:middle">Override</span><button class="order-edit-btn" style="background:none;border:none;opacity:.45;padding:0 3px;margin-left:4px;cursor:pointer;vertical-align:middle;display:inline-flex;align-items:center" title="Change fulfillment SKU"><i data-lucide="pencil" class="icon" style="width:12px;height:12px"></i></button>`;
+        shippedHtml = `<span style="font-weight:500">${Utils.escapeHtml(effectiveShippedSku || '—')}</span>${badgeHtml}`;
+      } else if (isWrongPart || isBoxOverride) {
+        shippedHtml = `<span style="font-weight:500">${Utils.escapeHtml(effectiveShippedSku)}</span>${badgeHtml}<button class="order-edit-btn" style="background:none;border:none;opacity:.45;padding:0 3px;margin-left:4px;cursor:pointer;vertical-align:middle;display:inline-flex;align-items:center" title="Change fulfillment SKU"><i data-lucide="pencil" class="icon" style="width:12px;height:12px"></i></button>`;
       } else {
         shippedHtml = `<span class="order-edit-btn" style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1.5px solid #93c5fd;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700;color:#1d4ed8;cursor:pointer" title="Click to change fulfillment SKU">&bull; ${Utils.escapeHtml(effectiveShippedSku || '&mdash;')}</span>`;
       }
@@ -149,6 +163,7 @@ const Orders = (() => {
                 data-sku="${Utils.escapeHtml(row.sku || '')}"
                 data-qty="${Utils.escapeHtml(String(row.quantity_sold ?? ''))}"
                 data-shipped="${Utils.escapeHtml(shipped)}"
+                data-sku-override="${Utils.escapeHtml(skuOverride)}"
                 data-platform="${Utils.escapeHtml(row.platform || '')}"${trAttr}>
         <td>${uidCell}</td>
         <td>${orderIdCell}</td>
@@ -383,6 +398,9 @@ const Orders = (() => {
             original_sku:     tr.dataset.sku || '',
           });
           tr.dataset.shipped = newShipped;
+          // Popover only writes box-only overrides; any prior wrong-part
+          // override is cleared by the backend MERGE — sync the dataset.
+          tr.dataset.skuOverride = '';
           // Reassignment changes inventory deductions → invalidate canonical KPIs.
           MetricsEngine.invalidate();
           Notify.success('Saved', `Fulfillment SKU: ${prevLabel} → ${nextLabel}`);

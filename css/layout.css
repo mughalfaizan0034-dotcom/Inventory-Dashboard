@@ -16,19 +16,6 @@
   gap: 16px;
 }
 
-.load-logo {
-  width: 52px; height: 52px;
-  background: var(--primary);
-  border-radius: var(--r-lg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-title);
-  font-size: 22px;
-  font-weight: 700;
-  color: #fff;
-}
-
 .load-text {
   font-family: var(--font-title);
   font-size: 15px;
@@ -65,19 +52,6 @@
   align-items: center;
   gap: 12px;
   margin-bottom: 28px;
-}
-
-.login-logo {
-  width: 44px; height: 44px;
-  background: var(--primary);
-  border-radius: var(--r);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-title);
-  font-size: 18px;
-  font-weight: 700;
-  color: #fff;
 }
 
 .login-brand-name { font-family: var(--font-title); font-size: 17px; font-weight: 700; color: var(--txt-1); }

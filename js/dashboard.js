@@ -14,8 +14,10 @@ const Dashboard = (() => {
         and the remaining slice.)
 
      Card 2 (Orders):    Total Orders + Units Sold / Phantom / Fulfilled /
-     Unknown. Math invariant:
+     Wrong Part / Unknown. Math invariant:
          Units Sold (raw) = Fulfilled + Phantom + Unknown
+       Wrong Part is a SUBSET of Fulfilled (operator shipped a different
+       part/UPC than ordered) — it is informational, NOT additive.
      */
   const KPI_MAP = [
     // [elementId,              dataField,                 colorClass or fn]
@@ -29,6 +31,7 @@ const Dashboard = (() => {
     ['kpi-orders-units-sold',  'unitsSold',               null],
     ['kpi-phantom',            'phantomUnits',            d => d > 0 ? 'warn'   : null],
     ['kpi-fulfilled',          'actualUnitsSold',         'teal'],
+    ['kpi-wrong-part',         'wrongPartUnits',          d => d > 0 ? 'error'  : null],
     ['kpi-unknown',            'unknownUnitsSold',        d => d > 0 ? 'error'  : null],
   ];
 
