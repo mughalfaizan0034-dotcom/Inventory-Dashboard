@@ -242,17 +242,18 @@
 .nav-item.active .nav-icon { opacity: 1; }
 
 /* ── Collapsed sidebar ──────────────────────────────────────── */
-body.sidebar-collapsed .sidebar         { width: 56px; min-width: 56px; }
-body.sidebar-collapsed .main-wrapper   { margin-left: 56px; }
+body.sidebar-collapsed .sidebar         { width: 64px; min-width: 64px; }
+body.sidebar-collapsed .main-wrapper   { margin-left: 64px; }
 
-body.sidebar-collapsed .sidebar-header { padding: 14px 11px; justify-content: center; gap: 0; }
-body.sidebar-collapsed .sidebar-brand-text { opacity: 0; max-width: 0; }
-body.sidebar-collapsed .sidebar-toggle { margin-left: 0; }
+body.sidebar-collapsed .sidebar-header     { padding: 13px 0; justify-content: center; gap: 0; }
+body.sidebar-collapsed .sidebar-menu-label { opacity: 0; max-width: 0; }
+body.sidebar-collapsed .sidebar-toggle     { display: none; }
+body.sidebar-collapsed .sidebar-logo-btn   { display: flex; }
 
-body.sidebar-collapsed .sidebar-nav    { padding: 10px 4px; }
-body.sidebar-collapsed .nav-item       { justify-content: center; padding: 9px 0; }
+body.sidebar-collapsed .sidebar-nav    { padding: 10px 6px; }
+body.sidebar-collapsed .nav-item       { justify-content: center; padding: 10px 0; }
 body.sidebar-collapsed .nav-label      { opacity: 0; max-width: 0; }
-body.sidebar-collapsed .nav-icon       { opacity: .75; width: 20px; }
+body.sidebar-collapsed .nav-icon       { opacity: .8; width: 20px; }
 body.sidebar-collapsed .nav-item.active .nav-icon { opacity: 1; }
 
 /* Tooltip on hover in collapsed state */
@@ -331,11 +332,12 @@ body.sidebar-collapsed .sidebar-logout      { display: none; }
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   padding: 0 24px;
   position: sticky;
   top: 0;
   z-index: 50;
+  flex-shrink: 0;
 }
 
 .topbar-title {
@@ -343,9 +345,52 @@ body.sidebar-collapsed .sidebar-logout      { display: none; }
   font-size: 18px;
   font-weight: 700;
   color: var(--txt-1);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Mobile-only hamburger button in topbar — hidden on desktop/tablet. */
+.topbar-menu-btn {
+  display: none;
+  width: 36px; height: 36px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  color: var(--txt-2);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.topbar-menu-btn:hover { background: var(--primary-50); color: var(--primary-text); }
+.topbar-menu-btn:active { transform: scale(.95); }
+
+/* ── Sidebar backdrop (mobile offcanvas) ────────────────────── */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .45);
+  z-index: 99;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 220ms var(--ease), visibility 0s linear 220ms;
+}
+body.sidebar-mobile-open .sidebar-backdrop {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 220ms var(--ease);
+}
 
 /* ── Page content ───────────────────────────────────────────── */
 .page-content {

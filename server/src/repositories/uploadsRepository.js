@@ -156,35 +156,37 @@ export function createUploadsRepository({ bq, projectId }) {
     if (!rows.length) return;
     const params = {
       rows: rows.map(r => ({
-        order_row_id:     r.order_row_id,
-        organization_id:  r.organization_id,
-        order_id:         r.order_id,
-        order_date:       r.order_date,
-        sku:              r.sku,
-        quantity_sold:    r.quantity_sold,
-        platform:         r.platform,
-        shipped_from_box: r.shipped_from_box ?? null,
-        created_at:       r.created_at ?? new Date().toISOString(),
+        order_row_id:         r.order_row_id,
+        organization_id:      r.organization_id,
+        order_id:             r.order_id,
+        order_date:           r.order_date,
+        sku:                  r.sku,
+        quantity_sold:        r.quantity_sold,
+        platform:             r.platform,
+        shipped_from_box:     r.shipped_from_box     ?? null,
+        shipped_sku_override: r.shipped_sku_override ?? null,
+        created_at:           r.created_at ?? new Date().toISOString(),
       })),
     };
     const types = {
       rows: [{
-        order_row_id:     'STRING',
-        organization_id:  'STRING',
-        order_id:         'STRING',
-        order_date:       'STRING',
-        sku:              'STRING',
-        quantity_sold:    'INT64',
-        platform:         'STRING',
-        shipped_from_box: 'STRING',
-        created_at:       'STRING',
+        order_row_id:         'STRING',
+        organization_id:      'STRING',
+        order_id:             'STRING',
+        order_date:           'STRING',
+        sku:                  'STRING',
+        quantity_sold:        'INT64',
+        platform:             'STRING',
+        shipped_from_box:     'STRING',
+        shipped_sku_override: 'STRING',
+        created_at:           'STRING',
       }],
     };
     const query = `
       INSERT INTO ${ordTable}
-        (order_row_id, organization_id, order_id, order_date, sku, quantity_sold, platform, shipped_from_box, created_at)
+        (order_row_id, organization_id, order_id, order_date, sku, quantity_sold, platform, shipped_from_box, shipped_sku_override, created_at)
       SELECT
-        order_row_id, organization_id, order_id, order_date, sku, quantity_sold, platform, shipped_from_box,
+        order_row_id, organization_id, order_id, order_date, sku, quantity_sold, platform, shipped_from_box, shipped_sku_override,
         TIMESTAMP(created_at)
       FROM UNNEST(@rows)
     `;
