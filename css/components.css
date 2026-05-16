@@ -910,7 +910,7 @@
   outline-offset: 2px;
 }
 
-/* ── Card head: icon · eyebrow + main value · arrow ─────────── */
+/* ── Card head: icon · centered title block · arrow ─────────── */
 .kpi-card-head {
   display: flex;
   align-items: center;
@@ -929,54 +929,62 @@
 }
 .kpi-card-head-icon .icon { stroke-width: 2.25; }
 
+/* The title block (eyebrow + main metric) is centered within the space
+   between the icon and the arrow. Icon (38px) and arrow (38px) are sized
+   identically so the visual center coincides with the card's geometric
+   center — true-center without needing absolute positioning. */
 .kpi-card-head-text {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
 }
 .kpi-card-eyebrow {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--kpi-accent);
+  /* Subtle, watermark-like — sits behind the prominent metric value. */
+  color: var(--txt-4);
   text-transform: uppercase;
-  letter-spacing: .09em;
+  letter-spacing: .14em;
   line-height: 1;
+  opacity: .6;
 }
 .kpi-card-main {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  justify-content: center;
+  gap: 12px;
   flex-wrap: wrap;
 }
 .kpi-card-label {
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--txt-3);
   white-space: nowrap;
 }
 .kpi-card-value {
-  font-size: 28px;
+  font-size: 36px;
   font-weight: 700;
   color: var(--txt-1);
   font-family: var(--font-title);
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  letter-spacing: -.01em;
+  letter-spacing: -.015em;
 }
 .kpi-card-arrow {
   flex-shrink: 0;
-  margin-left: auto;
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
   color: var(--kpi-accent);
   background: transparent;
-  opacity: .6;
+  opacity: .55;
   transition: opacity var(--dur), transform var(--dur), background var(--dur);
 }
 .kpi-card:hover .kpi-card-arrow {
@@ -1050,10 +1058,12 @@
 
 @media (max-width: 640px) {
   .kpi-card { padding: 14px 14px 12px 18px; gap: 12px; }
-  .kpi-card-value { font-size: 24px; }
-  .kpi-card-head-icon { width: 34px; height: 34px; }
+  .kpi-card-value { font-size: 28px; }
+  .kpi-card-label { font-size: 13px; }
+  .kpi-card-head-icon,
+  .kpi-card-arrow   { width: 34px; height: 34px; }
   .kpi-sub-value { font-size: 17px; }
-  .kpi-card-eyebrow { font-size: 10px; }
+  .kpi-card-eyebrow { font-size: 10px; letter-spacing: .1em; }
 }
 
 /* Skeleton pulse while loading */
