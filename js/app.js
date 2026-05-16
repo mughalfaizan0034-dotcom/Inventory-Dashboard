@@ -1200,7 +1200,7 @@ const Settings = (() => {
             </div>
             <div class="form-hint">At least one active member is required. Removing a user deactivates their membership in this org only.</div>
           </div>
-          ${_renderSkuStructureSection(SkuValidator.parseStructure(org.sku_structure))}
+          ${_renderSkuStructureSection(org.sku_structure, { required: true })}
           <div data-field="error" class="form-error" style="display:none"></div>
         </form>`);
       m.setFooter(`
@@ -1237,6 +1237,9 @@ const Settings = (() => {
 
     if (!name)            return showErr('Display name is required.');
     if (!userIds.length)  return showErr('At least one member is required.');
+    if (!sku_structure || !sku_structure.segments?.length) {
+      return showErr('SKU structure is required. Enable validation and add at least one segment.');
+    }
 
     if (errEl) errEl.style.display = 'none';
     Loading.btn(saveBtn, true);

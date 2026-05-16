@@ -854,7 +854,10 @@
 
 .dash-2cards {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* Sales Intelligence (card 2) carries one extra sub-KPI; give it more
+     horizontal room than Inventory Intelligence. 40/60 split keeps both
+     cards comfortable without forcing the wider card's sub-KPI grid to wrap. */
+  grid-template-columns: 4fr 6fr;
   gap: 14px;
 }
 @media (max-width: 1100px) { .dash-2cards { grid-template-columns: 1fr; } }
@@ -1005,7 +1008,9 @@
   background: var(--kpi-accent-soft);
 }
 
-/* ── Sub-KPI grid: 5 columns desktop · responsive collapse ─── */
+/* ── Sub-KPI grid · responsive collapse ────────────────────────
+   Card 1 has 5 sub-KPIs (5 cols), Card 2 has 6 (6 cols). Each card
+   gets its own column count so both sit on a single row at desktop. */
 .kpi-card-subs {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1013,9 +1018,21 @@
   padding-top: 12px;
   border-top: 1px dashed var(--border);
 }
-@media (max-width: 1280px) { .kpi-card-subs { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } }
-@media (max-width: 720px)  { .kpi-card-subs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 420px)  { .kpi-card-subs { grid-template-columns: 1fr; } }
+.kpi-card--sales .kpi-card-subs {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+@media (max-width: 1280px) {
+  .kpi-card-subs                  { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; }
+  .kpi-card--sales .kpi-card-subs { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; }
+}
+@media (max-width: 720px) {
+  .kpi-card-subs                  { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-card--sales .kpi-card-subs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  .kpi-card-subs                  { grid-template-columns: 1fr; }
+  .kpi-card--sales .kpi-card-subs { grid-template-columns: 1fr; }
+}
 
 .kpi-sub-group {
   display: flex;

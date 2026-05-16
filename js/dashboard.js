@@ -32,7 +32,8 @@ const Dashboard = (() => {
     ['kpi-phantom',            'phantomUnits',            d => d > 0 ? 'warn'   : null],
     ['kpi-fulfilled',          'actualUnitsSold',         'teal'],
     ['kpi-wrong-part',         'wrongPartUnits',          d => d > 0 ? 'error'  : null],
-    ['kpi-unknown',            'unknownUnitsSold',        d => d > 0 ? 'error'  : null],
+    ['kpi-unknown-orders',     'unknownOrders',           d => d > 0 ? 'error'  : null],
+    ['kpi-unknown-units',      'unknownUnitsSold',        d => d > 0 ? 'error'  : null],
   ];
 
   /* ── Chart + filter state ────────────────────────────────── */
