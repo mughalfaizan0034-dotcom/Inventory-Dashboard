@@ -117,12 +117,14 @@ export async function organizationsRoutes(fastify, { orgsRepo, membershipsRepo, 
       const existing = await orgsRepo.findBySlug(parsed.data.slug);
       if (existing) return reply.code(409).send({ success: false, error: 'Organization slug already exists' });
 
-      const orgId = randomUUID();
+      const orgId      = randomUUID();
+      const skuPrep    = prepareSkuStructure(parsed.data.sku_structure);
       await orgsRepo.insert({
         organization_id: orgId,
         slug:            parsed.data.slug,
         display_name:    parsed.data.display_name,
         is_active:       true,
+        sku_structure:   skuPrep.skip ? null : skuPrep.value,
       });
 
       const memberIds = [...new Set([
@@ -163,6 +165,10 @@ export async function organizationsRoutes(fastify, { orgsRepo, membershipsRepo, 
       const profile = {};
       if (parsed.data.display_name !== undefined) profile.display_name = parsed.data.display_name;
       if (parsed.data.is_active    !== undefined) profile.is_active    = parsed.data.is_active;
+
+      const skuPrep = prepareSkuStructure(parsed.data.sku_structure);
+      if (!skuPrep.skip) profile.sku_structure = skuPrep.value;
+
       if (Object.keys(profile).length) {
         await orgsRepo.update(request.params.id, profile);
       }
