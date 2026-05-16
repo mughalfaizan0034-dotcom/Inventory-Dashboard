@@ -1,59 +1,56 @@
 /**
  * skuPatterns — SQL fragments for SKU resolution.
  *
- * The "effective SKU" for an order is the SKU it deducts inventory from,
- * which differs from the ordered SKU when a fulfillment override is set.
- * Two override forms are supported, in priority order:
+ * Every order has an "effective SKU" — the SKU that inventory is actually
+ * deducted from. This differs from the ordered SKU when the operator
+ * supplied a fulfillment override in the `shipped_sku` column. The column
+ * accepts three operator-typed forms; SQL parses intent at query time:
  *
- *   1. shipped_sku_override (full SKU) — operator shipped a DIFFERENT
- *      part/UPC entirely. Used verbatim. This is the "wrong part number"
- *      path: surfaces a distinct status, KPI, and row highlight.
+ *   "352"                              → box-only override
+ *                                        effective_sku = ARA352-{original part-upc}
+ *   "ARA352"                           → box-only override (same outcome)
+ *   "ARA352-4060537-037256090684"      → full SKU override (verbatim)
  *
- *   2. shipped_from_box (bare digits "20") — operator shipped the SAME
- *      part/UPC from a different ARA box. Effective SKU rebuilt as:
- *          ARA{shipped_from_box}-{part_number}-{upc}
- *
- *   3. Neither set → the original ordered SKU is the effective SKU.
- *
- * The CANONICAL storage form for shipped_from_box is bare digits ("20").
- * Older rows may contain "ARA20" or even a full SKU "ARA20-part-upc" — both
- * caused by user error before the upload normalizer (uploads/core/rowNormalizer)
- * was wired in. The SQL below strips back to bare digits so legacy data
- * resolves correctly without a one-time backfill.
+ * A row counts as "Shipped Wrong Part Number" when shipped_sku's
+ * part-UPC suffix differs from the ordered SKU's part-UPC suffix
+ * (i.e. the operator shipped a different part, not just a different box).
  *
  * Every analytic / lookup query that needs the effective SKU MUST use
- * effectiveSkuSql() so the resolution stays consistent across pages.
+ * effectiveSkuSql() so resolution stays consistent across pages.
  */
 
 /**
  * Build the CASE expression that resolves to the effective SKU.
  *
  * @param {object} opts
- * @param {string} [opts.skuCol='sku']                              — column / expression for ordered SKU
- * @param {string} [opts.shippedCol='shipped_from_box']             — column / expression for box-only override
- * @param {string} [opts.overrideCol='shipped_sku_override']        — column / expression for full-SKU override
+ * @param {string} [opts.skuCol='sku']         — column / expression for ordered SKU
+ * @param {string} [opts.shippedCol='shipped_sku'] — column / expression for the override
  * @returns {string} SQL CASE expression (NOT aliased — caller appends AS effective_sku)
  */
 export function effectiveSkuSql({
-  skuCol      = 'sku',
-  shippedCol  = 'shipped_from_box',
-  overrideCol = 'shipped_sku_override',
+  skuCol     = 'sku',
+  shippedCol = 'shipped_sku',
 } = {}) {
-  // COALESCE(REGEXP_EXTRACT(..., r'^(?:ARA)?(\d+)'), <trimmed>) collapses any of
-  //   "20" / "ARA20" / "ARA20-4060915-037256018282"
-  // back to "20". Non-ARA values like "BX-001" are preserved unchanged.
+  // Override priority:
+  //   1. Full SKU input "ARA{n}-{part}-{upc}" → use verbatim.
+  //   2. Bare digits "{n}" or "ARA{n}" → rebuild ARA{n}{-original-part-upc}.
+  //   3. Empty / null → original ordered SKU.
+  //
+  // The COALESCE(REGEXP_EXTRACT(..., r'^(?:ARA)?([0-9]+)$'), trimmed) on
+  // the box-only branch handles the bare-digits and "ARA20" forms uniformly.
   return `
     CASE
-      WHEN ${overrideCol} IS NOT NULL
-           AND TRIM(CAST(${overrideCol} AS STRING)) != ''
-      THEN TRIM(CAST(${overrideCol} AS STRING))
+      WHEN ${shippedCol} IS NOT NULL
+           AND TRIM(CAST(${shippedCol} AS STRING)) != ''
+           AND REGEXP_CONTAINS(TRIM(CAST(${shippedCol} AS STRING)), r'^ARA[0-9]+-.+-.+$')
+      THEN TRIM(CAST(${shippedCol} AS STRING))
       WHEN ${shippedCol} IS NOT NULL
            AND TRIM(CAST(${shippedCol} AS STRING)) != ''
            AND REGEXP_CONTAINS(${skuCol}, r'^ARA[0-9]+-.+$')
       THEN CONCAT(
              'ARA',
              COALESCE(
-               REGEXP_EXTRACT(TRIM(CAST(${shippedCol} AS STRING)), r'^(?:ARA)?(\\d+)'),
+               REGEXP_EXTRACT(TRIM(CAST(${shippedCol} AS STRING)), r'^(?:ARA)?([0-9]+)$'),
                TRIM(CAST(${shippedCol} AS STRING))
              ),
              REGEXP_EXTRACT(${skuCol}, r'^ARA[0-9]+(.+)$')
@@ -61,4 +58,27 @@ export function effectiveSkuSql({
       ELSE ${skuCol}
     END
   `.trim();
+}
+
+/**
+ * SQL boolean expression: TRUE when shipped_sku is a full-SKU override
+ * whose part-UPC suffix differs from the ordered SKU's part-UPC suffix
+ * — i.e. the operator shipped a DIFFERENT part, not just a different box.
+ *
+ * @param {object} opts
+ * @param {string} [opts.skuCol='o.sku']
+ * @param {string} [opts.shippedCol='o.shipped_sku']
+ * @returns {string} SQL boolean expression
+ */
+export function wrongPartSql({
+  skuCol     = 'o.sku',
+  shippedCol = 'o.shipped_sku',
+} = {}) {
+  return `(
+    ${shippedCol} IS NOT NULL
+    AND TRIM(CAST(${shippedCol} AS STRING)) != ''
+    AND REGEXP_CONTAINS(TRIM(CAST(${shippedCol} AS STRING)), r'^ARA[0-9]+-.+-.+$')
+    AND COALESCE(REGEXP_EXTRACT(TRIM(CAST(${shippedCol} AS STRING)), r'^ARA[0-9]+(.+)$'), ${shippedCol})
+        != COALESCE(REGEXP_EXTRACT(${skuCol}, r'^ARA[0-9]+(.+)$'), ${skuCol})
+  )`.trim();
 }

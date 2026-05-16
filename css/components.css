@@ -998,25 +998,11 @@
 @media (max-width: 420px)  { .kpi-card-subs { grid-template-columns: 1fr; } }
 
 .kpi-sub-group {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
   padding: 4px 8px 4px 0;
-}
-.kpi-sub-group + .kpi-sub-group::before {
-  content: '';
-  position: absolute;
-  left: -3px;
-  top: 6px;
-  bottom: 6px;
-  width: 1px;
-  background: var(--border);
-  opacity: .55;
-}
-@media (max-width: 1280px) {
-  .kpi-sub-group + .kpi-sub-group::before { display: none; }
 }
 
 .kpi-sub-label {

@@ -1,6 +1,19 @@
 import { authenticate, requireRole } from '../middleware/authenticate.js';
 import { AppError } from '../utils/errors.js';
+import { normalizeStructureForStorage } from '../utils/skuValidator.js';
 import { z } from 'zod';
+
+// Per-org SKU structure config. All fields optional — admins can submit a
+// partial object and the validator fills sensible defaults. enabled:false
+// (or omitting prefixes) keeps validation off without removing the config.
+const skuStructureSchema = z.object({
+  enabled:      z.boolean().optional(),
+  prefixes:     z.array(z.string().min(1).max(16)).max(16).optional(),
+  separator:    z.string().max(4).optional(),
+  box_pattern:  z.string().max(120).optional(),
+  upc_pattern:  z.string().max(120).optional(),
+  part_pattern: z.string().max(120).optional(),
+}).nullable().optional();
 
 const createOrgSchema = z.object({
   display_name:    z.string().min(1).max(100),
@@ -8,16 +21,32 @@ const createOrgSchema = z.object({
   // Every org must have at least one member. The creating admin counts —
   // they're auto-included server-side if not present in this list.
   member_user_ids: z.array(z.string().uuid()).min(1),
+  sku_structure:   skuStructureSchema,
 });
 
 // Slug is locked after creation — it's the URL identifier and changing it
 // would break bookmarks/integrations. Only display_name, member roster,
-// and active status can change.
+// active status, and SKU structure can change.
 const updateOrgSchema = z.object({
   display_name:    z.string().min(1).max(100).optional(),
   is_active:       z.boolean().optional(),
   member_user_ids: z.array(z.string().uuid()).min(1).optional(),
+  sku_structure:   skuStructureSchema,
 });
+
+/**
+ * Normalize the inbound sku_structure into the JSON string we persist on
+ * organizations.sku_structure. Returns:
+ *   { skip: true }                       → not present in the request, leave column alone
+ *   { value: null }                      → explicit clear (null on the wire)
+ *   { value: '<json>' }                  → JSON-encoded normalized object
+ */
+function prepareSkuStructure(raw) {
+  if (raw === undefined) return { skip: true };
+  if (raw === null)      return { value: null };
+  const normalized = normalizeStructureForStorage(raw);
+  return { value: normalized ? JSON.stringify(normalized) : null };
+}
 
 export async function organizationsRoutes(fastify, { orgsRepo, membershipsRepo, usersRepo }) {
   const { randomUUID } = await import('crypto');
