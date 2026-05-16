@@ -124,9 +124,11 @@ const Orders = (() => {
       const skuOverride = row.shipped_sku_override || '';
       const effectiveShippedSku = _getEffectiveSku(row.sku || '', row.shipped_from_box || '', skuOverride);
       const shipped    = row.shipped_from_box || '';
-      // "Override" badge: same-part-different-box. "Wrong Part" badge:
-      // operator shipped a different part/UPC entirely (server flag).
-      const isBoxOverride = !!(shipped && shipped !== origBox) && !isWrongPart;
+      // "Override" badge: box differs from the ordered SKU's box but the
+      // part-UPC matches (server's is_wrong_part = false). Works for either
+      // column the override landed in: shipped_from_box OR shipped_sku_override.
+      const effectiveBox = _parseSku(effectiveShippedSku)?.box || '';
+      const isBoxOverride = !isWrongPart && !!origBox && !!effectiveBox && effectiveBox !== origBox;
       let rowClass = isUnknown ? 'row-unknown' : '';
       if (isWrongPart) rowClass = rowClass ? `${rowClass} row-wrong-part` : 'row-wrong-part';
       else if (isBoxOverride) rowClass = rowClass ? `${rowClass} row-override` : 'row-override';

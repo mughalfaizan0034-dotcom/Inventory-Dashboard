@@ -1176,7 +1176,7 @@ const App = (() => {
   function _initSidebarToggle() {
     const STORAGE_KEY = 'patman_sidebar_collapsed';
     const toggleBtn   = document.getElementById('sidebar-toggle');
-    const logoBtn     = document.getElementById('sidebar-logo-btn');
+    const expandBtn   = document.getElementById('sidebar-expand-btn');
     const mobileBtn   = document.getElementById('topbar-menu-btn');
     const backdrop    = document.getElementById('sidebar-backdrop');
     const MOBILE_BREAKPOINT = 768;
@@ -1202,7 +1202,7 @@ const App = (() => {
       else            toggleDesktopCollapse();
     });
 
-    logoBtn?.addEventListener('click', () => {
+    expandBtn?.addEventListener('click', () => {
       if (isMobile()) closeMobile();
       else            toggleDesktopCollapse();
     });
