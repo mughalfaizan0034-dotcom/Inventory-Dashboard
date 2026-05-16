@@ -12,7 +12,14 @@ export async function dashboardRoutes(fastify, { dashboardService }) {
   });
 
   fastify.get('/performance', { preHandler: [authenticate] }, async (request, reply) => {
-    const weeks    = Math.min(Math.max(parseInt(request.query.weeks, 10) || 12, 1), 52);
+    // weeks = 0  → "All time" sentinel (no date window applied)
+    // weeks > 0  → trailing N weeks, clamped to a sensible upper bound
+    //              (large enough to cover ~10 years of weekly buckets so
+    //              the chart can render an All-time view safely).
+    const raw = parseInt(request.query.weeks, 10);
+    const weeks = Number.isFinite(raw) && raw === 0
+      ? 0
+      : Math.min(Math.max(raw || 12, 1), 520);
     const platform = request.query.platform || null;
     try {
       const data = await dashboardService.getPerformance(request.user.organization_id, weeks, platform);
