@@ -104,11 +104,6 @@
               transform   var(--dur) var(--ease);
 }
 
-/* Status dot pulse */
-.status-dot.online {
-  animation: pulse 2.5s ease infinite;
-}
-
 /* KPI value counter effect (class added by JS) */
 .kpi-value.updating {
   animation: scaleIn .15s var(--ease);
@@ -120,20 +115,6 @@
   50%       { box-shadow: 0 2px 18px rgba(37,99,235,.45); }
 }
 .guide-pulse { animation: guidePulse 3s ease-in-out infinite; }
-
-/* Topbar refresh button — icon spins while the click handler runs. The
-   class is added on click and removed when the refresh promise resolves
-   (or after a min-duration so very fast refreshes still show feedback). */
-#topbar-refresh-btn .icon {
-  transition: transform var(--dur) var(--ease);
-}
-#topbar-refresh-btn.is-spinning .icon {
-  animation: spin .8s linear infinite;
-}
-#topbar-refresh-btn.is-spinning {
-  cursor: progress;
-  opacity: .85;
-}
 
 /* Inline box selector expand */
 @keyframes expandDown {

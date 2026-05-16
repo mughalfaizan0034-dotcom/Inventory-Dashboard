@@ -1665,14 +1665,26 @@ const Settings = (() => {
 
 /* ── App router ─────────────────────────────────────────────── */
 const App = (() => {
+  // minRole gates page access on the JS side — same hierarchy that
+  // Auth.applyRoleVisibility() uses for sidebar items. Box Lookup is the
+  // only page available to viewers; everything else requires manager+.
   const PAGES = {
-    dashboard:   { label: 'Dashboard',      init: () => Dashboard.load() },
-    inventory:   { label: 'Inventory List', init: () => InventoryList.load() },
-    orders:      { label: 'Orders',         init: () => Orders.load() },
-    uploads:     { label: 'Uploads',        init: () => Uploads.loadHistory() },
-    settings:    { label: 'Settings',       init: () => Settings.loadUsers() },
-    'box-lookup':{ label: 'Box Lookup',     init: () => {} },
+    dashboard:   { label: 'Dashboard',      minRole: 'manager', init: () => Dashboard.load() },
+    inventory:   { label: 'Inventory List', minRole: 'manager', init: () => InventoryList.load() },
+    orders:      { label: 'Orders',         minRole: 'manager', init: () => Orders.load() },
+    uploads:     { label: 'Uploads',        minRole: 'manager', init: () => Uploads.loadHistory() },
+    settings:    { label: 'Settings',       minRole: 'admin',   init: () => Settings.loadUsers() },
+    'box-lookup':{ label: 'Box Lookup',     minRole: 'viewer',  init: () => {} },
   };
+
+  // First page the user lands on after login. Honors the URL hash when
+  // it points at a page the user can actually access — otherwise falls
+  // back to the first page their role allows (Dashboard for staff+,
+  // Box Lookup for viewers).
+  function _defaultLandingPage() {
+    if (Auth.hasRole('manager')) return 'dashboard';
+    return 'box-lookup';
+  }
 
   let _currentPage  = null;
   let _initialized  = {};
@@ -1800,29 +1812,6 @@ const App = (() => {
         danger:      false,
       });
       if (confirmed) Auth.logout();
-    });
-
-    const refreshBtn = document.getElementById('topbar-refresh-btn');
-    if (refreshBtn) refreshBtn.addEventListener('click', async () => {
-      // Blow away the canonical metrics cache so every page (dashboard,
-      // inventory, orders, box lookup) re-fetches fresh from the backend.
-      // Without this the topbar refresh only re-ran page init handlers
-      // while still serving the stale MetricsEngine snapshot.
-      if (refreshBtn.classList.contains('is-spinning')) return; // ignore re-entrancy
-      refreshBtn.classList.add('is-spinning');
-      refreshBtn.disabled = true;
-
-      // Min-duration so very fast loads still show the spin (visual feedback).
-      const minDuration = new Promise(resolve => setTimeout(resolve, 600));
-
-      try { MetricsEngine?.invalidate?.(); } catch {}
-      const refresh = _currentPage ? Promise.resolve(PAGES[_currentPage]?.load?.()) : Promise.resolve();
-
-      try { await Promise.all([refresh, minDuration]); }
-      finally {
-        refreshBtn.classList.remove('is-spinning');
-        refreshBtn.disabled = false;
-      }
     });
 
     _initSidebarToggle();

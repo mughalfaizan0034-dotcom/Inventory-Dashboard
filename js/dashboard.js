@@ -266,8 +266,6 @@ const Dashboard = (() => {
     try {
       const kpiData = await MetricsEngine.load();
       _renderKPICards(kpiData);
-      const el = document.getElementById('last-sync-time');
-      if (el) el.textContent = 'Updated ' + Utils.timeAgo(new Date().toISOString());
     } catch (err) {
       document.getElementById('dash-kpi-area')?.classList.remove('kpi-loading');
       Notify.apiError(err);
