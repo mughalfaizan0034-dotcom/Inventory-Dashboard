@@ -655,17 +655,110 @@ const InventoryList = (() => {
     load();
   }
 
-  /* ── Export ──────────────────────────────────────────────────
-     Exports the SKU-LEVEL aggregate (the same dataset the page shows),
-     NOT the raw upload rows behind each SKU. The drilldown is for
-     operational audit; the export is for SKU intelligence reporting. */
+  /* ── Export chooser ──────────────────────────────────────────
+     Two distinct exports for this page, both respecting the active
+     status/search filter so the download mirrors what's on screen:
+
+       • SKU View       → one row per SKU with aggregated metrics
+                          (the intelligence dataset).
+       • Inventory List → every raw upload row underneath the matching
+                          SKUs, with UIDs intact (the audit dataset
+                          needed for feed-file CRUD).
+
+     A professional modal forces the operator to declare intent — the
+     two datasets answer different questions and accidental swaps
+     have caused operational confusion in the past. */
   let _exporting = false;
-  async function _doExportInventory() {
+
+  function _openExportChooser() {
+    if (_exporting) return;
+    const isFiltered = !!_search || _statusFilter !== 'all';
+    const filterSummary = (() => {
+      const parts = [];
+      if (_search) parts.push(`search "${Utils.escapeHtml(_search)}"`);
+      if (_statusFilter && _statusFilter !== 'all') {
+        const lbl = ({ in_stock:'In Stock', oos:'Out of Stock', phantom:'Phantom', undefined:'Undefined' })[_statusFilter] || _statusFilter;
+        parts.push(`filter: <strong>${lbl}</strong>`);
+      }
+      return parts.length
+        ? `<div style="font-size:12px;color:var(--txt-3);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:14px">Applies to current view: ${parts.join(' · ')}.</div>`
+        : `<div style="font-size:12px;color:var(--txt-4);margin-bottom:14px">Exports the full dataset (no filters applied).</div>`;
+    })();
+
+    const optionHtml = (key, icon, title, sub, badge) => `
+      <button class="export-choice" data-choice="${key}" type="button"
+        style="all:unset;display:flex;align-items:flex-start;gap:14px;width:100%;padding:14px 16px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:#fff;transition:border-color .12s, background .12s, transform .08s">
+        <span style="flex-shrink:0;width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;background:var(--primary-50);color:var(--primary-text)">
+          <i data-lucide="${icon}" class="icon" style="width:18px;height:18px"></i>
+        </span>
+        <span style="flex:1;display:flex;flex-direction:column;gap:3px;min-width:0">
+          <span style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:14px;font-weight:700;color:var(--txt-1)">${title}</span>
+            ${badge ? `<span style="font-size:10px;font-weight:700;background:var(--surface-3);color:var(--txt-3);padding:2px 7px;border-radius:999px;letter-spacing:.04em;text-transform:uppercase">${badge}</span>` : ''}
+          </span>
+          <span style="font-size:12.5px;color:var(--txt-3);line-height:1.45">${sub}</span>
+        </span>
+        <span style="flex-shrink:0;color:var(--txt-4);display:flex;align-items:center;align-self:center">
+          <i data-lucide="arrow-right" class="icon" style="width:16px;height:16px"></i>
+        </span>
+      </button>`;
+
+    const bodyHtml = `
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <p style="font-size:13.5px;color:var(--txt-2);line-height:1.55;margin-bottom:8px">
+          Choose the dataset to download. Both options respect the active filters and search on the SKU View.
+        </p>
+        ${filterSummary}
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${optionHtml('summary', 'layout-grid',
+             'SKU View',
+             'One row per SKU with Total Stock, Sold, Phantom, Remaining, Boxes, Last Added. The intelligence dataset for reporting and analysis.',
+             'Aggregated')}
+          ${optionHtml('raw', 'list',
+             'Inventory List',
+             'Every raw upload row behind the matching SKUs, with UIDs for feed-file CRUD. The audit dataset for operational traceability.',
+             'Raw · with UIDs')}
+        </div>
+      </div>`;
+
+    const m = new Modal({
+      title:    'Export inventory data',
+      body:     bodyHtml,
+      footer:   `<button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>`,
+      maxWidth: '540px',
+    });
+    m.show();
+    if (window.lucide) lucide.createIcons();
+
+    // Hover/active feedback for the choice cards.
+    m.bodyEl.querySelectorAll('.export-choice').forEach(btn => {
+      btn.addEventListener('mouseenter', () => {
+        btn.style.borderColor = 'var(--primary)';
+        btn.style.background  = 'var(--primary-50)';
+      });
+      btn.addEventListener('mouseleave', () => {
+        btn.style.borderColor = 'var(--border)';
+        btn.style.background  = '#fff';
+      });
+      btn.addEventListener('click', async () => {
+        const choice = btn.dataset.choice;
+        m.hide(); m.destroy();
+        if      (choice === 'summary') await _doExportSkuSummary(isFiltered);
+        else if (choice === 'raw')     await _doExportInventoryListRaw(isFiltered);
+      });
+    });
+
+    m.footerEl.addEventListener('click', (e) => {
+      const action = e.target.closest('[data-action]')?.dataset.action;
+      if (action === 'cancel') { m.hide(); m.destroy(); }
+    });
+  }
+
+  async function _doExportSkuSummary(isFiltered) {
     if (_exporting) return;
     _exporting = true;
     const btn = document.getElementById('inventory-export-btn');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Exporting…'; }
-    const isFiltered = _search || _statusFilter !== 'all';
     try {
       const filters = {};
       if (_sortBy)                                  filters.sort_by  = _sortBy;
@@ -679,11 +772,33 @@ const InventoryList = (() => {
       a.download = `sku_view_${isFiltered ? 'filtered_' : ''}export_${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      Notify.apiError(err);
-    } finally {
+    } catch (err) { Notify.apiError(err); }
+    finally {
       _exporting = false;
-      if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="download" class="icon" style="width:14px;height:14px"></i> Export'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="download" class="icon" style="width:14px;height:14px"></i> Export'; if (window.lucide) lucide.createIcons(); }
+    }
+  }
+
+  async function _doExportInventoryListRaw(isFiltered) {
+    if (_exporting) return;
+    _exporting = true;
+    const btn = document.getElementById('inventory-export-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Exporting…'; }
+    try {
+      const filters = {};
+      if (_search)                                  filters.search = _search;
+      if (_statusFilter && _statusFilter !== 'all') filters.status = _statusFilter;
+      const blob = await API.exportInventoryListRaw(filters);
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `inventory_list_${isFiltered ? 'filtered_' : ''}export_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { Notify.apiError(err); }
+    finally {
+      _exporting = false;
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="download" class="icon" style="width:14px;height:14px"></i> Export'; if (window.lucide) lucide.createIcons(); }
     }
   }
 
@@ -734,7 +849,7 @@ const InventoryList = (() => {
       statusSel.addEventListener('change', () => { _statusFilter = statusSel.value; _page = 1; load(); });
     }
 
-    if (exportBtn) exportBtn.addEventListener('click', _doExportInventory);
+    if (exportBtn) exportBtn.addEventListener('click', _openExportChooser);
 
     _initSortHeaders();
   }
