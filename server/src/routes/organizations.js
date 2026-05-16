@@ -42,6 +42,10 @@ const createOrgSchema = z.object({
   // Every org must have at least one member. The creating admin counts —
   // they're auto-included server-side if not present in this list.
   member_user_ids: z.array(z.string().uuid()).min(1),
+  // sku_structure is MANDATORY on create — the platform's "Undefined SKU"
+  // classification depends on every org having a defined SKU pattern. The
+  // mandatory check runs after zod parsing in the handler so we can return a
+  // helpful field-level error rather than a generic schema failure.
   sku_structure:   skuStructureSchema,
 });
 
