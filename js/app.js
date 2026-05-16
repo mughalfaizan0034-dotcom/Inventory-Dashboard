@@ -1554,8 +1554,21 @@ const App = (() => {
 
     // If the viewport crosses the breakpoint, drop the mobile-open state so the
     // sidebar doesn't get stuck in an inappropriate visibility on resize.
+    // Also re-apply the tablet auto-collapse when crossing the tablet band so
+    // that resizing from desktop down to tablet collapses the rail.
+    let _lastTablet = isTablet();
     window.addEventListener('resize', () => {
       if (!isMobile()) closeMobile();
+      const nowTablet = isTablet();
+      if (nowTablet !== _lastTablet) {
+        const userPref = localStorage.getItem(STORAGE_KEY);
+        // Only auto-flip when the user hasn't pinned a preference for this
+        // session. Once they toggle the rail manually the stored value wins.
+        if (userPref === null) {
+          document.body.classList.toggle('sidebar-collapsed', nowTablet);
+        }
+        _lastTablet = nowTablet;
+      }
     });
   }
 
