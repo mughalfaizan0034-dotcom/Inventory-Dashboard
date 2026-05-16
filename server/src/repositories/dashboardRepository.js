@@ -18,10 +18,6 @@ export function createDashboardRepository({ bq, projectId }) {
     const pTypes = { platform: 'STRING' };
     const platCond = `AND (@platform IS NULL OR platform = @platform)`;
 
-    // The legacy is_ignored column has been dropped (Phase D). Every order
-    // in the table is live, so no soft-delete filter is needed.
-    const notIgnored = '';
-
     const weeklyQuery = `
       SELECT
         DATE_TRUNC(SAFE_CAST(order_date AS DATE), WEEK) AS week_start,
@@ -30,7 +26,6 @@ export function createDashboardRepository({ bq, projectId }) {
       FROM ${ordTable}
       WHERE organization_id = @organizationId
         ${dateCond}
-        ${notIgnored}
         ${platCond}
       GROUP BY week_start
       ORDER BY week_start ASC
@@ -42,7 +37,6 @@ export function createDashboardRepository({ bq, projectId }) {
       WHERE organization_id = @organizationId
         ${dateCond}
         AND platform IS NOT NULL
-        ${notIgnored}
         ${platCond}
       GROUP BY platform
       ORDER BY units_sold DESC
@@ -53,7 +47,6 @@ export function createDashboardRepository({ bq, projectId }) {
       FROM ${ordTable}
       WHERE organization_id = @organizationId
         ${dateCond}
-        ${notIgnored}
         ${platCond}
       GROUP BY sku
       ORDER BY units_sold DESC
@@ -72,7 +65,6 @@ export function createDashboardRepository({ bq, projectId }) {
         FROM ${ordTable}
         WHERE organization_id = @organizationId
           AND SAFE_CAST(order_date AS DATE) IS NOT NULL
-          ${notIgnored}
           ${platCond}
       ),
       monthly_totals AS (

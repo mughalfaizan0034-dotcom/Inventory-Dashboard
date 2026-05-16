@@ -142,7 +142,12 @@ export async function authRoutes(fastify, { authService, usersRepo, membershipsR
       const m = memberships.find(x => x.membership_id === membership_id);
       if (!m) return reply.code(403).send({ success: false, error: 'Invalid membership selection' });
 
+      // M1: refresh user state from DB so an account deactivated between
+      // login and switch is rejected here too — not just at /auth/refresh.
       const user = await usersRepo.findById(payload.user_id);
+      if (!user || !user.is_active) {
+        return reply.code(401).send({ success: false, error: 'Account inactive' });
+      }
       const accessToken  = tokenFactory.signAccessToken({ ...m, user_id: user.user_id, username: user.username, display_name: user.display_name, role: user.role });
       const refreshToken = tokenFactory.signRefreshToken(user.user_id);
 

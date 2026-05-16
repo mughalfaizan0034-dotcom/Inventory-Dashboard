@@ -1,12 +1,6 @@
 import { authenticate, requireRole } from '../middleware/authenticate.js';
 import { AppError } from '../utils/errors.js';
 
-const ALLOWED_MIME = new Set([
-  'text/plain',
-  'text/tab-separated-values',
-  'application/octet-stream', // some browsers send TSV as this
-]);
-
 // Accepted upload format is TSV (Tab Separated Values). Excel exports TSV
 // cleanly via "Save As → Tab Separated Values (.tsv)" — this avoids the
 // ambiguity that occurred when users saved as "Text (Tab delimited) .txt"
@@ -14,6 +8,11 @@ const ALLOWED_MIME = new Set([
 //
 // .txt is still accepted as a backward-compat alias for users who already
 // have correctly tab-delimited .txt files from earlier exports.
+//
+// File MIME types are NOT checked: browsers vary too much in what they send
+// for TSV (text/plain, text/tab-separated-values, application/octet-stream,
+// even empty). The extension check + downstream TSV parser are the real
+// validators — a wrong-format upload fails parsing with a clear error.
 function validateUploadFile(part) {
   if (!part) return 'No file uploaded';
   const name = (part.filename ?? '').toLowerCase();

@@ -289,8 +289,11 @@ const Auth = (() => {
       // page that was bound to the previous org's data.
       try { history.replaceState(null, '', '#dashboard'); } catch {}
 
+      // M2: server returns a freshly-rotated refresh_token — persist THAT one,
+      // not the old refresh in storage. When backend revocation lands the
+      // old token will be revoked; reusing it would silently kick the user.
       saveSession(result.access_token, currentUser, result.organization,
-        sessionStorage.getItem(REFRESH_KEY), getMemberships());
+        result.refresh_token || sessionStorage.getItem(REFRESH_KEY), getMemberships());
 
       App.showApp();
     } catch (err) {
