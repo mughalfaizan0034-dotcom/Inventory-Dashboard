@@ -471,15 +471,17 @@ const InventoryList = (() => {
       // Raw row schema mirrors the feed-file columns exactly: every field
       // an operator can upload via TSV ends up visible here so the drilldown
       // is also the audit trail for a SKU's upload history.
+      // Initial Stock is centered (not right-aligned via .num) so the value
+      // doesn't crowd the Date Added column to its right.
       const head = `<thead><tr>
-        <th style="width:96px;font-size:11px">UID</th>
-        <th style="width:70px;font-size:11px">Box #</th>
-        <th style="font-size:11px">Part #</th>
-        <th style="font-size:11px">UPC</th>
-        <th class="num" style="width:96px;font-size:11px">Initial Stock</th>
-        <th style="width:110px;font-size:11px">Date Added</th>
+        <th style="width:110px;font-size:11px">UID</th>
+        <th style="width:80px;font-size:11px">Box #</th>
+        <th style="width:120px;font-size:11px">Part #</th>
+        <th style="width:160px;font-size:11px">UPC</th>
+        <th style="width:120px;font-size:11px;text-align:center">Initial Stock</th>
+        <th style="width:130px;font-size:11px">Date Added</th>
         <th style="font-size:11px">Notes</th>
-        <th style="width:50px;text-align:right;font-size:11px"></th>
+        <th style="width:60px;text-align:right;font-size:11px"></th>
       </tr></thead>`;
       const body = rows.map(r => {
         const uid     = r.row_uid || '';
@@ -499,8 +501,8 @@ const InventoryList = (() => {
           <td>${Utils.escapeHtml(r.box_number || '—')}</td>
           <td style="font-family:'Courier New',monospace;font-size:12px;color:var(--txt-2)">${Utils.escapeHtml(r.part_number || '—')}</td>
           <td style="font-family:'Courier New',monospace;font-size:12px;color:var(--txt-2)">${Utils.escapeHtml(r.upc || '—')}</td>
-          <td class="num" style="font-weight:600">${Utils.formatNumber(r.quantity ?? 0)}</td>
-          <td style="white-space:nowrap">${Utils.formatDate(r.date_added)}</td>
+          <td style="text-align:center;font-weight:600">${Utils.formatNumber(r.quantity ?? 0)}</td>
+          <td style="white-space:nowrap;color:var(--txt-3)">${Utils.formatDate(r.date_added)}</td>
           <td style="font-size:12px;color:var(--txt-4)">${Utils.escapeHtml(r.notes || '—')}</td>
           <td style="text-align:right">
             ${canEdit ? '<button class="btn btn-ghost btn-icon btn-sm sku-raw-edit" title="Edit raw row" style="opacity:.65"><i data-lucide="pencil" class="icon" style="width:12px;height:12px"></i></button>' : ''}
