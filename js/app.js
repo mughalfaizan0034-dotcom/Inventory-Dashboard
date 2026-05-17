@@ -1508,13 +1508,16 @@ const Settings = (() => {
     el.innerHTML = `<div style="display:flex;justify-content:center;padding:24px">${Loading.spinnerHtml()}</div>`;
     try {
       const status = await API.getSystemStatus();
-      el.innerHTML = `
+      const baseHtml = `
         <div style="display:grid;gap:10px">
           ${_statusRow('Cloud Run API', 'ok', 'Connected')}
           ${_statusRow('BigQuery', status.bqStatus || 'ok', status.bqMessage || 'Connected')}
           ${_statusRow('App Version', 'info', status.version || '—')}
           ${_statusRow('Last Check', 'info', Utils.formatDatetime(status.timestamp))}
         </div>`;
+      el.innerHTML = baseHtml + (Auth.hasRole('admin') ? _adminOpsPanelHtml() : '');
+      if (Auth.hasRole('admin')) _wireAdminOpsPanel();
+      if (window.lucide) lucide.createIcons();
     } catch (err) {
       el.innerHTML = Loading.error('Failed to load system status');
     }
@@ -1531,6 +1534,256 @@ const Settings = (() => {
           <i data-lucide="${iconName}" class="icon" style="width:14px;height:14px;color:${iconColor}" aria-hidden="true"></i>
         </span>
       </div>`;
+  }
+
+  /* ── Admin operations panel (Phase B parity-validation tooling) ────
+     Visible only when Auth.hasRole('admin'). Buttons consume the same
+     authenticated API client used everywhere else — no separate auth
+     path, no token plumbing. Each operation has its own result panel
+     beneath the button so multiple reports can stay on screen at once. */
+  function _adminOpsPanelHtml() {
+    const card = (id, title, sub, btnLabel, btnStyle = 'btn-secondary') => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+        <div>
+          <div style="font-size:13.5px;font-weight:700;color:var(--txt-1)">${Utils.escapeHtml(title)}</div>
+          <div style="font-size:12px;color:var(--txt-4);margin-top:2px;line-height:1.45">${sub}</div>
+        </div>
+        <button class="btn ${btnStyle} btn-sm" id="${id}" style="align-self:flex-start">
+          ${Utils.escapeHtml(btnLabel)}
+        </button>
+        <div id="${id}-result" class="admin-op-result" style="display:none;font-size:12px"></div>
+      </div>`;
+
+    return `
+      <div style="margin-top:22px;padding-top:18px;border-top:1px dashed var(--border)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <span style="font-size:10px;font-weight:700;background:var(--warning);color:#fff;padding:2px 7px;border-radius:999px;letter-spacing:.05em">ADMIN</span>
+          <div style="font-size:14px;font-weight:700;color:var(--txt-1)">Operational Diagnostics</div>
+        </div>
+        <div style="font-size:12px;color:var(--txt-4);margin-bottom:14px;line-height:1.5">
+          Phase B parity-validation tooling. Use these to populate summary tables, observe
+          parity, and confirm readiness for read-path cutover. See <code>docs/AUDIT_FOLLOWUP.md</code>.
+        </div>
+        <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+          ${card(
+            'admin-op-refresh-all',
+            'Refresh All Summary Tables',
+            'Triggers <code>summaryRefreshService.refresh()</code> for every active org. Eliminates the "never mutated since migration" parity-missing class.',
+            'Refresh All Orgs', 'btn-primary',
+          )}
+          ${card(
+            'admin-op-refresh-org',
+            'Refresh Current Organization',
+            'Force-rebuilds the four summary tables for the org you\'re signed into.',
+            'Refresh This Org',
+          )}
+          ${card(
+            'admin-op-summary-status',
+            'Summary Status (this org)',
+            'Per-table row count + most-recent <code>refreshed_at</code> for the active org.',
+            'View Status',
+          )}
+          ${card(
+            'admin-op-refresh-health',
+            'Refresh Health (24h)',
+            'Per-org refresh count, p50/p95 durations, failure count. Reads Cloud Logging.',
+            'View Health',
+          )}
+          ${card(
+            'admin-op-parity-report',
+            'Parity Report (24h)',
+            'The <strong>cutover gate</strong>. Per-org dashboard/SKU/box match-vs-diff counts and <code>ready_for_cutover</code> booleans.',
+            'View Parity Report',
+          )}
+        </div>
+      </div>
+    `;
+  }
+
+  function _showAdminResult(id, html, kind = 'info') {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const border = kind === 'error' ? 'var(--error)' : kind === 'success' ? 'var(--success)' : 'var(--border)';
+    const bg     = kind === 'error' ? 'rgba(220,38,38,.04)' : kind === 'success' ? 'rgba(22,163,74,.04)' : 'var(--surface-2)';
+    el.style.display = 'block';
+    el.style.cssText = `display:block;font-size:12px;background:${bg};border:1px solid ${border};border-radius:var(--r-sm);padding:10px 12px;margin-top:4px;line-height:1.5`;
+    el.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
+  }
+
+  async function _runAdminOp(btnId, fn) {
+    const btn   = document.getElementById(btnId);
+    const resId = `${btnId}-result`;
+    if (!btn) return;
+    const origText = btn.innerHTML;
+    btn.disabled  = true;
+    btn.innerHTML = '⏳ Running…';
+    try {
+      const data = await fn();
+      btn.disabled  = false;
+      btn.innerHTML = origText;
+      return data;
+    } catch (err) {
+      btn.disabled  = false;
+      btn.innerHTML = origText;
+      _showAdminResult(resId, `<strong style="color:var(--error)">Failed:</strong> ${Utils.escapeHtml(err?.message ?? String(err))}`, 'error');
+      throw err;
+    }
+  }
+
+  function _wireAdminOpsPanel() {
+    document.getElementById('admin-op-refresh-all')?.addEventListener('click', async () => {
+      const data = await _runAdminOp('admin-op-refresh-all', () => API.adminRefreshAllOrgs()).catch(() => null);
+      if (!data) return;
+      _showAdminResult(
+        'admin-op-refresh-all-result',
+        `<strong>Scheduled ${data.scheduled_count} refresh${data.scheduled_count === 1 ? '' : 'es'}.</strong> Wait ~30s, then check Summary Status to confirm. Org IDs: <code style="font-size:11px">${data.scheduled_orgs.join(', ')}</code>`,
+        'success',
+      );
+      Notify.success?.('Scheduled', `${data.scheduled_count} org refresh${data.scheduled_count === 1 ? '' : 'es'} queued`);
+    });
+
+    document.getElementById('admin-op-refresh-org')?.addEventListener('click', async () => {
+      const orgId = Auth.getOrganization()?.organization_id;
+      const data  = await _runAdminOp('admin-op-refresh-org', () => API.adminRefreshOrg(orgId)).catch(() => null);
+      if (!data) return;
+      _showAdminResult(
+        'admin-op-refresh-org-result',
+        `<strong>Refresh scheduled</strong> for org <code>${Utils.escapeHtml(data.organization_id)}</code>.`,
+        'success',
+      );
+      Notify.success?.('Scheduled', 'Org refresh queued');
+    });
+
+    document.getElementById('admin-op-summary-status')?.addEventListener('click', async () => {
+      const orgId = Auth.getOrganization()?.organization_id;
+      const data  = await _runAdminOp('admin-op-summary-status', () => API.adminSummaryStatus(orgId)).catch(() => null);
+      if (!data) return;
+      const rows = (data.tables || []).map(t => {
+        const ok    = t.status === 'ok';
+        const stale = ok && t.row_count === 0;
+        const color = !ok ? 'var(--error)' : stale ? 'var(--warning)' : 'var(--success)';
+        return `<tr>
+          <td style="padding:5px 8px;font-family:monospace;font-size:11.5px">${Utils.escapeHtml(t.table)}</td>
+          <td style="padding:5px 8px;font-variant-numeric:tabular-nums">${t.row_count ?? '—'}</td>
+          <td style="padding:5px 8px;color:var(--txt-3);font-size:11.5px">${t.last_refreshed_at ? Utils.formatDatetime(t.last_refreshed_at) : '— never refreshed —'}</td>
+          <td style="padding:5px 8px;color:${color};font-weight:600">${ok ? (stale ? 'EMPTY' : 'OK') : 'ERROR'}</td>
+        </tr>`;
+      }).join('');
+      _showAdminResult(
+        'admin-op-summary-status-result',
+        `<table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface-3);font-size:11px;text-transform:uppercase;color:var(--txt-3)">
+              <th style="padding:6px 8px;text-align:left">Table</th>
+              <th style="padding:6px 8px;text-align:left">Rows</th>
+              <th style="padding:6px 8px;text-align:left">Last refreshed</th>
+              <th style="padding:6px 8px;text-align:left">Status</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`,
+      );
+    });
+
+    document.getElementById('admin-op-refresh-health')?.addEventListener('click', async () => {
+      const data = await _runAdminOp('admin-op-refresh-health', () => API.adminRefreshHealth(24)).catch(() => null);
+      if (!data) return;
+      const orgs = data.orgs || [];
+      if (!orgs.length) {
+        _showAdminResult('admin-op-refresh-health-result', `<span style="color:var(--txt-4)">No refresh events in the last ${data.window_hours}h.</span>`);
+        return;
+      }
+      const rows = orgs.map(o => {
+        const failColor = o.failure_count > 0 ? 'var(--error)' : 'var(--txt-3)';
+        return `<tr>
+          <td style="padding:5px 8px;font-family:monospace;font-size:11px">${Utils.escapeHtml(o.organization_id.slice(0, 8))}…</td>
+          <td style="padding:5px 8px;font-variant-numeric:tabular-nums">${o.refresh_count}</td>
+          <td style="padding:5px 8px;font-variant-numeric:tabular-nums">${o.p50_table_ms ?? '—'} ms</td>
+          <td style="padding:5px 8px;font-variant-numeric:tabular-nums">${o.p95_table_ms ?? '—'} ms</td>
+          <td style="padding:5px 8px;font-weight:${o.failure_count > 0 ? '700' : '500'};color:${failColor}">${o.failure_count}</td>
+          <td style="padding:5px 8px;color:var(--txt-4);font-size:11px">${o.last_failure ? Utils.escapeHtml(JSON.stringify(o.last_failure).slice(0, 80)) : '—'}</td>
+        </tr>`;
+      }).join('');
+      _showAdminResult(
+        'admin-op-refresh-health-result',
+        `<div style="margin-bottom:6px;color:var(--txt-3)">
+          Window: ${data.window_hours}h · Log entries scanned: ${data.log_entries_scanned}
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface-3);font-size:11px;text-transform:uppercase;color:var(--txt-3)">
+              <th style="padding:6px 8px;text-align:left">Org</th>
+              <th style="padding:6px 8px;text-align:left">Refreshes</th>
+              <th style="padding:6px 8px;text-align:left">p50</th>
+              <th style="padding:6px 8px;text-align:left">p95</th>
+              <th style="padding:6px 8px;text-align:left">Failures</th>
+              <th style="padding:6px 8px;text-align:left">Last failure</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`,
+      );
+    });
+
+    document.getElementById('admin-op-parity-report')?.addEventListener('click', async () => {
+      const data = await _runAdminOp('admin-op-parity-report', () => API.adminParityReport(24)).catch(() => null);
+      if (!data) return;
+      const ready = data.ready_for_cutover || {};
+      const badge = (label, ok) => `
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:600;
+          background:${ok ? 'rgba(22,163,74,.10)' : 'rgba(220,38,38,.10)'};
+          color:${ok ? 'var(--success)' : 'var(--error)'}">
+          <i data-lucide="${ok ? 'check-circle' : 'x-circle'}" class="icon" style="width:13px;height:13px"></i>
+          ${Utils.escapeHtml(label)}: ${ok ? 'READY' : 'NOT READY'}
+        </span>`;
+
+      const orgs = data.orgs || [];
+      const rows = orgs.map(o => {
+        const cell = (surface) => {
+          const s = o[surface] || {};
+          const bad = (s.diff || 0) > 0 || (s.missing_or_total_diff || 0) > 0;
+          return `<td style="padding:5px 8px;font-variant-numeric:tabular-nums;color:${bad ? 'var(--error)' : 'var(--txt-2)'}">
+            ${s.match || 0}<span style="color:var(--txt-4)"> / </span>${s.diff || 0}<span style="color:var(--txt-4)"> / </span>${s.missing_or_total_diff || 0}
+          </td>`;
+        };
+        const lastDiff = o.dashboard?.last_diff || o.sku?.last_diff || o.box?.last_diff;
+        return `<tr>
+          <td style="padding:5px 8px;font-family:monospace;font-size:11px">${Utils.escapeHtml(o.organization_id.slice(0, 8))}…</td>
+          ${cell('dashboard')}
+          ${cell('sku')}
+          ${cell('box')}
+          <td style="padding:5px 8px;color:var(--txt-4);font-size:11px">${lastDiff ? Utils.escapeHtml(JSON.stringify(lastDiff).slice(0, 60)) : '—'}</td>
+        </tr>`;
+      }).join('');
+
+      _showAdminResult(
+        'admin-op-parity-report-result',
+        `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          ${badge('Dashboard', !!ready.dashboard)}
+          ${badge('SKU View',  !!ready.sku)}
+          ${badge('Box Lookup',!!ready.box)}
+        </div>
+        <div style="margin-bottom:8px;color:var(--txt-3)">
+          Window: ${data.window_hours}h · Log entries scanned: ${data.log_entries_scanned} · Orgs observed: ${orgs.length}
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface-3);font-size:11px;text-transform:uppercase;color:var(--txt-3)">
+              <th style="padding:6px 8px;text-align:left">Org</th>
+              <th style="padding:6px 8px;text-align:left" title="match / diff / missing or total_diff">Dashboard</th>
+              <th style="padding:6px 8px;text-align:left">SKU View</th>
+              <th style="padding:6px 8px;text-align:left">Box Lookup</th>
+              <th style="padding:6px 8px;text-align:left">Sample last diff</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="5" style="padding:8px;color:var(--txt-4)">No parity events in window — enable SUMMARY_PARITY_LOG=1 and let users hit the app.</td></tr>'}</tbody>
+        </table>
+        <div style="margin-top:6px;color:var(--txt-4);font-size:11px">
+          Column format: <code>match / diff / missing_or_total_diff</code>. Zero in the last two columns across every org = cleared for cutover.
+        </div>`,
+      );
+    });
   }
 
   /* ── Logs tab ─────────────────────────────────────────────── */
