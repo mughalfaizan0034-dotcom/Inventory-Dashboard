@@ -167,7 +167,93 @@ CLUSTER BY user_id, jti;
 
 ---
 
-## Materialized summary tables (architecturally cleanest performance win)
+## Materialized summary tables — Phase A SHIPPED · Phase B PENDING
+
+### Phase A — Foundation, dual-write, parity logging (LANDED 2026-05-17)
+
+What shipped:
+
+- [server/sql/migrations/20260517_002_materialized_summaries.sql](../server/sql/migrations/20260517_002_materialized_summaries.sql) —
+  DDL for three clustered summary tables: `dashboard_summary`,
+  `inventory_summary`, `box_summary`. **Operator must run this migration
+  before the new server build goes live**, otherwise summary writes 404
+  the table and refresh logs warnings. (Reads still work via live CTEs.)
+- [server/src/services/summaryRefreshService.js](../server/src/services/summaryRefreshService.js) —
+  `refresh(orgId)` rebuilds all three summaries for one org via
+  DELETE-then-INSERT inside a single org scope. Uses the same shared
+  CTE template (`_ordersAggCTE` / `_invAggCTE` / `_perSkuCTE`) as
+  `inventoryMetricsService` so the math is identical byte-for-byte.
+- Wired into every mutating route:
+  - [routes/uploads.js](../server/src/routes/uploads.js) — inventory + orders uploads
+  - [routes/inventory.js](../server/src/routes/inventory.js) — PATCH + DELETE
+  - [routes/orders.js](../server/src/routes/orders.js) — PATCH + DELETE + reassign
+  - [routes/organizations.js](../server/src/routes/organizations.js) — when `sku_structure` changes
+  - All fire-and-forget (`.catch(() => {})`); refresh failures don't fail the mutation.
+- [server/src/services/dashboardService.js](../server/src/services/dashboardService.js) —
+  Phase A parity logging: when `SUMMARY_PARITY_LOG=1` env is set, every
+  `getKPIs` ALSO reads from `dashboard_summary` and emits a structured
+  log line:
+  - `event: parity_match` — values agree
+  - `event: parity_diff` — values disagree; includes per-field {live, summary, delta}
+  - `event: parity_summary_missing` — no summary row for this org yet
+  - Read path still returns the LIVE CTE result. No behavior change.
+
+### Phase B — Read-path cutover (PENDING)
+
+**Do not start until parity logs show zero diffs across all active orgs for
+at least 24 hours.**
+
+Validation steps before cutover:
+1. Run the migration in BigQuery. Verify the three tables exist with
+   the documented clustering.
+2. Trigger an inventory + orders upload on a test org so a refresh runs.
+   Verify rows appear in the three summary tables.
+3. Enable `SUMMARY_PARITY_LOG=1` on the Cloud Run revision serving prod
+   (or staging). Let users use the dashboard normally for 24 hours.
+4. Filter logs for `event: parity_diff` or `event: parity_summary_missing`.
+   - If any diffs: investigate, fix the refresh service, redeploy, repeat.
+   - If only `parity_summary_missing`: those orgs have never had a mutating
+     operation since the migration — trigger a refresh for them
+     (e.g. open the org's settings + save sku_structure unchanged → fires
+     the refresh path).
+5. Once 24 hours pass with zero diffs, proceed.
+
+Cutover changes:
+1. `dashboardService.getKPIs(orgId)` →
+   - First attempt: `SELECT * FROM dashboard_summary WHERE organization_id = @orgId LIMIT 1`.
+   - If row exists and `refreshed_at` is recent enough (e.g. < 24h),
+     return it directly. Skip the live CTE path entirely.
+   - If row missing: fall back to live CTE (`metricsService.computeSummary`)
+     AND trigger an async `summaryRefreshService.refresh(orgId)` to fix
+     the missing row for next time.
+2. `inventoryMetricsService.getSkuSummary(orgId, opts)` →
+   - Replace the per-call CTE chain with `SELECT ... FROM
+     inventory_summary WHERE organization_id = @orgId AND <filter>
+     ORDER BY ... LIMIT N OFFSET M`. Same column shape as today.
+3. `lookupRepository.search(orgId, q)` →
+   - Replace the local CTE pipeline with
+     `SELECT ... FROM box_summary WHERE organization_id = @orgId
+     AND (upc = @q OR part_number = @q) ORDER BY part_number, upc,
+     remaining_stock DESC`.
+4. Remove `SUMMARY_PARITY_LOG` checks from dashboardService.
+5. Remove the 60s in-memory KPI cache (H1) — single-row SELECT is
+   already cheap enough. Keep the `invalidateKPICache` no-op shim so
+   existing call sites still compile.
+6. Delete the unused CTE methods that no longer have callers:
+   - `inventoryMetricsService.computeSummary` (kept as a private helper
+     for refresh service if needed)
+   - `inventoryMetricsService.getSkuSummary` live CTE path
+   - The duplicate `ord_summary` CTEs in `inventoryRepository.findAlternativeBoxes`
+     (refactor to read from `box_summary` joined on box_number).
+
+Expected impact after cutover:
+- Dashboard load: 2 BQ queries (~1.5s) → 1 single-row SELECT (~50ms).
+- SKU View load: 1 large BQ query with CTE chain (~1s) → 1 indexed
+  range scan (~100ms).
+- Box Lookup: ~10× improvement.
+- Multi-org cost scales linearly with org count, not org × user × page.
+
+### Original Materialized summary tables plan
 
 ### Problem
 H1 (KPI cache) shipped a 60s in-memory cache, which fixes the common
