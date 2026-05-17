@@ -1034,13 +1034,21 @@ const Settings = (() => {
         <div data-field="error" class="form-error" style="display:none"></div>
       </form>`);
 
-    // Footer matches the org edit modal pattern: Cancel · Remove (danger,
-    // self-disabled) · Save Changes. The Remove button calls the existing
-    // DELETE /users/:id endpoint which deactivates server-side — the row
-    // is preserved for audit and login is rejected for the disabled user.
+    // Footer: Cancel · Remove Permanently · Save Changes.
+    // The status dropdown above handles soft-deactivation (Active/Inactive).
+    // "Remove Permanently" is the irreversible hard-delete — only enabled
+    // when the user is already inactive (server enforces this gate too).
+    // To delete: set status to Inactive, click Save, re-open Edit,
+    // then click Remove Permanently.
+    const removeDisabled = isSelf || isActive;
+    const removeTitle    = isSelf
+      ? 'You cannot remove your own account'
+      : (isActive
+          ? 'Set status to Inactive and save first. Then re-open this dialog to remove the user permanently.'
+          : 'Permanently delete this user from BigQuery (memberships + refresh tokens cascade). Irreversible.');
     m.setFooter(`
       <button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
-      <button class="btn btn-danger    btn-sm" data-action="remove"${isSelf ? ' disabled title="You cannot remove your own account"' : ''}>Remove</button>
+      <button class="btn btn-danger    btn-sm" data-action="remove"${removeDisabled ? ' disabled' : ''} title="${Utils.escapeHtml(removeTitle)}">Remove Permanently</button>
       <button class="btn btn-primary   btn-sm" data-action="save">Save Changes</button>`);
     m.show();
 
@@ -1049,7 +1057,7 @@ const Settings = (() => {
     const _hideAndDestroy = () => { m.hide(); m.destroy(); };
 
     qf('[data-action="cancel"]')?.addEventListener('click', _hideAndDestroy);
-    qf('[data-action="remove"]')?.addEventListener('click', () => _doRemoveUser(m, userId, user.display_name || user.username, isSelf));
+    qf('[data-action="remove"]')?.addEventListener('click', () => _doPermanentDeleteUser(m, userId, user.display_name || user.username, isSelf, isActive));
     qf('[data-action="save"]')?.addEventListener('click', () => _doEditUser(m, q, qf, userId, isSelf));
     q('[data-form="edit-user"]')?.addEventListener('submit', e => { e.preventDefault(); _doEditUser(m, q, qf, userId, isSelf); });
 
@@ -1057,18 +1065,36 @@ const Settings = (() => {
     Icons?.refresh?.();
   }
 
-  async function _doRemoveUser(m, userId, displayName, isSelf) {
-    if (isSelf) return;
-    const confirmed = await Modal.confirm({
-      title:       'Remove User',
-      message:     `Remove "${displayName}"? They will no longer be able to log in. The account record is preserved for audit and can be reactivated later from this Edit dialog.`,
-      confirmText: 'Remove',
-      danger:      true,
+  // Permanent (irreversible) hard delete of an already-deactivated user.
+  // Type-to-confirm: the operator must type the user's username exactly.
+  // The server enforces the is_active=false gate and the can't-delete-self
+  // gate independently — these UI checks are convenience.
+  async function _doPermanentDeleteUser(m, userId, displayName, isSelf, isActive) {
+    if (isSelf || isActive) return;
+    const user = _usersCache.find(u => u.user_id === userId);
+    const username = user?.username || displayName;
+    const confirmed = await _typeToConfirm({
+      title: 'Remove User Permanently',
+      bodyHtml: `
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#7f1d1d">
+          <strong>This cannot be undone.</strong> The user row, every membership, and every refresh
+          token for <strong>${Utils.escapeHtml(displayName)}</strong> (@${Utils.escapeHtml(username)})
+          will be deleted from BigQuery. Activity-log entries are preserved server-side for audit.
+        </div>
+        <p style="font-size:13px;color:var(--txt-2);margin-bottom:10px">
+          To confirm, type the username exactly:
+          <code style="background:var(--surface-2);padding:1px 6px;border-radius:4px;font-family:monospace">${Utils.escapeHtml(username)}</code>
+        </p>`,
+      requiredText: username,
+      confirmText:  'Remove Permanently',
     });
     if (!confirmed) return;
     try {
-      await API.deleteUser(userId);
-      Notify.success('User removed', `"${displayName}" can no longer log in.`);
+      const result = await API.permanentDeleteUser(userId);
+      Notify.success(
+        'User deleted',
+        `@${username} removed (${result?.memberships_deleted ?? 0} memberships, ${result?.tokens_deleted ?? 0} tokens).`,
+      );
       m.hide();
       m.destroy();
       loadUsers();
@@ -1385,6 +1411,7 @@ const Settings = (() => {
     qf('[data-action="cancel"]')?.addEventListener('click', _hideAndDestroy);
     qf('[data-action="activate"]')?.addEventListener('click', () => _doToggleOrg(m, orgId, true));
     qf('[data-action="deactivate"]')?.addEventListener('click', () => _doDeactivateOrg(m, orgId, org.display_name));
+    qf('[data-action="permanent-delete"]')?.addEventListener('click', () => _doPermanentDeleteOrg(m, orgId, org.display_name));
     qf('[data-action="save"]')?.addEventListener('click', () => _doSaveOrg(m, q, qf, orgId));
     q('[data-form="edit-org"]')?.addEventListener('submit', e => { e.preventDefault(); _doSaveOrg(m, q, qf, orgId); });
 
@@ -1426,21 +1453,81 @@ const Settings = (() => {
 
   async function _doDeactivateOrg(m, orgId, orgName) {
     const confirmed = await Modal.confirm({
-      title:       'Remove Organization',
-      message:     `Remove "${orgName}"? All members will lose access. The organization record is preserved for audit and can be reactivated later from this Edit dialog.`,
-      confirmText: 'Remove',
+      title:       'Deactivate Organization',
+      message:     `Deactivate "${orgName}"? All members will lose access. The data is preserved and the org can be reactivated later from this Edit dialog. To permanently delete the organization and all its data, deactivate first, then re-open and click "Remove Permanently".`,
+      confirmText: 'Deactivate',
       danger:      true,
     });
     if (!confirmed) return;
     try {
       await API.updateOrganization(orgId, { is_active: false });
-      Notify.success('Organization removed', `"${orgName}" is no longer accessible.`);
+      Notify.success('Organization deactivated', `"${orgName}" is no longer accessible. Data is preserved.`);
       m.hide();
       m.destroy();
       loadOrganizations();
     } catch (err) {
       Notify.apiError(err);
     }
+  }
+
+  // Permanent (irreversible) hard delete of a deactivated org. Type-to-
+  // confirm: the operator must type the exact org name to enable the
+  // delete button. Server enforces is_active=false + not-current-org
+  // gates independently — UI is the convenience layer.
+  async function _doPermanentDeleteOrg(m, orgId, orgName) {
+    const confirmed = await _typeToConfirm({
+      title: 'Remove Organization Permanently',
+      bodyHtml: `
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#7f1d1d">
+          <strong>This cannot be undone.</strong> Every row tied to <strong>${Utils.escapeHtml(orgName)}</strong>
+          will be deleted from BigQuery: memberships, inventory, orders, both upload audit tables,
+          and all four summary tables. Activity-log entries are preserved server-side for audit.
+        </div>
+        <p style="font-size:13px;color:var(--txt-2);margin-bottom:10px">
+          To confirm, type the organization name exactly:
+          <code style="background:var(--surface-2);padding:1px 6px;border-radius:4px;font-family:monospace">${Utils.escapeHtml(orgName)}</code>
+        </p>`,
+      requiredText: orgName,
+      confirmText:  'Remove Permanently',
+    });
+    if (!confirmed) return;
+
+    try {
+      const result = await API.permanentDeleteOrganization(orgId);
+      Notify.success(
+        'Organization deleted',
+        `"${orgName}" and all its data removed (${result?.memberships_deleted ?? 0} memberships, ${(result?.tables_cleared || []).length} tables cleared).`,
+      );
+      m.hide();
+      m.destroy();
+      loadOrganizations();
+    } catch (err) {
+      Notify.apiError(err);
+    }
+  }
+
+  // Reusable type-to-confirm modal. Used by destructive permanent-
+  // delete flows. Returns a Promise<boolean>.
+  function _typeToConfirm({ title, bodyHtml, requiredText, confirmText = 'Delete' }) {
+    return new Promise(resolve => {
+      const m = new Modal({
+        title,
+        body:   bodyHtml + `<input class="form-input" id="ttc-input" placeholder="Type to confirm" autocomplete="off" style="margin-top:4px">`,
+        footer: `<button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
+                 <button class="btn btn-danger btn-sm" data-action="confirm" disabled>${Utils.escapeHtml(confirmText)}</button>`,
+        maxWidth: '480px',
+      });
+      m.show();
+      const input  = m.bodyEl.querySelector('#ttc-input');
+      const okBtn  = m.footerEl.querySelector('[data-action="confirm"]');
+      const cxBtn  = m.footerEl.querySelector('[data-action="cancel"]');
+      input?.focus();
+      input?.addEventListener('input', () => {
+        okBtn.disabled = (input.value !== requiredText);
+      });
+      cxBtn.addEventListener('click', () => { m.hide(); m.destroy(); resolve(false); });
+      okBtn.addEventListener('click', () => { m.hide(); m.destroy(); resolve(true); });
+    });
   }
 
   async function _doToggleOrg(m, orgId, activate) {
