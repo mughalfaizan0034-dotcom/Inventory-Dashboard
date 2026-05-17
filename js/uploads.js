@@ -151,14 +151,11 @@ const Uploads = (() => {
   const _POLL_INTERVAL_MS = 2000;
   const _POLL_MAX_MS      = 15 * 60 * 1000; // 15 min hard ceiling
 
-  function _stepsHtml(activeIdx) {
-    return `<div class="upload-steps">${
-      _UPLOAD_STEPS.map((s, i) => {
-        const cls  = i < activeIdx ? 'done' : i === activeIdx ? 'active' : '';
-        const icon = i < activeIdx ? '✓' : i === activeIdx ? '●' : '';
-        return `<div class="upload-step ${cls}"><span class="upload-step-dot">${icon}</span><span class="upload-step-label">${s.label}</span></div>`;
-      }).join('')
-    }</div>`;
+  // Render the in-progress indicator as just a percentage. The
+  // progress bar above it carries the visual cue; step labels were
+  // removed (2026-05-18) — they were redundant with the bar.
+  function _progressHtml(pct) {
+    return `<div class="upload-progress-pct" style="margin-top:8px;font-size:12.5px;color:var(--txt-3);text-align:right;font-variant-numeric:tabular-nums">${pct}%</div>`;
   }
 
   function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -207,12 +204,14 @@ const Uploads = (() => {
     function _showPhase(phase) {
       const idx = _PHASE_TO_STEP[phase] ?? 0;
       if (idx < 0) {
-        if (statusEl) statusEl.innerHTML = _stepsHtml(_UPLOAD_STEPS.length); // all marked done so user sees the terminal-fail badge below
+        // Terminal failure — clear the percent indicator; the error
+        // banner rendered below takes its place.
+        if (statusEl) statusEl.innerHTML = '';
         return;
       }
-      if (statusEl) statusEl.innerHTML = _stepsHtml(idx);
       const pct = _UPLOAD_STEPS[idx]?.pct ?? 0;
       setProgress(pct);
+      if (statusEl) statusEl.innerHTML = _progressHtml(pct);
     }
 
     try {
