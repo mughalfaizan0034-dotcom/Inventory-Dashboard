@@ -38,15 +38,19 @@
 -- under 1 MB until many thousands of active sessions exist.
 -- ============================================================
 
+-- NOTE on column-constraint ordering: BigQuery's grammar is
+--   `data_type [DEFAULT expr] [NOT NULL] [OPTIONS(...)]`
+-- so DEFAULT must appear BEFORE NOT NULL. Reversing the order is a
+-- syntax error ("Expected ')' or ',' but got keyword DEFAULT").
 CREATE TABLE IF NOT EXISTS `patman-inventory.patman_inventory.refresh_tokens` (
   jti          STRING    NOT NULL,
   user_id      STRING    NOT NULL,
   family_id    STRING    NOT NULL,
-  issued_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+  issued_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP() NOT NULL,
   expires_at   TIMESTAMP NOT NULL,
   revoked_at   TIMESTAMP,
   last_used_at TIMESTAMP,
-  remembered   BOOL      NOT NULL DEFAULT FALSE,
+  remembered   BOOL      DEFAULT FALSE NOT NULL,
   user_agent   STRING,
   ip           STRING
 )
