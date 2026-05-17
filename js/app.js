@@ -1482,10 +1482,11 @@ const Settings = (() => {
       </div>`;
   }
 
-  /* ── Admin operations panel (Phase B parity-validation tooling) ────
-     Visible only when Auth.hasRole('admin'). Two-row responsive layout:
-       Row 1 — three compact action cards (small, button-only).
-       Row 2 — two wider report cards (hold tables; result area scrolls).
+  /* ── Admin operations panel (permanent operational diagnostics) ────
+     Visible only when Auth.hasRole('admin'). Three-row responsive layout:
+       Row 1 — three compact action cards for org-level data refresh state.
+       Row 2 — two report cards (refresh health + drift detection).
+       Row 3 — recent activity (uploads in this org).
      Buttons consume the same authenticated API client used everywhere
      else — no separate auth path, no token plumbing. Each operation
      has its own result panel beneath the button so multiple reports
@@ -1530,27 +1531,28 @@ const Settings = (() => {
           <div class="admin-ops-title">Operational Diagnostics</div>
         </div>
         <div class="admin-ops-blurb">
-          Phase B parity-validation tooling. Use these to populate summary tables, observe
-          parity, and confirm readiness for read-path cutover. See <code>docs/AUDIT_FOLLOWUP.md</code>.
+          Live system diagnostics. Use these any time to investigate refresh state, summary
+          freshness, drift between read paths, and recent upload activity. All actions are
+          read-only or trigger a rebuild — no destructive operations.
         </div>
 
         <div class="admin-ops-row admin-ops-row--actions">
           ${actionCard(
             'admin-op-refresh-all',
             'Refresh All Summary Tables',
-            'Triggers <code>summaryRefreshService.refresh()</code> for every active org. Eliminates the "never mutated since migration" parity-missing class.',
+            'Rebuilds <code>dashboard_summary</code>, <code>inventory_summary</code>, and the two <code>box_summary</code> tables for every active organization. Run after a deploy, after schema changes, or any time aggregates look out of sync.',
             'Refresh All Orgs', 'btn-primary',
           )}
           ${actionCard(
             'admin-op-refresh-org',
             'Refresh Current Organization',
-            'Force-rebuilds the four summary tables for the org you\'re signed into.',
+            'Force-rebuilds the four summary tables for the org you\'re signed into. Useful when this org\'s dashboard or SKU view shows stale numbers.',
             'Refresh This Org',
           )}
           ${actionCard(
             'admin-op-summary-status',
             'Summary Status (this org)',
-            'Per-table row count + most-recent <code>refreshed_at</code> for the active org.',
+            'Per-table row count + most-recent <code>refreshed_at</code> for the active org. Quickly verifies that summary rebuilds are landing.',
             'View Status',
           )}
         </div>
@@ -1559,14 +1561,23 @@ const Settings = (() => {
           ${reportCard(
             'admin-op-refresh-health',
             'Refresh Health (24h)',
-            'Per-org refresh count, p50/p95 durations, failure count. Reads Cloud Logging.',
+            'Per-org refresh count, p50/p95 durations, and failure count over the last 24h. Reads structured logs from Cloud Logging. Use to confirm refreshes are succeeding and to spot performance regressions.',
             'View Health',
           )}
           ${reportCard(
             'admin-op-parity-report',
-            'Parity Report (24h)',
-            'The <strong>cutover gate</strong>. Per-org dashboard/SKU/box match-vs-diff counts and <code>ready_for_cutover</code> booleans.',
-            'View Parity Report',
+            'Drift Report (24h)',
+            'Per-org match-vs-diff counts between the live CTE engine and the materialized summary tables for dashboard, SKU View, and Box Lookup. Any non-zero <code>diff</code> column indicates the two read paths disagree — investigate immediately. Requires <code>SUMMARY_PARITY_LOG=1</code>.',
+            'View Drift Report',
+          )}
+        </div>
+
+        <div class="admin-ops-row admin-ops-row--reports">
+          ${reportCard(
+            'admin-op-recent-uploads',
+            'Recent Uploads (this org)',
+            'Last 20 upload jobs for the active org with status, row count, and report availability. Use to confirm uploads completed, debug stuck <code>processing</code> jobs, and trace failed imports.',
+            'View Uploads',
           )}
         </div>
       </div>
@@ -1807,8 +1818,59 @@ const Settings = (() => {
           <tbody>${rows || '<tr><td colspan="5" style="padding:8px;color:var(--txt-4)">No parity events in window — enable SUMMARY_PARITY_LOG=1 and let users hit the app.</td></tr>'}</tbody>
         </table>
         <div style="margin-top:6px;color:var(--txt-4);font-size:11px">
-          Column format: <code>match / diff / missing_or_total_diff</code>. Zero in the last two columns across every org = cleared for cutover.
+          Column format: <code>match / diff / missing_or_total_diff</code>. Zero in the last two columns means no drift detected between the live and materialized paths.
         </div>`,
+      );
+    });
+
+    // Recent Uploads — reuses the existing /uploads/history endpoint
+    // already used by the Uploads page, just rendered inline here for
+    // quick admin diagnosis without leaving Settings.
+    document.getElementById('admin-op-recent-uploads')?.addEventListener('click', async () => {
+      const data = await _runAdminOp('admin-op-recent-uploads', () => API.getUploadHistory('')).catch(() => null);
+      if (!data) return;
+      const list = Array.isArray(data) ? data : (data.rows || data.items || []);
+      if (!list.length) {
+        _showAdminResult('admin-op-recent-uploads-result', `<span style="color:var(--txt-4)">No upload activity for this organization.</span>`);
+        return;
+      }
+      const statusBadge = (status) => {
+        const s = String(status || '').toLowerCase();
+        const map = {
+          success:    { c: 'var(--success)', bg: 'rgba(22,163,74,.10)' },
+          partial:    { c: 'var(--warning)', bg: 'rgba(217,119,6,.10)' },
+          failed:     { c: 'var(--error)',   bg: 'rgba(220,38,38,.10)' },
+          processing: { c: 'var(--primary)', bg: 'rgba(37,99,235,.10)' },
+          accepted:   { c: 'var(--txt-3)',   bg: 'var(--surface-3)' },
+        };
+        const v = map[s] || { c: 'var(--txt-3)', bg: 'var(--surface-3)' };
+        return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:${v.bg};color:${v.c}">${Utils.escapeHtml(status || '—')}</span>`;
+      };
+      const rows = list.slice(0, 20).map(r => `
+        <tr>
+          <td style="padding:5px 8px;color:var(--txt-3);font-size:11px;white-space:nowrap">${Utils.formatDatetime(r.created_at)}</td>
+          <td style="padding:5px 8px;font-size:11.5px">${Utils.escapeHtml(r.type || '—')}</td>
+          <td style="padding:5px 8px;font-size:11.5px;font-family:monospace;color:var(--txt-2);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escapeHtml(r.filename || '')}">${Utils.escapeHtml(r.filename || '—')}</td>
+          <td style="padding:5px 8px;font-variant-numeric:tabular-nums;text-align:right">${Utils.formatNumber(r.row_count ?? 0)}</td>
+          <td style="padding:5px 8px">${statusBadge(r.status)}</td>
+          <td style="padding:5px 8px;color:var(--txt-4);font-size:11px">${r.has_report ? '<span style="color:var(--success)">✓</span>' : '—'}</td>
+        </tr>`).join('');
+      _showAdminResult(
+        'admin-op-recent-uploads-result',
+        `<div style="margin-bottom:6px;color:var(--txt-3)">Last ${Math.min(list.length, 20)} upload${list.length === 1 ? '' : 's'} for this organization.</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface-3);font-size:11px;text-transform:uppercase;color:var(--txt-3)">
+              <th style="padding:6px 8px;text-align:left">When</th>
+              <th style="padding:6px 8px;text-align:left">Type</th>
+              <th style="padding:6px 8px;text-align:left">File</th>
+              <th style="padding:6px 8px;text-align:right">Rows</th>
+              <th style="padding:6px 8px;text-align:left">Status</th>
+              <th style="padding:6px 8px;text-align:left">Report</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`,
       );
     });
   }
