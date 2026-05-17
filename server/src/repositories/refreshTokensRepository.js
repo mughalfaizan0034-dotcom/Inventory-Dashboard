@@ -70,30 +70,47 @@ export function createRefreshTokensRepository({ bq, projectId, logger }) {
     if (!jti || !userId || !familyId || !expiresAt) {
       throw new Error('refreshTokensRepository.insert: missing required field');
     }
+    // Short-circuit when we've already detected the table is missing.
+    // The caller can still mint the JWT and return success; the
+    // revocation record simply isn't created until the migration runs.
+    if (_missingTableLatched) return { persisted: false, fallback: true };
+
     const query = `
       INSERT INTO ${refreshTokensTable}
         (jti, user_id, family_id, expires_at, remembered, user_agent, ip)
       VALUES
         (@jti, @userId, @familyId, @expiresAt, @remembered, @userAgent, @ip)
     `;
-    await bq.query({
-      query,
-      params: {
-        jti, userId, familyId,
-        expiresAt: expiresAt instanceof Date ? expiresAt.toISOString() : expiresAt,
-        remembered: !!remembered,
-        userAgent: _truncate(userAgent, 256) ?? null,
-        ip:        _truncate(ip,        64)  ?? null,
-      },
-      types: { userAgent: 'STRING', ip: 'STRING', expiresAt: 'TIMESTAMP' },
-    });
+    try {
+      await bq.query({
+        query,
+        params: {
+          jti, userId, familyId,
+          expiresAt: expiresAt instanceof Date ? expiresAt.toISOString() : expiresAt,
+          remembered: !!remembered,
+          userAgent: _truncate(userAgent, 256) ?? null,
+          ip:        _truncate(ip,        64)  ?? null,
+        },
+        types: { userAgent: 'STRING', ip: 'STRING', expiresAt: 'TIMESTAMP' },
+      });
+      return { persisted: true, fallback: false };
+    } catch (err) {
+      if (_isMissingTable(err)) {
+        _markMissing('insert');
+        return { persisted: false, fallback: true };
+      }
+      throw err;
+    }
   }
 
-  // Returns the row if the token is currently usable, else null.
-  // Treats "not found", "revoked", and "expired" as the SAME null
-  // result — the auth route only needs a boolean "valid?" answer.
+  // Returns:
+  //   - row object             — token exists, not revoked, not expired
+  //   - null                   — not found / revoked / expired (reject)
+  //   - FALLBACK_TABLE_MISSING — table doesn't exist; caller should
+  //                              drop into JWT-only degraded mode
   async function getActive(jti) {
     if (!jti) return null;
+    if (_missingTableLatched) return FALLBACK_TABLE_MISSING;
     const query = `
       SELECT jti, user_id, family_id, expires_at, revoked_at, remembered, last_used_at
       FROM ${refreshTokensTable}
@@ -115,7 +132,11 @@ export function createRefreshTokensRepository({ bq, projectId, logger }) {
         remembered:   !!r.remembered,
         last_used_at: r.last_used_at?.value ?? r.last_used_at,
       };
-    } catch {
+    } catch (err) {
+      if (_isMissingTable(err)) {
+        _markMissing('getActive');
+        return FALLBACK_TABLE_MISSING;
+      }
       return null;
     }
   }
@@ -179,7 +200,7 @@ export function createRefreshTokensRepository({ bq, projectId, logger }) {
     catch { /* non-fatal */ }
   }
 
-  return { insert, getActive, revoke, revokeFamily, revokeAllByUserId, markUsed };
+  return { insert, getActive, revoke, revokeFamily, revokeAllByUserId, markUsed, isLegacyMode };
 }
 
 function _truncate(s, n) {

@@ -5,6 +5,7 @@ import {
   logoutBodySchema,
 } from '../validation/authSchemas.js';
 import { AppError } from '../utils/errors.js';
+import { FALLBACK_TABLE_MISSING } from '../repositories/refreshTokensRepository.js';
 
 // ============================================================
 // Auth routes — 2026-05-18 refresh-token revocation + "Remember
@@ -26,17 +27,33 @@ export async function authRoutes(fastify, {
   // every endpoint that issues a refresh token (login, select-org,
   // switch-org, refresh). Returns just the JWT string for the
   // response — the metadata is already persisted by this point.
+  //
+  // The insert may return `{ persisted: false, fallback: true }` when
+  // the refresh_tokens table doesn't exist yet (migration pending).
+  // In that case the JWT is still valid; the system runs in JWT-only
+  // legacy mode until the operator applies migration 20260518_002.
+  // This MUST NOT throw — otherwise login / switch-org returns 500
+  // until the migration runs.
   async function _mintRefresh({ request, userId, remembered, familyId = null, jti = null }) {
     const meta = tokenFactory.signRefreshToken({ userId, remembered, jti, familyId });
-    await refreshTokensRepo.insert({
-      jti:        meta.jti,
-      userId,
-      familyId:   meta.family_id,
-      expiresAt:  meta.expires_at,
-      remembered: meta.remembered,
-      userAgent:  request.headers['user-agent'],
-      ip:         request.ip,
-    });
+    try {
+      await refreshTokensRepo.insert({
+        jti:        meta.jti,
+        userId,
+        familyId:   meta.family_id,
+        expiresAt:  meta.expires_at,
+        remembered: meta.remembered,
+        userAgent:  request.headers['user-agent'],
+        ip:         request.ip,
+      });
+    } catch (err) {
+      // Non-fatal — log and continue. The user still gets a valid
+      // JWT pair; only the server-side revocation record is missing.
+      request.log.warn(
+        { event: 'refresh_token_insert_failed', err: err?.message, user_id: userId },
+        'refresh_tokens insert failed — issuing JWT-only token (revocation will not work for this token)',
+      );
+    }
     return meta.token;
   }
 
@@ -268,7 +285,13 @@ export async function authRoutes(fastify, {
       // logging the user out for an infrastructure hiccup.
       return reply.code(503).send({ success: false, error: 'Service temporarily unavailable — please try again' });
     }
-    if (!active) {
+    // Legacy JWT-only mode — refresh_tokens table is missing. Trust
+    // the JWT signature alone (which already passed phase 1) and
+    // proceed without rotation. This matches the pre-2026-05-18
+    // behavior. Operator runs migration 20260518_002 → next refresh
+    // returns to the full revocation-enforcing path automatically.
+    const legacyMode = active === FALLBACK_TABLE_MISSING;
+    if (!legacyMode && !active) {
       request.log.warn(
         { event: 'refresh_failure', reason: 'revoked_or_unknown', jti: payload.jti, user_id: payload.user_id },
         'Refresh token revoked or unknown',
@@ -296,28 +319,39 @@ export async function authRoutes(fastify, {
       // Phase 4: rotate — revoke the old jti, insert a new one in the
       // same family with the same `remembered` flag (preserves
       // session lineage).
-      await refreshTokensRepo.revoke(active.jti);
+      //
+      // In legacy JWT-only mode (table missing) there's no row to
+      // revoke and the `remembered` flag comes from the JWT payload
+      // itself instead of the DB row.
+      let remembered;
+      let familyId;
+      if (legacyMode) {
+        remembered = !!payload.remembered;
+        familyId   = payload.family_id ?? null;
+      } else {
+        await refreshTokensRepo.revoke(active.jti);
+        remembered = active.remembered;
+        familyId   = active.family_id;
+        refreshTokensRepo.markUsed(active.jti).catch(() => {});
+      }
+
       const accessToken  = tokenFactory.signAccessToken({
         ...m, user_id: user.user_id, username: user.username, display_name: user.display_name, role: user.role,
       });
       const refreshToken = await _mintRefresh({
-        request, userId: user.user_id, remembered: active.remembered, familyId: active.family_id,
+        request, userId: user.user_id, remembered, familyId,
       });
 
-      // Best-effort last_used_at stamp on the OLD row (now revoked).
-      // Used by future "Active Sessions" UI.
-      refreshTokensRepo.markUsed(active.jti).catch(() => {});
-
       request.log.info(
-        { event: 'token_refresh', user_id: user.user_id, family_id: active.family_id, remembered: active.remembered },
-        'Tokens rotated',
+        { event: 'token_refresh', user_id: user.user_id, family_id: familyId, remembered, legacy_mode: legacyMode },
+        legacyMode ? 'Tokens rotated (legacy JWT-only mode — apply migration 20260518_002)' : 'Tokens rotated',
       );
       return reply.send({
         success: true,
         data: {
           access_token: accessToken,
           refresh_token: refreshToken,
-          remembered: active.remembered,
+          remembered,
         },
       });
     } catch (err) {

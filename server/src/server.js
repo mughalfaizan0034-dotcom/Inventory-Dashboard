@@ -161,7 +161,14 @@ export async function buildApp() {
     const uploadsRepo      = createUploadsRepository(deps);
     const activityRepo     = createActivityRepository(deps);
     const lookupRepo       = createLookupRepository({ ...deps, logger: fastify.log });
-    const refreshTokensRepo = createRefreshTokensRepository(deps);
+    const refreshTokensRepo = createRefreshTokensRepository({ ...deps, logger: fastify.log });
+    // Boot-time probe: fire a cheap getActive() against a never-used
+    // JTI. This forces the repo to discover whether the
+    // refresh_tokens table exists before any auth request hits the
+    // server. If missing, the structured warning surfaces in startup
+    // logs (instead of being deferred to the first user-facing 500
+    // that we then degrade from). Non-blocking — auth boots either way.
+    refreshTokensRepo.getActive('__boot_probe__').catch(() => {});
 
     // Services
     const usernameService  = createUsernameService({ usersRepo });
