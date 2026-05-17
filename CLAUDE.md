@@ -20,8 +20,27 @@ Shared CTEs (private to the service): `_ordersAggCTE`, `_invAggCTE`, `_perSkuCTE
 - `effectiveSkuSql({ skuCol, shippedCol })` — canonical shipped-SKU resolution
 - `wrongPartSql({ skuCol, shippedCol })` — shipped-wrong-part detection
 
-EVERY query that needs to resolve an order's effective shipped SKU MUST
-use these helpers. Never inline the regex.
+**Shared CTE builders**: [server/src/utils/skuPivots.js](server/src/utils/skuPivots.js)
+- `ordersAggCTE({ ordTable })` — orders rolled up by effective SKU
+- `invAggCTE({ invTable, regexParam })` — inventory rolled up by SKU
+- `perSkuCTE()` — the canonical fulfilled/phantom/remaining pivot
+
+EVERY query that aggregates orders or inventory MUST import these
+builders. The CTE SQL is defined ONCE; both the live computation
+(`inventoryMetricsService`) and the materialized rebuild
+(`summaryRefreshService`) consume the same source text, so the two
+paths cannot drift. Repositories that need order aggregation
+(`lookupRepository`, `inventoryRepository.findAlternativeBoxes`) also
+use `ordersAggCTE` — no inline reimplementations.
+
+**Undefined SKU classification** (D1 fix): the SQL classifier in
+[inventoryPatterns.js](server/src/utils/inventoryPatterns.js) wraps the
+SKU column in `UPPER(IFNULL(...))` before matching against the org's
+compiled regex. The compiled regex uses uppercase-only character
+classes (`[A-Z0-9]+`). Frontend `normalizeSku` already uppercases when
+`case_insensitive: true` (default). All three paths — frontend modal
+validator, SQL classifier, summary refresh — produce identical
+results for a given SKU + structure.
 
 ## BigQuery tables (canonical)
 
