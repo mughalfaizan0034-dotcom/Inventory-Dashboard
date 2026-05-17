@@ -8,6 +8,95 @@ implementation plan.
 Issued: 2026-05-17
 Source: full-stack audit (see chat transcript / FINDINGS report)
 
+Session-6 Phase B GCS staging + BigQuery LOAD JOB ingest (2026-05-18,
+build `2026-05-18-phaseB-gcs-loadjob-ingest`):
+
+**Problem:** Phase A made uploads return 202 quickly, but background
+DML chunked writes still took ~5 minutes for 100k rows (200 INSERT
+chunks @ ~1.5s each). 17k-row uploads took multiple minutes — well
+under Cloud Run's timeout, but operationally unacceptable. BigQuery
+itself is not the bottleneck: the DML chunk loop is.
+
+**Phase B fix:**
+- New [server/src/services/storageService.js](../server/src/services/storageService.js)
+  wraps GCS. Streams NDJSON (gzipped, chunked writes) to
+  `gs://${UPLOAD_BUCKET}/uploads/{upload_id}/{type}-adds.ndjson`.
+- New `uploadsRepository.loadInventoryFromGcs(uri)` + `loadOrdersFromGcs(uri)`
+  submit a BigQuery LOAD JOB with the canonical schema, `WRITE_APPEND`,
+  `CREATE_NEVER`, and await completion (errors re-thrown for fallback).
+- `pipelineRunner` Phase 4 Add path routes through the LOAD JOB when
+  `storageService.enabled === true` and falls back to chunked DML
+  otherwise. Update + Remove stay on DML — LOAD JOB can't do partial
+  updates.
+- **Per-phase timing**: every pipeline run emits an
+  `upload_pipeline_complete` structured log with
+  `parse_ms / key_fetch_ms / validate_ms / gcs_stage_ms /
+   load_job_ms / adds_ms / updates_ms / removes_ms / total_ms /
+   add_path` so the operator has exact bottleneck visibility.
+- **Fail-soft**: when `UPLOAD_BUCKET` env is unset, the service stays
+  disabled and the pipeline uses the existing DML path — same
+  correctness, slower. Operator wires GCS at their pace.
+- Refresh-path audit (per the user's explicit ask): every mutating
+  route calls `summaryRefreshService.refresh()` exactly once; the
+  existing 500ms leading+trailing debounce inside the service
+  collapses any burst into ≤2 actual rebuilds. No duplicate firing.
+
+**Performance targets** (LOAD JOB path):
+- 17k rows: ~3s ingest + ~30s refresh ≈ **under a minute end-to-end**.
+- 100k rows: ~10-15s ingest + ~30-60s refresh ≈ **operationally practical**.
+
+**Operator GCP setup (required to activate Phase B speedup):**
+
+```bash
+PROJECT_ID=patman-inventory
+REGION=us-central1
+BUCKET=patman-inventory-uploads
+RUNTIME_SA=<existing-cloud-run-sa>@${PROJECT_ID}.iam.gserviceaccount.com
+
+# 1. Create the GCS bucket in the same region as Cloud Run +
+#    BigQuery so cross-region egress doesn't slow ingestion.
+gcloud storage buckets create gs://${BUCKET} \
+  --location=${REGION} \
+  --uniform-bucket-level-access
+
+# 2. Lifecycle policy: auto-delete staged NDJSON after 1 day as a
+#    safety net in case the pipeline's best-effort deleteObject misses.
+cat > /tmp/lifecycle.json <<'EOF'
+{
+  "rule": [
+    { "action": { "type": "Delete" },
+      "condition": { "age": 1, "matchesPrefix": ["uploads/"] } }
+  ]
+}
+EOF
+gcloud storage buckets update gs://${BUCKET} \
+  --lifecycle-file=/tmp/lifecycle.json
+
+# 3. Grant the Cloud Run runtime SA object admin on the bucket.
+gcloud storage buckets add-iam-policy-binding gs://${BUCKET} \
+  --member=serviceAccount:${RUNTIME_SA} \
+  --role=roles/storage.objectAdmin
+
+# 4. Grant the runtime SA permission to submit BigQuery LOAD JOBs
+#    (jobs.create at the project level). Most orgs already have
+#    roles/bigquery.jobUser on the runtime SA — verify:
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member=serviceAccount:${RUNTIME_SA} \
+  --role=roles/bigquery.jobUser
+
+# 5. Set the env var on Cloud Run + redeploy. Confirm at boot via
+#    the log line: "[BOOT] GCS staging  enabled=true  bucket=..."
+gcloud run services update patman-inventory-api --region=${REGION} \
+  --update-env-vars=UPLOAD_BUCKET=${BUCKET}
+```
+
+Once the env var is live, the LOAD JOB path engages automatically.
+Verify by uploading a small inventory file and inspecting the
+`upload_pipeline_complete` log entry: `add_path=load_job` =
+Phase B is active; `add_path=dml_no_gcs` = still on the fallback.
+
+---
+
 Session-5 Phase A async upload lifecycle that landed (2026-05-18, build
 `2026-05-18-phaseA-async-upload-lifecycle`):
 

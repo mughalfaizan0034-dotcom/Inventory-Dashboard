@@ -19,6 +19,16 @@ const segmentSchema = z.object({
   values:             z.array(z.string().min(1).max(40)).max(32).nullable().optional(),
   pattern:            z.string().max(200).nullable().optional(),
   allow_attached_box: z.boolean().optional(),
+  // Per-segment "separator before" picker. The empty string '' is the
+  // operationally meaningful value ("None / concatenate") so the schema
+  // MUST accept it — z.string().max(4) does (min length defaults to 0).
+  //
+  // BUG FIX 2026-05-18: this field was missing from the schema before
+  // today; Zod's default behavior strips unknown keys, so every save
+  // silently dropped the per-segment separator and the engine fell
+  // back to structure.separators[0] = '-'. Result: every save reverted
+  // to hyphen, even when the admin chose None/underscore/dot.
+  prefix_separator:   z.string().max(4).optional(),
 });
 
 const skuStructureSchema = z.object({
@@ -191,6 +201,15 @@ export async function organizationsRoutes(fastify, { orgsRepo, membershipsRepo, 
   // Update organization metadata + member roster.
   // Slug is NOT accepted — it's locked after creation.
   fastify.patch('/:id', { preHandler: [authenticate, requireRole('admin')] }, async (request, reply) => {
+    // TEMP DEBUG (2026-05-18 — sku_structure persistence audit). Logs
+    // raw inbound + parsed + persisted payloads at each waypoint so
+    // any future regression is locatable in one log dive. Remove once
+    // a parity check is in place or the audit window closes.
+    const _rawInbound  = request.body?.sku_structure;
+    const _rawSegments = Array.isArray(_rawInbound?.segments)
+      ? _rawInbound.segments.map(s => ({ type: s?.type, prefix_separator: s?.prefix_separator }))
+      : null;
+
     const parsed = updateOrgSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: 'Invalid request body', details: parsed.error.flatten() });
@@ -205,6 +224,37 @@ export async function organizationsRoutes(fastify, { orgsRepo, membershipsRepo, 
 
       const skuPrep = prepareSkuStructure(parsed.data.sku_structure);
       if (!skuPrep.skip) profile.sku_structure = skuPrep.value;
+
+      // TEMP DEBUG: log the three forms of sku_structure that go
+      // through this handler. Each row's prefix_separator is what
+      // matters — if `parsed_segments` doesn't include it, the Zod
+      // schema is stripping it (the 2026-05-18 bug); if `persisted`
+      // doesn't include it, normalizeStructureForStorage is the
+      // mutator; if both have it but the next GET doesn't, the BQ
+      // serialization is the mutator.
+      if (parsed.data.sku_structure !== undefined) {
+        const parsedSegs = Array.isArray(parsed.data.sku_structure?.segments)
+          ? parsed.data.sku_structure.segments.map(s => ({ type: s?.type, prefix_separator: s?.prefix_separator }))
+          : null;
+        let persistedSegs = null;
+        try {
+          const parsedJson = skuPrep.value ? JSON.parse(skuPrep.value) : null;
+          persistedSegs = Array.isArray(parsedJson?.segments)
+            ? parsedJson.segments.map(s => ({ type: s?.type, prefix_separator: s?.prefix_separator }))
+            : null;
+        } catch { /* swallow — log will surface as null */ }
+
+        request.log.info(
+          {
+            event: 'sku_structure_save_audit',
+            organization_id: request.params.id,
+            inbound_segments:   _rawSegments,
+            parsed_segments:    parsedSegs,
+            persisted_segments: persistedSegs,
+          },
+          'sku_structure save waypoints (TEMP DEBUG)',
+        );
+      }
 
       if (Object.keys(profile).length) {
         await orgsRepo.update(request.params.id, profile);
