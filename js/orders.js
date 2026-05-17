@@ -517,8 +517,17 @@ const Orders = (() => {
     load();
   }
 
-  /* ── Export — exports exactly what is currently filtered/visible ── */
+  /* ── Export — exports exactly what is currently filtered/visible ──
+     UI affordance mirrors the SKU View export: a per-click guard
+     prevents double-fires, the button swaps to "⏳ Exporting…" while
+     the blob is downloading, and the icon + label restore on settle. */
+  let _exporting = false;
+
   async function _doExport() {
+    if (_exporting) return;
+    _exporting = true;
+    const btn = document.getElementById('orders-export');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Exporting…'; }
     try {
       const filters = { ..._filters, sort_by: _sortBy, sort_dir: _sortDir };
       const blob = await API.exportOrders(filters);
@@ -530,6 +539,13 @@ const Orders = (() => {
       URL.revokeObjectURL(url);
     } catch (err) {
       Notify.apiError(err);
+    } finally {
+      _exporting = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="download" class="icon" style="width:14px;height:14px"></i> Export Orders';
+        if (window.lucide) lucide.createIcons();
+      }
     }
   }
 
