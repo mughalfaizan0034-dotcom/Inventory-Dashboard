@@ -7,6 +7,111 @@ implementation plan.
 
 Issued: 2026-05-17
 Source: full-stack audit (see chat transcript / FINDINGS report)
+
+Session-5 Phase A async upload lifecycle that landed (2026-05-18, build
+`2026-05-18-phaseA-async-upload-lifecycle`):
+
+**Problem:** 100k-row uploads were timing out at Cloud Run's 60s
+request budget. Root cause: `pipelineRunner` Phase 4 runs 200
+sequential DML INSERT chunks @ ~1.5s each ≈ 5 minutes,
+SYNCHRONOUSLY inside the HTTP request. Plus `summaryRefreshService`
+fired off after writes complete. Cloud Run killed the connection
+mid-flight → browser surfaced it as a CORS / 504 / "no
+Access-Control-Allow-Origin" error.
+
+**Phase A fix shipped:**
+- `POST /uploads/inventory` + `POST /uploads/orders` now return
+  **202 + `{ upload_id, status: 'accepted' }`** within ~2-5s for any
+  upload size. The route buffers the file, INSERTs an `accepted`
+  audit row, schedules background processing via `setImmediate`,
+  and returns immediately.
+- Background task (same Cloud Run instance, after response is sent):
+    1. `setUploadProcessing` → status `processing`
+    2. Runs `pipelineRunner` Phase 2-4 (the existing DML chunked
+       writes — unchanged write strategy, deferred to Phase B)
+    3. `finalizeUploadJob` → terminal status `success` / `partial` /
+       `failed` + report text + `last_error`
+    4. `dashboardService.invalidateKPICache(orgId)`
+    5. `cloudTasksService.enqueueRefresh(...)` → out-of-band refresh
+- New endpoint `GET /uploads/status/:upload_id` → returns canonical
+  job row + derived `phase` (`accepted` | `processing` | `refreshing`
+  | `complete` | `failed`) for the UI to switch on.
+- Frontend ([js/uploads.js](../js/uploads.js)) polls status every 2s
+  with a 15-min ceiling, shows a 4-step progress strip (`Queued →
+  Writing rows → Refreshing analytics → Complete`).
+- Cloud Run runtime: `--timeout=540` + `--min-instances=1` keep the
+  warm instance alive long enough to finish 100k-row background DML
+  on the same instance after the 202 response is sent.
+- `/tasks/refresh-summaries` worker route with OIDC verification via
+  Google's `tokeninfo` endpoint (no `google-auth-library` dep needed
+  — keeps the bundle thin). Validates issuer, `email` claim against
+  `TASKS_INVOKER_SA`, and `aud` claim against the expected worker URL.
+- `cloudTasksService` is **fail-soft** — when `TASKS_LOCATION` /
+  `TASKS_QUEUE_NAME` / `WORKER_BASE_URL` / `TASKS_INVOKER_SA` aren't
+  all set, it runs the refresh inline on the same Node task (same
+  correctness, just no out-of-band scheduling). This means the code
+  is shippable BEFORE the operator creates the queue + IAM — the
+  upload lifecycle works end-to-end immediately.
+
+**Operator GCP setup (required to activate Cloud Tasks scheduling):**
+
+```bash
+PROJECT_ID=patman-inventory
+REGION=us-central1
+RUNTIME_SA=<existing-cloud-run-sa>@${PROJECT_ID}.iam.gserviceaccount.com
+INVOKER_SA=patman-tasks-invoker@${PROJECT_ID}.iam.gserviceaccount.com
+
+# 1. Create the Cloud Tasks queue.
+gcloud tasks queues create patman-summary-refresh --location=${REGION}
+
+# 2. Create a dedicated invoker SA (signs OIDC tokens for the task).
+gcloud iam service-accounts create patman-tasks-invoker \
+  --display-name="Patman Cloud Tasks invoker"
+
+# 3. Let the invoker SA call this Cloud Run service.
+gcloud run services add-iam-policy-binding patman-inventory-api \
+  --region=${REGION} \
+  --member=serviceAccount:${INVOKER_SA} \
+  --role=roles/run.invoker
+
+# 4. Let the runtime SA enqueue tasks + impersonate the invoker SA
+#    (needed for Cloud Tasks to mint OIDC tokens as the invoker).
+gcloud tasks queues add-iam-policy-binding patman-summary-refresh \
+  --location=${REGION} \
+  --member=serviceAccount:${RUNTIME_SA} \
+  --role=roles/cloudtasks.enqueuer
+gcloud iam service-accounts add-iam-policy-binding ${INVOKER_SA} \
+  --member=serviceAccount:${RUNTIME_SA} \
+  --role=roles/iam.serviceAccountTokenCreator
+
+# 5. Set env vars on Cloud Run + redeploy. The boot log line
+#    "[BOOT] Cloud Tasks  enabled=true ..." confirms it picked up.
+gcloud run services update patman-inventory-api --region=${REGION} \
+  --update-env-vars=\
+TASKS_LOCATION=${REGION},\
+TASKS_QUEUE_NAME=patman-summary-refresh,\
+WORKER_BASE_URL=https://patman-inventory-api-471065748321.us-central1.run.app,\
+TASKS_INVOKER_SA=${INVOKER_SA}
+```
+
+**Required migration** (run BEFORE deploying the new build):
+`server/sql/migrations/20260518_001_async_upload_lifecycle.sql` — adds
+`refreshed_at` + `last_error` columns to both upload tables.
+
+**Known Phase A limitations (addressed by Phase B next session):**
+- The DML chunked write strategy is unchanged. 100k-row uploads
+  STILL take ~5 minutes to fully process in the background — the
+  user just sees the upload accept in 2-5s and watches a polling
+  badge. Phase B replaces the DML loop with a single BigQuery
+  LOAD JOB (via GCS staging) which drops the write time to ~10-15s.
+- Background work is tied to the Cloud Run instance lifetime.
+  `--min-instances=1` keeps one warm; a true distributed worker
+  would be Cloud Tasks invoking a separate Cloud Run service with
+  the full payload (Phase C). For Phase A scale (single org doing
+  one upload at a time) `--min-instances=1` is sufficient.
+
+---
+
 Session-4 Phase B validation tooling that landed (2026-05-17, build
 `2026-05-17-phaseB-validation`):
 - **`GET /admin/parity-report?hours=24`** — queries Cloud Logging for all
