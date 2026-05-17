@@ -45,9 +45,16 @@ const UNDEFINED_PATTERN_LIST = ["''", "'\"'", "'\"\"'", "'NA'", "'N/A'", "'#NA'"
  *         UPPER(TRIM(COALESCE(sku, ''))) IN ('','"','""','NA','N/A','#NA','#N/A')
  *         OR (
  *           COALESCE(@sku_regex, '') != ''
- *           AND NOT REGEXP_CONTAINS(IFNULL(sku, ''), @sku_regex)
+ *           AND NOT REGEXP_CONTAINS(UPPER(IFNULL(sku, '')), @sku_regex)
  *         )
  *       )
+ *
+ * D1 fix (Option A): the regex check ALWAYS uppercases the SKU before
+ * matching. This pairs with `compileSegmentsRegex` emitting uppercase-only
+ * character classes (`[A-Z0-9]+`, never `[A-Za-z0-9]+`) so that the
+ * BigQuery RE2 case-sensitive default never falsely classifies a
+ * mixed-case SKU as "undefined". The JS-side modal validator already does
+ * this via `normalizeSku().toUpperCase()` — now backend matches.
  *
  * The regex addendum only fires for the SKU column — UPC and part-number
  * have their own validation domain and are not subject to the SKU pattern.
@@ -68,7 +75,7 @@ export function isUndefinedSql(column, opts = {}) {
     ${placeholderClause}
     OR (
       COALESCE(@${param}, '') != ''
-      AND NOT REGEXP_CONTAINS(IFNULL(${column}, ''), @${param})
+      AND NOT REGEXP_CONTAINS(UPPER(IFNULL(${column}, '')), @${param})
     )
   )`;
 }
