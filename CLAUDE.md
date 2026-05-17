@@ -1,5 +1,95 @@
 # Patman Inventory System — Master Architecture & Operational Guide
 
+# Current Architecture Snapshot (2026-05-17, post-audit)
+
+This section is the canonical map of where the centralized analytics
+engine lives today. It's maintained alongside the code — if you change
+the architecture, update this.
+
+## Centralized analytics engine
+
+**Single source of truth**: [server/src/services/inventoryMetricsService.js](server/src/services/inventoryMetricsService.js)
+- `computeSummary(orgId)` — dashboard KPI totals
+- `getSkuSummary(orgId, opts)` — paginated per-SKU pivot (SKU View page)
+- `getRawRowsForFilteredSkus(orgId, opts)` — drilldown export for raw rows under SKU filter
+- `getStockAnalytics(orgId)` — stock status + monthly health charts
+
+Shared CTEs (private to the service): `_ordersAggCTE`, `_invAggCTE`, `_perSkuCTE`.
+
+**Shared SQL fragments**: [server/src/utils/skuPatterns.js](server/src/utils/skuPatterns.js)
+- `effectiveSkuSql({ skuCol, shippedCol })` — canonical shipped-SKU resolution
+- `wrongPartSql({ skuCol, shippedCol })` — shipped-wrong-part detection
+
+EVERY query that needs to resolve an order's effective shipped SKU MUST
+use these helpers. Never inline the regex.
+
+## BigQuery tables (canonical)
+
+Raw operational tables (DDL: [server/sql/schema/](server/sql/schema/)):
+- `inventory` — one row per upload entry. UPDATE/DELETE keyed by `row_uid`.
+- `orders` — one row per order line. UPDATE/DELETE keyed by `order_row_id`.
+  - `shipped_sku` column accepts box-only or full-SKU overrides;
+    `effectiveSkuSql()` parses intent at query time.
+- `organizations`, `users`, `memberships`, `activity_log`, `inventory_uploads`,
+  `order_uploads` — supporting tables.
+
+**Known gap (see [docs/AUDIT_FOLLOWUP.md](docs/AUDIT_FOLLOWUP.md) C1)**:
+`inventory` and `orders` have NO partition/cluster in canonical DDL.
+Highest-impact cost optimization. Migration plan documented but not run.
+
+## Frontend rendering layer
+
+Frontend is a pure renderer — NO analytics computation in the browser:
+- Dashboard KPIs come from `MetricsEngine.load()` → `/dashboard/kpis`.
+- SKU View comes from `API.getSkuSummary()` → `/inventory/sku-summary`.
+- Drilldown (raw rows behind one SKU) from `API.getRawRowsBySku(sku)`.
+- Box Lookup from `/lookup` → `lookupService.search`.
+- No `.reduce` / `.groupBy` for KPIs anywhere in `js/*.js`.
+
+Frontend module reset on org switch: `App.resetAllState()` clears
+`MetricsEngine` cache + every module's `.reset()` before the next render.
+
+## Auth + session model
+
+- JWT-only (no cookies). Access tokens carry `organization_id` + `role`;
+  refresh tokens carry only `user_id` + a `jti`.
+- `authenticate` middleware verifies the JWT and rejects tokens without
+  org context. `requireRole('manager'|'admin')` gates mutating routes.
+- Every business-data route reads `organization_id` from
+  `request.user.organization_id` — never from request body/query.
+- Frontend uses `sessionStorage` (per-tab), 30-min idle logout,
+  BroadcastChannel for cross-tab logout sync.
+
+**Known gap (see C2)**: refresh-token revocation is a stub. Logout
+doesn't actually invalidate refresh tokens on the server.
+
+## Caching strategy
+
+- **Backend KPI cache** ([dashboardService.js](server/src/services/dashboardService.js)):
+  per-org, in-memory, 60s TTL. `invalidateKPICache(orgId)` called from every
+  mutating route (uploads, inventory edit/delete, orders edit/delete/reassign).
+- **Backend SKU regex cache** ([organizationsRepository.js](server/src/repositories/organizationsRepository.js)):
+  per-process, invalidated on org update.
+- **Frontend `MetricsEngine`**: per-tab, invalidated on every mutating
+  user action and on org switch.
+
+**Future direction (see "Materialized summary tables" in AUDIT_FOLLOWUP.md)**:
+move from on-demand CTE re-execution to materialized summary tables
+(`dashboard_summary`, `inventory_summary`, `box_summary`) refreshed on
+upload/edit/delete. Will let the 60s cache come out and dashboard reads
+become single-row SELECTs.
+
+## Audit follow-up
+
+Heavier items deferred from the 2026-05-17 audit have full implementation
+plans in [docs/AUDIT_FOLLOWUP.md](docs/AUDIT_FOLLOWUP.md):
+- **C1** — BigQuery `inventory`/`orders` partition+cluster migration
+- **C2** — Refresh-token revocation table
+- **Materialized summaries** — `dashboard_summary`/`inventory_summary`/`box_summary`
+- **M3/M4** — Dashboard query consolidation + activity-log DML INSERT
+
+---
+
 # Core System Philosophy
 
 Patman must operate as a centralized enterprise inventory and fulfillment platform with strict data consistency across all modules.
