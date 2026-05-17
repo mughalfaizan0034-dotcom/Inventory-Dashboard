@@ -38,11 +38,57 @@ async function _getLoggingClient(projectId) {
  * Logging "Log Router" at BigQuery and query the export table — same
  * data, no Logging API call. Not implemented here.
  */
-export async function adminRoutes(fastify, { bq, projectId, summaryRefreshService, orgsRepo }) {
+export async function adminRoutes(fastify, {
+  bq, projectId, summaryRefreshService, orgsRepo,
+  storageService, cloudTasksService, refreshTokensRepo, env,
+}) {
   const dashboardSummary = `\`${projectId}.${TABLES.DASHBOARD_SUMMARY}\``;
   const inventorySummary = `\`${projectId}.${TABLES.INVENTORY_SUMMARY}\``;
   const boxSummaryByUpc  = `\`${projectId}.${TABLES.BOX_SUMMARY_BY_UPC}\``;
   const boxSummaryByPart = `\`${projectId}.${TABLES.BOX_SUMMARY_BY_PART}\``;
+
+  // ───────────────────────────────────────────────────────────────────
+  // GET /admin/diagnostics
+  // ───────────────────────────────────────────────────────────────────
+  // One-stop runtime state for the operator to verify infrastructure
+  // wiring after running setup scripts. Returns enabled flags +
+  // configured names for each optional subsystem so the operator
+  // doesn't need to log-grep boot output.
+  fastify.get('/diagnostics', { preHandler: [authenticate, requireRole('admin')] }, async (_request, reply) => {
+    return reply.send({
+      success: true,
+      data: {
+        project_id: projectId,
+        gcs_staging: {
+          enabled: !!storageService?.enabled,
+          bucket:  env?.UPLOAD_BUCKET || null,
+          // When enabled, the upload pipeline takes the LOAD JOB
+          // fast path. When false, it falls back to chunked DML.
+          fast_path_active: !!storageService?.enabled,
+        },
+        cloud_tasks: {
+          enabled:        !!cloudTasksService?.enabled,
+          queue_name:     env?.TASKS_QUEUE_NAME || null,
+          queue_location: env?.TASKS_LOCATION   || null,
+          worker_url:     env?.WORKER_BASE_URL  || null,
+          invoker_sa:     env?.TASKS_INVOKER_SA || null,
+        },
+        refresh_tokens: {
+          // false when the migration hasn't been applied; auth still
+          // works in JWT-only legacy mode but revocation is disabled.
+          enabled:        !(refreshTokensRepo?.isLegacyMode?.() ?? false),
+          legacy_jwt_only: !!(refreshTokensRepo?.isLegacyMode?.() ?? false),
+        },
+        read_paths: {
+          dashboard_from_summary: env?.READ_DASHBOARD_FROM_SUMMARY !== '0',
+          sku_from_summary:       env?.READ_SKU_FROM_SUMMARY       !== '0',
+          // Box Lookup still on live CTE — cutover pending.
+          box_from_summary:       env?.READ_BOX_FROM_SUMMARY       !== '0',
+        },
+        parity_logging: env?.SUMMARY_PARITY_LOG === '1',
+      },
+    });
+  });
 
   // ───────────────────────────────────────────────────────────────────
   // GET /admin/summary-status?org=<orgId>

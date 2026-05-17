@@ -414,6 +414,7 @@ const API = (() => {
        Used by Settings → System Status → Admin Operations panel for
        the Phase B parity-validation workflow. */
     async adminRefreshAllOrgs()                     { return _crPost('/admin/refresh-all-orgs', {}); },
+    async adminDiagnostics()                        { return _crGet('/admin/diagnostics'); },
     async adminRefreshOrg(organizationId)           { return _crPost('/admin/summary-refresh', { organization_id: organizationId }); },
     async adminSummaryStatus(organizationId)        { return _crGet('/admin/summary-status', organizationId ? { org: organizationId } : {}); },
     async adminParityReport(hours = 24)             { return _crGet('/admin/parity-report', { hours }); },

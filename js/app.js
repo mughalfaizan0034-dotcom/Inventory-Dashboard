@@ -1722,6 +1722,12 @@ const Settings = (() => {
             'Last 20 upload jobs for the active org with status, row count, and report availability. Use to confirm uploads completed, debug stuck <code>processing</code> jobs, and trace failed imports.',
             'View Uploads',
           )}
+          ${reportCard(
+            'admin-op-runtime-diagnostics',
+            'Runtime Diagnostics',
+            'Live infrastructure state: GCS staging, Cloud Tasks queue, refresh-token revocation, and per-surface read-path mode. Use to verify <code>setup-gcs.sh</code> wiring after running it, and to confirm which read paths are live in this revision.',
+            'View Runtime State',
+          )}
         </div>
       </div>
     `;
@@ -1964,6 +1970,51 @@ const Settings = (() => {
           Column format: <code>match / diff / missing_or_total_diff</code>. Zero in the last two columns means no drift detected between the live and materialized paths.
         </div>`,
       );
+    });
+
+    // Runtime Diagnostics — one-stop infrastructure state. Backed by
+    // /admin/diagnostics which surfaces the storage / Cloud Tasks /
+    // revocation / read-path flags the runtime is currently using.
+    // Use after running setup-gcs.sh to confirm the env propagated.
+    document.getElementById('admin-op-runtime-diagnostics')?.addEventListener('click', async () => {
+      const data = await _runAdminOp('admin-op-runtime-diagnostics', () => API.adminDiagnostics()).catch(() => null);
+      if (!data) return;
+      const dot = (ok) => `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ok ? 'var(--success)' : 'var(--warning)'};margin-right:6px;vertical-align:1px"></span>`;
+      const row = (label, ok, valueHtml) => `
+        <tr>
+          <td style="padding:6px 8px;font-weight:600">${dot(ok)}${Utils.escapeHtml(label)}</td>
+          <td style="padding:6px 8px;color:var(--txt-2);font-size:11.5px">${valueHtml}</td>
+        </tr>`;
+      const code = (v) => v ? `<code style="font-family:monospace;background:var(--surface-2);padding:1px 5px;border-radius:3px">${Utils.escapeHtml(String(v))}</code>` : '<span style="color:var(--txt-4)">(unset)</span>';
+      const html = `
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface-3);font-size:11px;text-transform:uppercase;color:var(--txt-3)">
+              <th style="padding:6px 8px;text-align:left">Subsystem</th>
+              <th style="padding:6px 8px;text-align:left">State</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${row('GCS staging (LOAD JOB ingest)',     data.gcs_staging.enabled,
+              `bucket: ${code(data.gcs_staging.bucket)} · ${data.gcs_staging.fast_path_active ? 'fast-path active' : 'DML fallback'}`)}
+            ${row('Cloud Tasks (async refresh)',      data.cloud_tasks.enabled,
+              `queue: ${code(data.cloud_tasks.queue_name)} · location: ${code(data.cloud_tasks.queue_location)}`)}
+            ${row('Refresh-token revocation',         data.refresh_tokens.enabled,
+              data.refresh_tokens.legacy_jwt_only ? 'legacy JWT-only mode — run 20260518_002 migration to enable' : 'full server-side revocation active')}
+            ${row('Dashboard read path',              data.read_paths.dashboard_from_summary,
+              data.read_paths.dashboard_from_summary ? 'reads from <code>dashboard_summary</code>' : 'reads from live CTE')}
+            ${row('SKU View read path',               data.read_paths.sku_from_summary,
+              data.read_paths.sku_from_summary       ? 'reads from <code>inventory_summary</code>' : 'reads from live CTE')}
+            ${row('Box Lookup read path',             data.read_paths.box_from_summary,
+              data.read_paths.box_from_summary       ? 'reads from <code>box_summary_by_*</code>' : 'reads from live CTE')}
+            ${row('Parity logging',                   data.parity_logging,
+              data.parity_logging ? 'SUMMARY_PARITY_LOG=1 (active)' : 'disabled')}
+          </tbody>
+        </table>
+        <div style="margin-top:8px;color:var(--txt-4);font-size:11px">
+          Project: ${code(data.project_id)}. Green = enabled. Amber = unset or disabled. Most amber subsystems are optional fail-soft fallbacks — see <code>docs/AUDIT_FOLLOWUP.md</code> for setup recipes.
+        </div>`;
+      _showAdminResult('admin-op-runtime-diagnostics-result', html);
     });
 
     // Recent Uploads — reuses the existing /uploads/history endpoint

@@ -234,7 +234,7 @@ export async function buildApp() {
     fastify.register(organizationsRoutes, { prefix: '/organizations', orgsRepo, membershipsRepo, usersRepo, summaryRefreshService });
     fastify.register(activityRoutes,      { prefix: '/activity',      activityService });
     fastify.register(lookupRoutes,        { prefix: '/lookup',        lookupService });
-    fastify.register(adminRoutes,         { prefix: '/admin',         ...deps, summaryRefreshService, orgsRepo });
+    fastify.register(adminRoutes,         { prefix: '/admin',         ...deps, summaryRefreshService, orgsRepo, storageService, cloudTasksService, refreshTokensRepo, env });
     // Cloud Tasks worker routes — protected by OIDC verification
     // (verifies the JWT was signed by TASKS_INVOKER_SA with the
     // expected audience). Not user-callable.
