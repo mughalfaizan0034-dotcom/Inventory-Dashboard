@@ -11,21 +11,52 @@ function weekLabel(dateVal) {
   return `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 
-// KPI cache removed (was a 5-min in-memory TTL) — it was masking fresh
-// metric runs after deploys and edits. The summary query is cheap enough
-// (a single BigQuery DML against per-SKU CTEs) to recompute on every
-// dashboard hit. If we ever need to add caching back, do it behind a
-// `?refresh` query param so refreshes are always authoritative.
+// ── KPI cache ────────────────────────────────────────────────────────────────
+// Per-org, in-memory, short TTL. The earlier 5-min cache was removed because
+// it masked fresh metric runs after deploys/edits. This re-introduction is
+// SAFE because every mutating route already calls invalidateKPICache(orgId):
+//   - uploads.js (inventory + orders upload routes)
+//   - inventory.js (PATCH + DELETE)
+//   - orders.js   (PATCH + DELETE + reassign)
+// So a cache hit can only occur within the same TTL window with no writes.
+//
+// TTL is short (60s) because dashboard summaries are the most-hit read path:
+// even at 60s, dashboard load → tab focus → idle → tab focus pattern can be
+// satisfied from cache. Anything > 2min would be perceptibly stale.
+const KPI_TTL_MS = 60 * 1000;
 
 export function createDashboardService({ dashboardRepo, metricsService }) {
-  async function getKPIs(organizationId) {
-    return metricsService.computeSummary(organizationId);
+  // Map<organizationId, { value, expiresAt }>
+  const _kpiCache = new Map();
+
+  function _cacheGet(orgId) {
+    const entry = _kpiCache.get(orgId);
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) {
+      _kpiCache.delete(orgId);
+      return null;
+    }
+    return entry.value;
   }
 
-  // Kept for backward compatibility — uploads / order edits still call it
-  // to signal "metrics may have changed". With the cache gone it's a no-op
-  // but we leave the function in place so existing call sites compile.
-  function invalidateKPICache(_organizationId) { /* no-op */ }
+  function _cacheSet(orgId, value) {
+    _kpiCache.set(orgId, { value, expiresAt: Date.now() + KPI_TTL_MS });
+  }
+
+  async function getKPIs(organizationId) {
+    const cached = _cacheGet(organizationId);
+    if (cached) return cached;
+    const fresh = await metricsService.computeSummary(organizationId);
+    _cacheSet(organizationId, fresh);
+    return fresh;
+  }
+
+  // Called from every mutating route (uploads / PATCH / DELETE / reassign).
+  // Wipes the org's KPI cache so the next dashboard hit re-fetches fresh.
+  function invalidateKPICache(organizationId) {
+    if (organizationId) _kpiCache.delete(organizationId);
+    else                _kpiCache.clear();
+  }
 
   async function getPerformance(organizationId, weeks, platform = null) {
     const { weekly, platforms, topSkus, monthly } = await dashboardRepo.getPerformance(organizationId, weeks, platform);
