@@ -25,8 +25,46 @@ import { TABLES } from '../config/tables.js';
 //     volume is bounded by login/refresh frequency.
 // ============================================================
 
-export function createRefreshTokensRepository({ bq, projectId }) {
+// Detect "table doesn't exist" so the repo can degrade gracefully when
+// the 20260518_002 migration hasn't been applied yet. Without this check
+// every auth-issuing route (login, select-org, switch-org, refresh)
+// would 500 on the missing-table INSERT. With it, auth stays functional
+// in JWT-only "legacy" mode and the operator runs the migration at
+// their pace.
+function _isMissingTable(err) {
+  const msg = String(err?.message ?? err ?? '');
+  return /Not found: Table|does not have a table|no such table|table.+(?:does not exist|not found)/i.test(msg);
+}
+
+// Sentinel returned by getActive when the table is missing — distinct
+// from `null` (token revoked / unknown). Lets the auth /refresh route
+// drop into JWT-only degraded mode instead of rejecting the request.
+export const FALLBACK_TABLE_MISSING = Object.freeze({ __fallback: 'table_missing' });
+
+export function createRefreshTokensRepository({ bq, projectId, logger }) {
   const refreshTokensTable = `\`${projectId}.${TABLES.REFRESH_TOKENS}\``;
+
+  // Latched once we've seen a missing-table error. Saves a query per
+  // request after the first failure and prevents per-request log spam.
+  // Reset to null on construction so a future re-deploy after the
+  // migration re-probes naturally.
+  let _missingTableLatched = false;
+
+  function _markMissing(where) {
+    if (!_missingTableLatched) {
+      _missingTableLatched = true;
+      logger?.warn?.(
+        { event: 'refresh_tokens_table_missing', where },
+        'refresh_tokens table missing — running auth in JWT-only legacy mode. Apply migration server/sql/migrations/20260518_002_refresh_token_revocation.sql to enable server-side revocation.',
+      );
+    }
+  }
+
+  // Public probe so callers / boot-log can surface the degraded state
+  // without inferring it from query failures.
+  function isLegacyMode() {
+    return _missingTableLatched;
+  }
 
   async function insert({ jti, userId, familyId, expiresAt, remembered, userAgent, ip }) {
     if (!jti || !userId || !familyId || !expiresAt) {
