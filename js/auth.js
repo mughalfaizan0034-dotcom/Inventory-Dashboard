@@ -94,7 +94,7 @@ const Auth = (() => {
   function isLoggedIn() { return !!getToken(); }
 
   function getUser() {
-    const stored = sessionStorage.getItem(CONFIG.USER_KEY);
+    const stored = _readEither(CONFIG.USER_KEY);
     if (stored) { try { const u = JSON.parse(stored); if (u) return u; } catch {} }
     // Fallback: reconstruct from JWT payload so a partial session still works.
     const token = getToken();
@@ -102,7 +102,7 @@ const Auth = (() => {
       const p = _decodeJwt(token);
       if (p?.user_id) {
         const u = { user_id: p.user_id, username: p.username, display_name: p.display_name };
-        sessionStorage.setItem(CONFIG.USER_KEY, JSON.stringify(u));
+        _store(isRemembered()).setItem(CONFIG.USER_KEY, JSON.stringify(u));
         return u;
       }
     }
@@ -110,7 +110,7 @@ const Auth = (() => {
   }
 
   function getOrganization() {
-    const stored = sessionStorage.getItem(CONFIG.ORG_KEY);
+    const stored = _readEither(CONFIG.ORG_KEY);
     if (stored) { try { const o = JSON.parse(stored); if (o) return o; } catch {} }
     // Fallback: reconstruct from JWT payload — handles old sessions missing org data.
     const token = getToken();
@@ -124,7 +124,7 @@ const Auth = (() => {
           display_name:    p.org_display_name || '—',
           slug:            p.org_slug || '',
         };
-        sessionStorage.setItem(CONFIG.ORG_KEY, JSON.stringify(o));
+        _store(isRemembered()).setItem(CONFIG.ORG_KEY, JSON.stringify(o));
         return o;
       }
     }
@@ -133,9 +133,13 @@ const Auth = (() => {
 
   function getMemberships() {
     try {
-      const parsed = JSON.parse(sessionStorage.getItem(CONFIG.MEMBERSHIPS_KEY));
+      const parsed = JSON.parse(_readEither(CONFIG.MEMBERSHIPS_KEY));
       return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
     } catch { return []; }
+  }
+
+  function _getRefreshToken() {
+    return _readEither(REFRESH_KEY);
   }
 
   function _getMembershipId() {
@@ -189,11 +193,15 @@ const Auth = (() => {
   let _loginBtn      = null;
   let _usernameInput = null;
   let _passwordInput = null;
+  let _rememberInput = null;
 
-  // Org selector state
-  let _pendingToken    = null;
-  let _pendingUser     = null;
+  // Org selector state — _pendingRemember is captured from the login
+  // checkbox so the eventual /auth/select-org call uses the same
+  // preference, even though the org-selector screen has no UI for it.
+  let _pendingToken       = null;
+  let _pendingUser        = null;
   let _pendingMemberships = [];
+  let _pendingRemember    = false;
 
   function _bindLoginUI() {
     _loginForm     = document.getElementById('login-form');
@@ -201,6 +209,12 @@ const Auth = (() => {
     _loginBtn      = document.getElementById('login-btn');
     _usernameInput = document.getElementById('login-username');
     _passwordInput = document.getElementById('login-password');
+    _rememberInput = document.getElementById('login-remember');
+
+    // Restore the remembered preference into the checkbox so the user
+    // sees their last choice. (Cosmetic; the storage flag is what
+    // actually controls behavior.)
+    if (_rememberInput) _rememberInput.checked = isRemembered();
 
     if (_loginForm) {
       _loginForm.addEventListener('submit', async e => {
@@ -248,6 +262,7 @@ const Auth = (() => {
   async function _doLogin() {
     const username = _usernameInput?.value.trim();
     const password = _passwordInput?.value;
+    const remember = !!_rememberInput?.checked;
 
     _hideError();
     if (!username || !password) { _showError('Please enter your username and password.'); return; }
@@ -255,19 +270,20 @@ const Auth = (() => {
     Loading.btn(_loginBtn, true);
 
     try {
-      const result = await API.login(username, password);
+      const result = await API.login(username, password, remember);
 
       if (result.requires_org_selection) {
         // Multi-org: show workspace selector
         _pendingToken       = result.pending_token;
         _pendingUser        = result.user;
         _pendingMemberships = result.memberships;
+        _pendingRemember    = remember;
         _passwordInput.value = '';
         _showOrgSelector(result.user, result.memberships);
       } else {
         // Single-org: auto-entered
         _passwordInput.value = '';
-        saveSession(result.access_token, result.user, result.organization, result.refresh_token, [result.organization]);
+        saveSession(result.access_token, result.user, result.organization, result.refresh_token, [result.organization], remember);
         App.showApp();
       }
     } catch (err) {
@@ -313,12 +329,13 @@ const Auth = (() => {
     cards.forEach(c => c.style.opacity = '0.5');
 
     try {
-      const result = await API.selectOrg(_pendingToken, membershipId);
+      const result = await API.selectOrg(_pendingToken, membershipId, _pendingRemember);
       _pendingToken = null;
       _pendingUser  = null;
 
-      saveSession(result.access_token, result.user, result.organization, result.refresh_token, _pendingMemberships);
+      saveSession(result.access_token, result.user, result.organization, result.refresh_token, _pendingMemberships, _pendingRemember);
       _pendingMemberships = [];
+      _pendingRemember    = false;
       App.showApp();
     } catch (err) {
       cards.forEach(c => c.style.opacity = '');
@@ -345,11 +362,16 @@ const Auth = (() => {
       // page that was bound to the previous org's data.
       try { history.replaceState(null, '', '#dashboard'); } catch {}
 
-      // M2: server returns a freshly-rotated refresh_token — persist THAT one,
-      // not the old refresh in storage. When backend revocation lands the
-      // old token will be revoked; reusing it would silently kick the user.
-      saveSession(result.access_token, currentUser, result.organization,
-        result.refresh_token || sessionStorage.getItem(REFRESH_KEY), getMemberships());
+      // Server returns a freshly-rotated refresh_token — persist THAT one,
+      // not the old refresh in storage. With server-side revocation now
+      // active (Phase A, 2026-05-18), reusing the old token would be
+      // rejected on next refresh.
+      saveSession(
+        result.access_token, currentUser, result.organization,
+        result.refresh_token || _getRefreshToken(),
+        getMemberships(),
+        isRemembered(),
+      );
 
       App.showApp();
     } catch (err) {
@@ -363,7 +385,11 @@ const Auth = (() => {
   async function logout() {
     stopIdleWatch();
     _channel?.postMessage({ type: 'logout' });
-    await API.logout();
+    // Hand the refresh token to the server so it can revoke the row
+    // in refresh_tokens. Best-effort — local clear still happens
+    // even if the network call fails (audit C2 fix, 2026-05-18).
+    const refresh = _getRefreshToken();
+    try { await API.logout(refresh); } catch { /* local clear still proceeds */ }
     clearSession();
     App.showLogin();
   }
@@ -377,13 +403,39 @@ const Auth = (() => {
   /* ── Session verification on page load ──────────────────── */
   async function checkSession() {
     console.log('[AUTH] restore started');
-    const token = getToken();
+    let token = getToken();
+
+    // ── Step 0: silent restore from localStorage (remembered devices).
+    // Access token is per-tab (sessionStorage) so a fresh browser tab
+    // has none — but if the user opted into "Remember this device" we
+    // still have a refresh token in localStorage. Use it to mint a
+    // fresh access token before declaring the session dead.
+    if (!token && _getRefreshToken()) {
+      const refresh = _getRefreshToken();
+      console.log('[AUTH] no access token but found refresh in storage — silent restore');
+      try {
+        const data = await API.refreshToken(refresh, null);
+        sessionStorage.setItem(CONFIG.SESSION_KEY, data.access_token);
+        if (data.refresh_token) {
+          _store(isRemembered()).setItem(REFRESH_KEY, data.refresh_token);
+        }
+        token = data.access_token;
+        console.log('[AUTH] silent restore succeeded');
+      } catch (err) {
+        console.warn('[AUTH] silent restore failed', err.status, err.message);
+        // 401 = token actually revoked/expired → clear and show login.
+        // Other errors = transient; clear refresh to avoid loops.
+        clearSession();
+        return false;
+      }
+    }
+
     if (!token) { console.log('[AUTH] no token — showing login'); return false; }
     console.log('[AUTH] token restored');
 
     // ── Step 1: Reconstruct memberships from JWT if storage is empty/stale.
     // Must happen BEFORE any refresh call so saveSession gets the right memberships.
-    const rawMemberships = sessionStorage.getItem(CONFIG.MEMBERSHIPS_KEY);
+    const rawMemberships = _readEither(CONFIG.MEMBERSHIPS_KEY);
     console.log('[AUTH] raw memberships storage:', rawMemberships);
     let memberships = getMemberships();
 
@@ -399,7 +451,7 @@ const Auth = (() => {
           slug:            p.org_slug         || '',
         };
         memberships = [synthetic];
-        sessionStorage.setItem(CONFIG.MEMBERSHIPS_KEY, JSON.stringify(memberships));
+        _store(isRemembered()).setItem(CONFIG.MEMBERSHIPS_KEY, JSON.stringify(memberships));
         console.log('[AUTH] memberships reconstructed from JWT:', synthetic.organization_id);
       } else {
         console.warn('[AUTH] JWT missing org fields — token issued by old backend, redeploy required');
@@ -413,11 +465,11 @@ const Auth = (() => {
 
     if (expMs && now >= expMs) {
       console.log('[AUTH] token expired — attempting refresh');
-      const storedRefresh = sessionStorage.getItem(REFRESH_KEY);
+      const storedRefresh = _getRefreshToken();
       if (!storedRefresh) { console.log('[AUTH] no refresh token — clearing session'); clearSession(); return false; }
       try {
         const data = await API.refreshToken(storedRefresh, _getMembershipId());
-        saveSession(data.access_token, getUser(), getOrganization(), data.refresh_token, getMemberships());
+        saveSession(data.access_token, getUser(), getOrganization(), data.refresh_token, getMemberships(), isRemembered());
         console.log('[AUTH] token refreshed');
       } catch (err) {
         // 401 = real auth failure → logout. 503/500/network → keep session.
@@ -425,10 +477,10 @@ const Auth = (() => {
         if (err.status === 401 || !err.status) { clearSession(); return false; }
       }
     } else if (expMs && expMs - now < 2 * 60 * 1000) {
-      const storedRefresh = sessionStorage.getItem(REFRESH_KEY);
+      const storedRefresh = _getRefreshToken();
       if (storedRefresh) {
         API.refreshToken(storedRefresh, _getMembershipId())
-          .then(data => saveSession(data.access_token, getUser(), getOrganization(), data.refresh_token, getMemberships()))
+          .then(data => saveSession(data.access_token, getUser(), getOrganization(), data.refresh_token, getMemberships(), isRemembered()))
           .catch(() => {});
       }
     }
@@ -444,7 +496,7 @@ const Auth = (() => {
         : null;
       org = matched ?? (memberships.length === 1 ? memberships[0] : null);
       if (org) {
-        sessionStorage.setItem(CONFIG.ORG_KEY, JSON.stringify(org));
+        _store(isRemembered()).setItem(CONFIG.ORG_KEY, JSON.stringify(org));
         console.log('[AUTH] org auto-restored from membership:', org.organization_id);
       }
     }
@@ -503,6 +555,7 @@ const Auth = (() => {
     getMemberships,
     getToken,
     isLoggedIn,
+    isRemembered,
     hasRole,
     saveSession,
     clearSession,
