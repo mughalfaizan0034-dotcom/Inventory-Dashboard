@@ -316,7 +316,7 @@ const InventoryList = (() => {
   let _statusFilter  = 'all';
 
   // Header columns: chevron · SKU · Total · Sold · Phantom · Remaining · Boxes · Last Added
-  const COL_COUNT = 8;
+  const COL_COUNT = 9;
   // Cache of raw rows per SKU so re-expanding a row doesn't refetch.
   const _rawCache = new Map();
 
@@ -412,6 +412,13 @@ const InventoryList = (() => {
         : 'color:var(--success);font-weight:600';
       const phantomColor = phantom > 0 ? 'color:#dc2626;font-weight:600' : 'color:var(--txt-4)';
 
+      const canEdit = Auth.hasRole('manager');
+      const editBtnCell = canEdit
+        ? `<button class="btn btn-ghost btn-sm sku-edit-boxes" title="View & edit all boxes for this SKU" style="padding:4px 8px">
+             <i data-lucide="pencil" class="icon" style="width:13px;height:13px"></i>
+           </button>`
+        : `<span style="color:var(--txt-4);font-size:11px">—</span>`;
+
       return `<tr class="${rowClass}" data-sku="${Utils.escapeHtml(sku)}">
         <td class="sku-row-chevron" style="text-align:center;color:var(--txt-4);cursor:pointer;user-select:none">
           <i data-lucide="chevron-right" class="icon sku-chevron-icon" style="width:14px;height:14px;transition:transform .15s"></i>
@@ -423,12 +430,28 @@ const InventoryList = (() => {
         <td class="num" style="${remColor}">${Utils.formatNumber(remaining)}</td>
         <td class="num" style="color:var(--txt-3)">${Utils.formatNumber(boxes)}</td>
         <td style="color:var(--txt-3)">${Utils.formatDate(item.last_added_at)}</td>
+        <td style="text-align:center">${editBtnCell}</td>
       </tr>`;
     }).join('');
 
-    // Click anywhere on the row (except inside the drilldown sub-table) toggles.
+    // Click anywhere on the row (except the edit button cell) toggles drilldown.
     tbody.querySelectorAll('.sku-row').forEach(tr => {
-      tr.addEventListener('click', () => _toggleDrilldown(tr));
+      tr.addEventListener('click', (e) => {
+        // Don't toggle if the click landed on the Edit Boxes button or
+        // anywhere inside the drilldown sub-table.
+        if (e.target.closest('.sku-edit-boxes') || e.target.closest('.sku-drill-row')) return;
+        _toggleDrilldown(tr);
+      });
+    });
+    // Edit Boxes button → bulk-edit modal. Stop propagation so the row's
+    // toggle handler doesn't also fire and expand the inline drilldown.
+    tbody.querySelectorAll('.sku-edit-boxes').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tr = btn.closest('tr.sku-row');
+        const sku = tr?.dataset.sku || '';
+        if (sku) _openBoxesEditModal(sku);
+      });
     });
 
     const ps = CONFIG.getPageSize();
@@ -463,16 +486,14 @@ const InventoryList = (() => {
     tr.parentNode.insertBefore(drillTr, tr.nextSibling);
 
     const renderRows = (rows) => {
-      const canEdit = Auth.hasRole('manager');
       if (!rows.length) {
         drillTr.querySelector('div').innerHTML = '<span style="color:var(--txt-4)">No raw rows for this SKU.</span>';
         return;
       }
-      // Raw row schema mirrors the feed-file columns exactly: every field
-      // an operator can upload via TSV ends up visible here so the drilldown
-      // is also the audit trail for a SKU's upload history.
-      // Initial Stock is centered (not right-aligned via .num) so the value
-      // doesn't crowd the Date Added column to its right.
+      // The inline drilldown is READ-ONLY (2026-05-18). Editing is via the
+      // bulk "Edit Boxes" modal accessible from the action column on the
+      // SKU row — that lets the operator change multiple rows and Save All
+      // in one go, without the page collapsing/reloading between edits.
       const head = `<thead><tr>
         <th style="width:110px;font-size:11px">UID</th>
         <th style="width:80px;font-size:11px">Box #</th>
@@ -481,7 +502,6 @@ const InventoryList = (() => {
         <th style="width:120px;font-size:11px;text-align:center">Initial Stock</th>
         <th style="width:130px;font-size:11px">Date Added</th>
         <th style="font-size:11px">Notes</th>
-        <th style="width:60px;text-align:right;font-size:11px"></th>
       </tr></thead>`;
       const body = rows.map(r => {
         const uid     = r.row_uid || '';
@@ -489,14 +509,7 @@ const InventoryList = (() => {
         const uidCell = uid
           ? `<span class="row-uid" title="Click to copy full UID&#10;${Utils.escapeHtml(uid)}" style="font-family:var(--font-number);font-variant-numeric:tabular-nums;font-size:11px;color:var(--txt-3);cursor:pointer;user-select:all">${Utils.escapeHtml(shortId)}</span>`
           : `<span style="color:var(--txt-4)">—</span>`;
-        return `<tr data-uid="${Utils.escapeHtml(uid)}"
-                    data-sku="${Utils.escapeHtml(r.sku || '')}"
-                    data-upc="${Utils.escapeHtml(r.upc || '')}"
-                    data-qty="${Utils.escapeHtml(String(r.quantity ?? 0))}"
-                    data-part="${Utils.escapeHtml(r.part_number || '')}"
-                    data-box="${Utils.escapeHtml(r.box_number || '')}"
-                    data-notes="${Utils.escapeHtml(r.notes || '')}"
-                    data-date="${Utils.escapeHtml(r.date_added || '')}">
+        return `<tr data-uid="${Utils.escapeHtml(uid)}">
           <td>${uidCell}</td>
           <td>${Utils.escapeHtml(r.box_number || '—')}</td>
           <td style="font-family:var(--font-number);font-variant-numeric:tabular-nums;font-size:12px;color:var(--txt-2)">${Utils.escapeHtml(r.part_number || '—')}</td>
@@ -504,9 +517,6 @@ const InventoryList = (() => {
           <td style="text-align:center;font-weight:600">${Utils.formatNumber(r.quantity ?? 0)}</td>
           <td style="white-space:nowrap;color:var(--txt-3)">${Utils.formatDate(r.date_added)}</td>
           <td style="font-size:12px;color:var(--txt-4)">${Utils.escapeHtml(r.notes || '—')}</td>
-          <td style="text-align:right">
-            ${canEdit ? '<button class="btn btn-ghost btn-icon btn-sm sku-raw-edit" title="Edit raw row" style="opacity:.65"><i data-lucide="pencil" class="icon" style="width:12px;height:12px"></i></button>' : ''}
-          </td>
         </tr>`;
       }).join('');
 
@@ -515,7 +525,6 @@ const InventoryList = (() => {
           <table class="data-table" style="width:100%;background:#fff;border:1px solid var(--border);border-radius:6px;overflow:hidden">${head}<tbody>${body}</tbody></table>
         </div>`;
 
-      // Wire drilldown actions.
       const sub = drillTr.querySelector('tbody');
       sub.querySelectorAll('.row-uid').forEach(el => {
         el.addEventListener('click', async (e) => {
@@ -528,15 +537,6 @@ const InventoryList = (() => {
           } catch { Notify.warning('Copy failed', 'Could not access clipboard'); }
         });
       });
-      if (canEdit) {
-        sub.querySelectorAll('.sku-raw-edit').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            _openEditModal(btn.closest('tr'));
-          });
-        });
-      }
-      // Keep clicks inside the drilldown from bubbling up to the SKU row toggle.
       drillTr.addEventListener('click', e => e.stopPropagation());
 
       if (window.lucide) lucide.createIcons();
@@ -556,91 +556,214 @@ const InventoryList = (() => {
     }
   }
 
-  /* ── Inline edit modal ───────────────────────────────────── */
-  function _openEditModal(tr) {
-    const bodyHtml = `
-      <div style="display:grid;gap:12px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div>
-            <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">SKU</label>
-            <input class="form-input" id="inv-edit-sku" value="${Utils.escapeHtml(tr.dataset.sku)}">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">UPC</label>
-            <input class="form-input" id="inv-edit-upc" value="${Utils.escapeHtml(tr.dataset.upc)}">
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div>
-            <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">QUANTITY</label>
-            <input class="form-input" id="inv-edit-qty" type="number" value="${Utils.escapeHtml(tr.dataset.qty)}">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">DATE ADDED</label>
-            <input class="form-input" id="inv-edit-date" type="date" value="${Utils.toDateInputValue(tr.dataset.date)}">
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div>
-            <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">BOX #</label>
-            <input class="form-input" id="inv-edit-box" value="${Utils.escapeHtml(tr.dataset.box)}">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">PART #</label>
-            <input class="form-input" id="inv-edit-part" value="${Utils.escapeHtml(tr.dataset.part)}">
-          </div>
-        </div>
-        <div>
-          <label style="font-size:12px;color:var(--txt-3);font-weight:600;display:block;margin-bottom:4px">NOTES</label>
-          <input class="form-input" id="inv-edit-notes" value="${Utils.escapeHtml(tr.dataset.notes)}" placeholder="Optional">
-        </div>
-      </div>`;
+  /* ── Bulk-edit modal: "Edit Boxes" ─────────────────────────────
+     Replaces the per-row edit modal (2026-05-18). Lets the operator
+     edit ANY combination of rows under one SKU and Save All in one
+     pass. Key UX improvements over the previous flow:
+
+       1. No page refresh between row edits — the SKU View table is
+          only reloaded ONCE on modal close, and only if at least one
+          row was saved.
+       2. No row-reorder confusion — the inline drilldown's sort was
+          stabilized to (date_added DESC, row_uid ASC) so visual
+          position never changes mid-session. Inside this modal the
+          order is locked to the fetched array.
+       3. Single round-trip per dirty row — only changed rows are
+          PATCHed; untouched rows are skipped.
+
+     Tracking: each table row holds the ORIGINAL field values on
+     `data-orig-*`. The current value is read from its <input>. A
+     row is "dirty" when any input's value differs from its original.
+  */
+  async function _openBoxesEditModal(sku) {
+    if (!sku) return;
 
     const m = new Modal({
-      title:    'Edit Inventory Row',
-      body:     bodyHtml,
-      footer:   `<button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
-                 <button class="btn btn-primary btn-sm" data-action="save">Save Changes</button>`,
-      maxWidth: '480px',
+      title:    `Edit Boxes — ${sku}`,
+      body:     `<div id="boxes-edit-body"><div style="display:flex;justify-content:center;padding:40px">${Loading.spinnerHtml()}</div></div>`,
+      footer:   `<div style="flex:1;font-size:12px;color:var(--txt-3)" id="boxes-edit-status">Loading rows…</div>
+                 <button class="btn btn-secondary btn-sm" data-action="cancel">Cancel</button>
+                 <button class="btn btn-primary btn-sm" data-action="save" disabled>Save All</button>`,
+      maxWidth: '1100px',
     });
     m.show();
 
-    m.footerEl.addEventListener('click', async e => {
-      const action = e.target.closest('[data-action]')?.dataset.action;
-      if (action === 'cancel') { m.hide(); m.destroy(); return; }
-      if (action === 'save') {
-        const saveBtn = m.footerEl.querySelector('[data-action="save"]');
+    let _savesCommitted = 0; // tracks whether any save happened during this modal session
+
+    const bodyEl   = m.bodyEl.querySelector('#boxes-edit-body');
+    const statusEl = m.footerEl.querySelector('#boxes-edit-status');
+    const saveBtn  = m.footerEl.querySelector('[data-action="save"]');
+    const cancelBtn= m.footerEl.querySelector('[data-action="cancel"]');
+
+    function _setStatus(text, isError = false) {
+      if (statusEl) {
+        statusEl.textContent = text;
+        statusEl.style.color = isError ? 'var(--error)' : 'var(--txt-3)';
+      }
+    }
+
+    function _renderTableForRows(rows) {
+      if (!rows.length) {
+        bodyEl.innerHTML = `<div style="padding:24px;color:var(--txt-4);text-align:center">No raw rows for this SKU.</div>`;
+        return;
+      }
+      const head = `<thead><tr>
+        <th style="width:90px;font-size:11px">UID</th>
+        <th style="width:110px;font-size:11px">Box #</th>
+        <th style="width:130px;font-size:11px">Part #</th>
+        <th style="width:160px;font-size:11px">UPC</th>
+        <th style="width:90px;font-size:11px;text-align:center">Qty</th>
+        <th style="width:140px;font-size:11px">Date Added</th>
+        <th style="font-size:11px">Notes</th>
+        <th style="width:140px;font-size:11px">SKU</th>
+      </tr></thead>`;
+      const inputStyle = 'padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;width:100%;box-sizing:border-box;background:#fff';
+      const body = rows.map(r => {
+        const uid     = r.row_uid || '';
+        const shortId = uid ? uid.slice(0, 8) : '—';
+        return `<tr data-uid="${Utils.escapeHtml(uid)}"
+                    data-orig-sku="${Utils.escapeHtml(r.sku || '')}"
+                    data-orig-upc="${Utils.escapeHtml(r.upc || '')}"
+                    data-orig-qty="${Utils.escapeHtml(String(r.quantity ?? 0))}"
+                    data-orig-part="${Utils.escapeHtml(r.part_number || '')}"
+                    data-orig-box="${Utils.escapeHtml(r.box_number || '')}"
+                    data-orig-notes="${Utils.escapeHtml(r.notes || '')}"
+                    data-orig-date="${Utils.escapeHtml(r.date_added || '')}">
+          <td style="font-family:var(--font-number);font-size:11px;color:var(--txt-3)" title="${Utils.escapeHtml(uid)}">${Utils.escapeHtml(shortId)}</td>
+          <td><input data-field="box_number" style="${inputStyle}" value="${Utils.escapeHtml(r.box_number || '')}"></td>
+          <td><input data-field="part_number" style="${inputStyle}" value="${Utils.escapeHtml(r.part_number || '')}"></td>
+          <td><input data-field="upc" style="${inputStyle}" value="${Utils.escapeHtml(r.upc || '')}"></td>
+          <td><input data-field="quantity" type="number" min="0" style="${inputStyle};text-align:center" value="${Utils.escapeHtml(String(r.quantity ?? 0))}"></td>
+          <td><input data-field="date_added" type="date" style="${inputStyle}" value="${Utils.toDateInputValue(r.date_added) || ''}"></td>
+          <td><input data-field="notes" style="${inputStyle}" value="${Utils.escapeHtml(r.notes || '')}" placeholder="—"></td>
+          <td><input data-field="sku" style="${inputStyle}" value="${Utils.escapeHtml(r.sku || '')}"></td>
+        </tr>`;
+      }).join('');
+
+      bodyEl.innerHTML = `
+        <div style="max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:6px">
+          <table class="data-table" style="width:100%;background:#fff;table-layout:fixed">${head}<tbody>${body}</tbody></table>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--txt-4)">
+          Edit any cell. Only rows you change are saved. Quantity 0 marks a box as out of stock.
+        </div>`;
+
+      // Track dirty rows: any input event recomputes the dirty count and
+      // tints the affected row.
+      const tbody = bodyEl.querySelector('tbody');
+      tbody.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('input', _recountDirty);
+      });
+      _recountDirty();
+    }
+
+    function _isRowDirty(tr) {
+      for (const inp of tr.querySelectorAll('input[data-field]')) {
+        const field = inp.dataset.field;
+        const orig  = String(tr.dataset[`orig${_capitalize(_camel(field))}`] ?? '');
+        const cur   = String(inp.value ?? '');
+        if (orig !== cur) return true;
+      }
+      return false;
+    }
+
+    function _camel(s) { return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); }
+    function _capitalize(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
+
+    function _recountDirty() {
+      const rows = bodyEl.querySelectorAll('tbody tr');
+      let dirtyCount = 0;
+      rows.forEach(tr => {
+        const dirty = _isRowDirty(tr);
+        tr.style.background = dirty ? '#fff7ed' : '';
+        if (dirty) dirtyCount++;
+      });
+      if (dirtyCount === 0) {
+        _setStatus('No unsaved changes.');
         saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving…';
-        try {
-          const updates = {
-            sku:         document.getElementById('inv-edit-sku').value.trim(),
-            upc:         document.getElementById('inv-edit-upc').value.trim(),
-            quantity:    parseInt(document.getElementById('inv-edit-qty').value, 10),
-            box_number:  document.getElementById('inv-edit-box').value.trim(),
-            part_number: document.getElementById('inv-edit-part').value.trim(),
-            notes:       document.getElementById('inv-edit-notes').value.trim(),
-            date_added:  document.getElementById('inv-edit-date').value,
-          };
-          if (!updates.sku || !updates.upc || isNaN(updates.quantity)) {
-            Notify.warning('Validation', 'SKU, UPC, and quantity are required.');
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Save Changes';
-            return;
+      } else {
+        _setStatus(`${dirtyCount} row${dirtyCount === 1 ? '' : 's'} with unsaved changes.`);
+        saveBtn.disabled = false;
+      }
+    }
+
+    async function _saveAll() {
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      const rows = [...bodyEl.querySelectorAll('tbody tr')].filter(_isRowDirty);
+      if (!rows.length) { saveBtn.disabled = true; cancelBtn.disabled = false; return; }
+
+      let okCount = 0;
+      let failed  = [];
+      let i = 0;
+      for (const tr of rows) {
+        i++;
+        _setStatus(`Saving ${i} of ${rows.length}…`);
+        const updates = {};
+        tr.querySelectorAll('input[data-field]').forEach(inp => {
+          if (inp.dataset.field === 'quantity') {
+            updates.quantity = parseInt(inp.value, 10);
+          } else {
+            updates[inp.dataset.field] = (inp.value ?? '').trim();
           }
+        });
+        if (!updates.sku || !updates.upc || isNaN(updates.quantity)) {
+          failed.push({ uid: tr.dataset.uid, reason: 'SKU, UPC, and quantity are required' });
+          continue;
+        }
+        try {
           await API.updateInventory(tr.dataset.uid, updates);
-          // Inventory edit changes initial stock → invalidate canonical KPIs.
-          MetricsEngine.invalidate();
-          Notify.success('Saved', 'Inventory row updated');
-          m.hide(); m.destroy();
-          load();
+          okCount++;
+          _savesCommitted++;
+          // Rewrite the row's original-data attributes so subsequent
+          // edits compare against the freshly-saved baseline.
+          tr.dataset.origSku   = updates.sku;
+          tr.dataset.origUpc   = updates.upc;
+          tr.dataset.origQty   = String(updates.quantity);
+          tr.dataset.origPart  = updates.part_number ?? '';
+          tr.dataset.origBox   = updates.box_number ?? '';
+          tr.dataset.origNotes = updates.notes ?? '';
+          tr.dataset.origDate  = updates.date_added ?? '';
         } catch (err) {
-          Notify.apiError(err);
-          saveBtn.disabled = false;
-          saveBtn.textContent = 'Save Changes';
+          failed.push({ uid: tr.dataset.uid, reason: err.message || 'Save failed' });
         }
       }
+
+      MetricsEngine.invalidate();
+
+      if (failed.length === 0) {
+        Notify.success('Saved', `${okCount} row${okCount === 1 ? '' : 's'} updated`);
+      } else if (okCount > 0) {
+        Notify.warning('Partial save', `${okCount} saved · ${failed.length} failed (${failed[0].reason})`);
+      } else {
+        Notify.error('Save failed', failed[0]?.reason || 'No rows saved');
+      }
+
+      _recountDirty();
+      cancelBtn.disabled = false;
+    }
+
+    saveBtn.addEventListener('click', _saveAll);
+    cancelBtn.addEventListener('click', () => {
+      m.hide();
+      m.destroy();
+      // Single deferred reload — only if a save actually happened. The
+      // SKU aggregates are stale until inventory_summary refreshes; the
+      // load() call kicks the live read path or summary read path to
+      // pick up the new totals.
+      if (_savesCommitted > 0) load();
     });
+
+    // Initial fetch.
+    try {
+      const res  = await API.getRawRowsBySku(sku);
+      const rows = res?.items || [];
+      _renderTableForRows(rows);
+      if (window.lucide) lucide.createIcons();
+    } catch (err) {
+      bodyEl.innerHTML = `<div style="padding:24px;color:var(--error);text-align:center">${Utils.escapeHtml(err.message || 'Failed to load rows')}</div>`;
+      _setStatus('Failed to load rows.', true);
+    }
   }
 
   /* ── Set filter programmatically (from dashboard KPI clicks) */

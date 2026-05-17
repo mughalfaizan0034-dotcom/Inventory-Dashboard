@@ -136,13 +136,18 @@ export function createInventoryRepository({ bq, projectId }) {
   // surface that exposes raw rows now that the main list is SKU-aggregated.
   async function findRawRowsBySku(organizationId, sku) {
     if (!sku) return [];
+    // Order is STABLE across edits. The previous `updated_at DESC` ordering
+    // shuffled rows after every save (the just-edited row jumped to the
+    // top), which made operators believe a previous edit had "reverted"
+    // when in fact the SAME row had just repositioned. row_uid is the
+    // stable tiebreaker — never changes for a row's lifetime.
     const query = `
       SELECT
         row_uid, sku, upc, part_number, box_number, quantity,
         date_added, notes, updated_at
       FROM ${invTable}
       WHERE organization_id = @organizationId AND sku = @sku
-      ORDER BY COALESCE(updated_at, TIMESTAMP('1970-01-01')) DESC, date_added DESC
+      ORDER BY date_added DESC, row_uid ASC
     `;
     const [rows] = await bq.query({ query, params: { organizationId, sku } });
     return rows.map(r => ({
