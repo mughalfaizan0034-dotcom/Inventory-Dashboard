@@ -7,6 +7,36 @@ implementation plan.
 
 Issued: 2026-05-17
 Source: full-stack audit (see chat transcript / FINDINGS report)
+Session-3 Phase B prep work that landed (2026-05-17, build `2026-05-17-phaseB-prep`):
+- **CR1 (HIGH)** — `summaryRefreshService` rebuilds rewritten as single
+  `MERGE` statements per table with `WHEN NOT MATCHED BY SOURCE AND
+  T.organization_id = @x`. Eliminates the duplicate-row hazard under
+  concurrent refresh and removes the empty-rows visibility window.
+  Idempotent under concurrent execution.
+- **CR2 (HIGH)** — Box Lookup reverted from materialized read to live
+  CTE. Parity-log path runs the new split-table read in parallel and
+  emits `parity_box_match` / `parity_box_diff` / `parity_box_summary_empty`
+  events when `SUMMARY_PARITY_LOG=1`. Phase B Box Lookup cutover now
+  follows the same gated path as dashboard.
+- **CR3 (HIGH)** — Process-local refresh coalescing in
+  `summaryRefreshService.refresh`. Leading-edge + trailing debounce
+  with a 500ms cooldown per org. A burst of N mutations on the same org
+  produces at most 2 refreshes instead of N.
+- **HI2 (MEDIUM)** — Per-table structured logging
+  (`event: summary_refresh_table` + duration_ms + status). New admin-only
+  endpoint `GET /admin/summary-status?org=X` returns per-table row count +
+  `last_refreshed_at`. Also `POST /admin/summary-refresh` to force-rebuild
+  a single org (useful for orgs that haven't had a mutating operation
+  since the migration).
+- **HI3 (HIGH)** — SKU View parity logging extended to match the
+  dashboard pattern. `inventoryMetricsService.getSkuSummary` now runs a
+  parallel read from `inventory_summary` with the same filters and
+  emits `parity_sku_match` / `parity_sku_diff` / `parity_sku_total_diff`
+  / `parity_sku_summary_empty` when `SUMMARY_PARITY_LOG=1`.
+- **App Version surfaced in Settings → System Status**. `/health`
+  endpoint returns `version: '2026-05-17-phaseB-prep'`. Build version
+  log lives in CLAUDE.md.
+
 Session-2 architecture work that landed (2026-05-17, later in the day):
 - **Drift prevention** — extracted shared CTE builders to
   [server/src/utils/skuPivots.js](../server/src/utils/skuPivots.js).

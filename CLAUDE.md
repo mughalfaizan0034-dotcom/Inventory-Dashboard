@@ -1,5 +1,21 @@
 # Patman Inventory System — Master Architecture & Operational Guide
 
+# Build version log
+
+The `/health` endpoint returns the current `APP_VERSION` string. It
+surfaces in Settings → System Status → "App Version" so operators can
+confirm which build is live. Bump on every shipped architecture
+milestone and add a one-line entry below.
+
+When you change [server/src/routes/health.js](server/src/routes/health.js)
+`APP_VERSION`, add the matching log entry here in the SAME commit.
+
+| Version tag | Shipped | Notes |
+|---|---|---|
+| `2026-05-17-phaseB-prep` | 2026-05-17 | Phase B prep: MERGE-based refresh (CR1), Box Lookup reverted to live + parity log (CR2), refresh coalescing (CR3), per-table observability (HI2), SKU View parity log (HI3), admin /summary-status endpoint. |
+| `2026-05-17-phaseA-summaries` | 2026-05-17 | Phase A: materialized summary tables (dashboard_summary, inventory_summary, box_summary_by_upc, box_summary_by_part), summaryRefreshService with DELETE+INSERT writes, parity logging behind SUMMARY_PARITY_LOG=1, shared CTE builders, D1 fix (UPPER in SQL), My Profile tab removed. |
+| `memberships-v2-uploads-pipeline` | pre-2026-05-17 | Pre-audit baseline. Memberships v2, uploads pipeline, JWT-only sessions. |
+
 # Current Architecture Snapshot (2026-05-17, post-audit)
 
 This section is the canonical map of where the centralized analytics

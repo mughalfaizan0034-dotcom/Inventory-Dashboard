@@ -44,9 +44,18 @@ import { ordersAggCTE, invAggCTE, perSkuCTE } from '../utils/skuPivots.js';
  *   Units Sold  = Sold matched + Unknown                   (orders)
  *               = Fulfilled + Phantom + Unknown            (combining)
  */
-export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
-  const invTable = `\`${projectId}.${TABLES.INVENTORY}\``;
-  const ordTable = `\`${projectId}.${TABLES.ORDERS}\``;
+// Parity logging for the SKU View read path. Mirrors the dashboard
+// parity logger — runs the materialized-table read in parallel with
+// the live CTE, diffs the two row sets, and logs match / diff / missing
+// to Cloud Logging. ENABLE in a single Cloud Run revision (set
+// SUMMARY_PARITY_LOG=1) for ~24h before flipping SKU View read path
+// to inventory_summary in Phase B.
+const PARITY_LOG = process.env.SUMMARY_PARITY_LOG === '1';
+
+export function createInventoryMetricsService({ bq, projectId, orgsRepo, logger }) {
+  const invTable         = `\`${projectId}.${TABLES.INVENTORY}\``;
+  const ordTable         = `\`${projectId}.${TABLES.ORDERS}\``;
+  const inventorySummary = `\`${projectId}.${TABLES.INVENTORY_SUMMARY}\``;
 
   // CTE builders are imported from utils/skuPivots.js — the single source
   // of truth for the centralized allocation engine's SQL building blocks.
@@ -367,23 +376,156 @@ export function createInventoryMetricsService({ bq, projectId, orgsRepo }) {
         bq.query({ query: dataQuery,  params }),
         bq.query({ query: countQuery, params }),
       ]);
-      return {
-        items: rows[0].map(r => ({
-          ...r,
-          total_stock:     Number(r.total_stock     ?? 0),
-          sold_units:      Number(r.sold_units      ?? 0),
-          fulfilled_units: Number(r.fulfilled_units ?? 0),
-          phantom_units:   Number(r.phantom_units   ?? 0),
-          remaining_units: Number(r.remaining_units ?? 0),
-          boxes_count:     Number(r.boxes_count     ?? 0),
-          is_undefined:    !!r.is_undefined,
-          last_added_at:   r.last_added_at?.value ?? r.last_added_at ?? null,
-        })),
-        total: Number(countRows[0][0]?.total ?? 0),
-      };
+      const liveItems = rows[0].map(r => ({
+        ...r,
+        total_stock:     Number(r.total_stock     ?? 0),
+        sold_units:      Number(r.sold_units      ?? 0),
+        fulfilled_units: Number(r.fulfilled_units ?? 0),
+        phantom_units:   Number(r.phantom_units   ?? 0),
+        remaining_units: Number(r.remaining_units ?? 0),
+        boxes_count:     Number(r.boxes_count     ?? 0),
+        is_undefined:    !!r.is_undefined,
+        last_added_at:   r.last_added_at?.value ?? r.last_added_at ?? null,
+      }));
+      const liveTotal = Number(countRows[0][0]?.total ?? 0);
+
+      // Phase A parity probe: run a parallel read from inventory_summary
+      // with the same filter/sort/pagination, diff the row sets, log.
+      // Never blocks the live response.
+      if (PARITY_LOG) {
+        _skuSummaryParityProbe(organizationId, {
+          search, status, sortBy, sortDir, page, pageSize,
+        }, liveItems, liveTotal).catch(() => {});
+      }
+
+      return { items: liveItems, total: liveTotal };
     } catch (err) {
       console.error('[inventoryMetrics.getSkuSummary] failed:', err?.message ?? err);
       return { items: [], total: 0 };
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // SKU View parity probe (Phase A — gated by SUMMARY_PARITY_LOG=1)
+  //
+  // Runs the SAME logical filter/sort/pagination against inventory_summary
+  // and diffs the row set against the live CTE result. Diff is keyed by
+  // SKU and compares the six numeric pivot fields + is_undefined.
+  // ─────────────────────────────────────────────────────────────────────
+  async function _readSkuSummaryFromTable(organizationId, {
+    search, status, sortBy, sortDir, page, pageSize,
+  }) {
+    const params = { organizationId };
+    const where  = ['organization_id = @organizationId'];
+    if (search) {
+      where.push('(LOWER(sku) LIKE @search OR LOWER(COALESCE(part_number, \'\')) LIKE @search OR LOWER(COALESCE(upc, \'\')) LIKE @search)');
+      params.search = `%${String(search).toLowerCase()}%`;
+    }
+    if (status === 'in_stock')  where.push('remaining_units > 0 AND NOT is_undefined');
+    if (status === 'oos')       where.push('remaining_units = 0 AND NOT is_undefined');
+    if (status === 'phantom')   where.push('phantom_units > 0');
+    if (status === 'undefined') where.push('is_undefined');
+
+    const sortMap = {
+      sku:        'sku',
+      initial:    'total_stock',
+      sold:       'sold_units',
+      fulfilled:  'fulfilled_units',
+      phantom:    'phantom_units',
+      remaining:  'remaining_units',
+      boxes:      'boxes_count',
+      last_added: 'last_added_at',
+    };
+    const col = sortMap[sortBy] || 'sku';
+    const dir = sortDir === 'desc' ? 'DESC' : 'ASC';
+    const offset = Math.max(0, (page - 1) * pageSize);
+
+    const dataQuery = `
+      SELECT sku, total_stock, sold_units, fulfilled_units, phantom_units,
+             remaining_units, boxes_count, last_added_at, part_number, upc,
+             is_undefined
+      FROM ${inventorySummary}
+      WHERE ${where.join(' AND ')}
+      ORDER BY ${col} ${dir}, sku ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+    const countQuery = `
+      SELECT COUNT(*) AS total
+      FROM ${inventorySummary}
+      WHERE ${where.join(' AND ')}
+    `;
+    const [rows, countRows] = await Promise.all([
+      bq.query({ query: dataQuery,  params }),
+      bq.query({ query: countQuery, params }),
+    ]);
+    return {
+      items: rows[0].map(r => ({
+        sku:             r.sku,
+        total_stock:     Number(r.total_stock     ?? 0),
+        sold_units:      Number(r.sold_units      ?? 0),
+        fulfilled_units: Number(r.fulfilled_units ?? 0),
+        phantom_units:   Number(r.phantom_units   ?? 0),
+        remaining_units: Number(r.remaining_units ?? 0),
+        boxes_count:     Number(r.boxes_count     ?? 0),
+        is_undefined:    !!r.is_undefined,
+      })),
+      total: Number(countRows[0][0]?.total ?? 0),
+    };
+  }
+
+  function _diffSkuItems(live, summary) {
+    const liveBySku    = new Map(live.map(r => [r.sku, r]));
+    const summaryBySku = new Map(summary.map(r => [r.sku, r]));
+    const onlyInLive    = [...liveBySku.keys()].filter(k => !summaryBySku.has(k));
+    const onlyInSummary = [...summaryBySku.keys()].filter(k => !liveBySku.has(k));
+    const valueDiffs    = [];
+    const fields = ['total_stock', 'sold_units', 'fulfilled_units', 'phantom_units', 'remaining_units', 'boxes_count'];
+    for (const [sku, l] of liveBySku) {
+      const s = summaryBySku.get(sku);
+      if (!s) continue;
+      for (const f of fields) {
+        if (Number(l[f] ?? 0) !== Number(s[f] ?? 0)) {
+          valueDiffs.push({ sku, field: f, live: Number(l[f] ?? 0), summary: Number(s[f] ?? 0) });
+        }
+      }
+      if (!!l.is_undefined !== !!s.is_undefined) {
+        valueDiffs.push({ sku, field: 'is_undefined', live: !!l.is_undefined, summary: !!s.is_undefined });
+      }
+    }
+    if (!onlyInLive.length && !onlyInSummary.length && !valueDiffs.length) return null;
+    return { onlyInLive, onlyInSummary, valueDiffs };
+  }
+
+  async function _skuSummaryParityProbe(organizationId, opts, liveItems, liveTotal) {
+    try {
+      const summary = await _readSkuSummaryFromTable(organizationId, opts);
+      if (!summary.items.length && liveItems.length) {
+        logger?.warn?.(
+          { event: 'parity_sku_summary_empty', organization_id: organizationId, live_count: liveItems.length },
+          'inventory_summary returned empty — refresh may not have run for this org yet',
+        );
+        return;
+      }
+      if (summary.total !== liveTotal) {
+        logger?.warn?.(
+          { event: 'parity_sku_total_diff', organization_id: organizationId, live_total: liveTotal, summary_total: summary.total },
+          'inventory_summary total disagrees with live CTE total',
+        );
+      }
+      const diff = _diffSkuItems(liveItems, summary.items);
+      if (diff) {
+        logger?.warn?.(
+          { event: 'parity_sku_diff', organization_id: organizationId, diff_sample: { onlyInLive: diff.onlyInLive.slice(0,3), onlyInSummary: diff.onlyInSummary.slice(0,3), valueDiffs: diff.valueDiffs.slice(0,5) } },
+          'inventory_summary row set disagrees with live CTE',
+        );
+      } else {
+        logger?.info?.(
+          { event: 'parity_sku_match', organization_id: organizationId, items: liveItems.length },
+          'inventory_summary matches live CTE',
+        );
+      }
+    } catch (err) {
+      logger?.debug?.({ event: 'parity_sku_probe_failed', err: err?.message }, 'parity probe failed');
     }
   }
 

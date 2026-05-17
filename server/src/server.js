@@ -43,6 +43,7 @@ import { membershipsRoutes } from './routes/memberships.js';
 import { organizationsRoutes } from './routes/organizations.js';
 import { activityRoutes } from './routes/activity.js';
 import { lookupRoutes } from './routes/lookup.js';
+import { adminRoutes } from './routes/admin.js';
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -143,7 +144,7 @@ export async function buildApp() {
     const authService      = createAuthService({ usersRepo, membershipsRepo });
     const inventoryService = createInventoryService({ inventoryRepo });
     const ordersService    = createOrdersService({ ordersRepo });
-    const metricsService   = createInventoryMetricsService({ ...deps, orgsRepo });
+    const metricsService   = createInventoryMetricsService({ ...deps, orgsRepo, logger: fastify.log });
     // summaryRefreshService rebuilds the materialized summary tables for one
     // org after every mutating operation. It is the ONLY writer to those
     // tables. Inject `fastify.log` as the structured logger so its non-fatal
@@ -172,6 +173,7 @@ export async function buildApp() {
     fastify.register(organizationsRoutes, { prefix: '/organizations', orgsRepo, membershipsRepo, usersRepo, summaryRefreshService });
     fastify.register(activityRoutes,      { prefix: '/activity',      activityService });
     fastify.register(lookupRoutes,        { prefix: '/lookup',        lookupService });
+    fastify.register(adminRoutes,         { prefix: '/admin',         ...deps, summaryRefreshService });
     console.log('[BOOT] all route plugins registered');
 
     if (process.env.DEBUG_ROUTES === 'true') {
