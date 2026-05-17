@@ -6,12 +6,12 @@
   <title>Inventory Dashboard</title>
 
   <!-- CSS â€” v=56: bump on every deploy to bust browser/CDN cache -->
-  <link rel="stylesheet" href="css/main.css?v=84">
-  <link rel="stylesheet" href="css/layout.css?v=84">
-  <link rel="stylesheet" href="css/components.css?v=84">
-  <link rel="stylesheet" href="css/tables.css?v=84">
-  <link rel="stylesheet" href="css/forms.css?v=84">
-  <link rel="stylesheet" href="css/animations.css?v=84">
+  <link rel="stylesheet" href="css/main.css?v=85">
+  <link rel="stylesheet" href="css/layout.css?v=85">
+  <link rel="stylesheet" href="css/components.css?v=85">
+  <link rel="stylesheet" href="css/tables.css?v=85">
+  <link rel="stylesheet" href="css/forms.css?v=85">
+  <link rel="stylesheet" href="css/animations.css?v=85">
 
   <!-- Favicon: Lucide "package" icon in brand blue -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/%3E%3Cpolyline points='3.27 6.96 12 12.01 20.73 6.96'/%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'/%3E%3C/svg%3E">
@@ -572,7 +572,6 @@
             <div id="settings-tab-list" class="tab-list">
               <button class="tab-btn active" data-tab="users">Users</button>
               <button class="tab-btn" data-tab="organizations">Organizations</button>
-              <button class="tab-btn" data-tab="profile">My Profile</button>
               <button class="tab-btn" data-tab="system">System Status</button>
               <button class="tab-btn" data-tab="logs">Logs</button>
             </div>
@@ -630,26 +629,6 @@
             </div>
           </div>
 
-          <!-- Profile tab -->
-          <div id="tab-profile" class="tab-panel">
-            <div class="card" style="max-width:440px">
-              <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
-                <div id="profile-avatar" style="width:56px;height:56px;border-radius:50%;background:var(--primary-100);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:var(--primary-text)">?</div>
-                <div>
-                  <div id="profile-name"     style="font-size:17px;font-weight:700;color:var(--txt-1)">&mdash;</div>
-                  <div id="profile-username" style="font-size:13px;color:var(--txt-3)">&mdash;</div>
-                  <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
-                    <span id="profile-org"  style="font-size:12px;color:var(--txt-4)">&mdash;</span>
-                    <span id="profile-role" style="font-size:11px;font-weight:600;color:var(--txt-4)">&mdash;</span>
-                  </div>
-                </div>
-              </div>
-              <div class="info-banner">
-                <span class="info-banner-icon"><i data-lucide="info" class="icon" style="width:14px;height:14px"></i></span>
-                <span>To change your password, contact an administrator. Use the org switcher in the top bar to change organizations.</span>
-              </div>
-            </div>
-          </div>
 
           <!-- System Status tab -->
           <div id="tab-system" class="tab-panel">
@@ -691,23 +670,24 @@
 
   <!-- App modules â€” order matters: utilities first, then API/auth, then features, app last -->
   <!-- v=56 â€” bump this number on every deploy to bust browser/CDN cache -->
-  <script src="js/utilities.js?v=84"></script>
-  <script src="js/icons.js?v=84"></script>
-  <script src="js/notifications.js?v=84"></script>
-  <script src="js/loading.js?v=84"></script>
-  <script src="js/api.js?v=84"></script>
-  <script src="js/skuEngine.js?v=84"></script>
-  <script src="js/skuValidator.js?v=84"></script>
-  <script src="js/metricsEngine.js?v=84"></script>
-  <script src="js/auth.js?v=84"></script>
-  <script src="js/dashboard.js?v=84"></script>
-  <script src="js/inventory.js?v=84"></script>
-  <script src="js/orders.js?v=84"></script>
-  <script src="js/uploads.js?v=84"></script>
-  <script src="js/app.js?v=84"></script>
+  <script src="js/utilities.js?v=85"></script>
+  <script src="js/icons.js?v=85"></script>
+  <script src="js/notifications.js?v=85"></script>
+  <script src="js/loading.js?v=85"></script>
+  <script src="js/api.js?v=85"></script>
+  <script src="js/skuEngine.js?v=85"></script>
+  <script src="js/skuValidator.js?v=85"></script>
+  <script src="js/metricsEngine.js?v=85"></script>
+  <script src="js/auth.js?v=85"></script>
+  <script src="js/dashboard.js?v=85"></script>
+  <script src="js/inventory.js?v=85"></script>
+  <script src="js/orders.js?v=85"></script>
+  <script src="js/uploads.js?v=85"></script>
+  <script src="js/app.js?v=85"></script>
 
 </body>
 </html>
+
 
 
 

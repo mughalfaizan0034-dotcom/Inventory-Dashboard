@@ -1501,19 +1501,6 @@ const Settings = (() => {
     }
   }
 
-  /* ── Profile tab ─────────────────────────────────────────── */
-  function _initProfileTab() {
-    const user = Auth.getUser();
-    const org  = Auth.getOrganization();
-    if (!user) return;
-    Utils.setText('#profile-name',     user.display_name || user.username);
-    Utils.setText('#profile-username', user.username ? `@${user.username}` : '—');
-    Utils.setText('#profile-org',      org?.display_name || '—');
-    Utils.setText('#profile-role',     Utils.capitalize(org?.role || '—'));
-    const avatarEl = document.getElementById('profile-avatar');
-    if (avatarEl) avatarEl.textContent = (user.display_name || user.username || '?')[0].toUpperCase();
-  }
-
   /* ── System tab ─────────────────────────────────────────── */
   async function loadSystemStatus() {
     const el = document.getElementById('system-status-content');
@@ -1616,7 +1603,6 @@ const Settings = (() => {
         else if (tab === 'organizations') loadOrganizations();
         else if (tab === 'system')        loadSystemStatus();
         else if (tab === 'logs')          loadLogs();
-        else if (tab === 'profile')       _initProfileTab();
       });
     }
 
